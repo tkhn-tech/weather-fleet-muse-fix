@@ -433,6 +433,14 @@ function makePhalanx(){
 function makeShip(type){
   const g = new THREE.Group();
   let L, W, Hh;
+  if(type === 'carrier'){ L = 22; W = 7.5; Hh = 2.2; }
+  else if(type === 'battleship'){ L = 18; W = 5.2; Hh = 1.7; }
+  else { L = 10.5; W = 3.4; Hh = 1.3; }
+  // research-accurate hull: extruded outline, raked bow, haze-gray paint
+  g.add(new THREE.Mesh(hullGeo(L, W, Hh), M.hull));
+  // rust-red waterline + black boot-top stripe
+  g.add(box(W * 0.98, 0.28, L * 0.94, M.rust, 0, -0.32, 0));
+  g.add(box(W * 1.0, 0.18, L * 0.96, M.black, 0, -0.08, 0));
   if(type === 'carrier'){
     // Nimitz: slim hull, flight deck almost twice as wide, no funnel.
     // The deck is a real flight-deck outline (rounded bow, angled deck in the
