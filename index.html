@@ -1540,9 +1540,9 @@ function updateCamera(dt){
   const camZ = camZ0 * state.camZoom;
   const camY = camY0 * (0.85 + 0.3 * state.camZoom);
   if(!state.freeLookActive) state.freeLook *= Math.max(0, 1 - dt * 1.2);
-  const tx = flag.x * 0.5 + Math.sin(state.freeLook) * camZ * 0.55;
+  const tx = flag.x + Math.sin(state.freeLook) * camZ * 0.55;
   const ty = camY + Math.sin(state.t * 0.5) * 0.4;
-  const tz = Math.cos(state.freeLook) * camZ;
+  const tz = flag.z + Math.cos(state.freeLook) * camZ;
   const k = 1 - Math.exp(-dt * 3);
   camera.position.x += (tx - camera.position.x) * k;
   camera.position.y += (ty - camera.position.y) * k;
@@ -1551,7 +1551,7 @@ function updateCamera(dt){
     camera.position.x += (Math.random() - 0.5) * state.shake * 0.12;
     camera.position.y += (Math.random() - 0.5) * state.shake * 0.12;
   }
-  camera.lookAt(flag.x * 0.7, 2, -8);
+  camera.lookAt(flag.x, 2, flag.z - 8);
   const targetFov = 62 + (state.boost ? 7 : 0);
   if(Math.abs(camera.fov - targetFov) > 0.1){
     camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 4);
