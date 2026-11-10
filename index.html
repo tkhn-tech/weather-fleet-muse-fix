@@ -131,7 +131,7 @@
         <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v6.2</div>
+    <div class="ver">v6.3</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -534,7 +534,7 @@ function makeShip(type){
   } else if(type === 'battleship'){
     // Iowa, 1980s fit: 2-forward / 1-aft triple 16-in turrets, 2 funnels,
     // tower superstructure, Tomahawk boxes + Harpoon, 4 Phalanx, stern helipad.
-    g.add(box(L * 0.9, 0.35, W * 0.86, M.deck, 0, 1.4, 0));
+    g.add(box(W * 0.86, 0.35, L * 0.9, M.deck, 0, 1.4, 0));
     [-7.5, -4.2, 6.8].forEach(z => {
       const t = makeTurret(3);
       t.position.set(0, 1.55, z);
@@ -595,7 +595,7 @@ function makeShip(type){
   } else {
     // Arleigh Burke Flight IIA: sloped angular hull, two deckhouses,
     // four flat SPY-1 octagons, 1x 5-in gun, flush VLS, hangar + helipad.
-    g.add(box(L * 0.88, 0.3, W * 0.86, M.deck, 0, 1.25, 0));
+    g.add(box(W * 0.86, 0.3, L * 0.88, M.deck, 0, 1.25, 0));
     // forward deckhouse + SPY-1 panels on all four faces
     g.add(box(2.6, 2.2, 3.2, M.dark, 0, 2.3, -1.5));
     const spyGeo = new THREE.CircleGeometry(1.0, 8);
