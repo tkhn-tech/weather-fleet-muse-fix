@@ -141,7 +141,7 @@
         <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v8.2</div>
+    <div class="ver">v8.3</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -1651,8 +1651,10 @@ function update(dt){
   state.kickT += dt;
   state.prevRudder = state.rudder;
   const whirlSlow = fleet.some(s => s.alive && state.hazards.some(h => h.kind === 'whirl' && Math.hypot(s.x - h.x, s.z - h.z) < 20));
-  // steerage needs way on: a ship with no speed barely answers the helm
-  const turnRate = 0.5 * (0.12 + 0.88 * Math.min(1, speed / 12)) * (whirlSlow ? 0.5 : 1);
+  // steerage needs way on: a ship with no speed barely answers the helm.
+  // Turn rate raised (v8.3) so the helm feels decisive — the ship clearly
+  // swings onto a new course instead of just sliding sideways.
+  const turnRate = 0.65 * (0.12 + 0.88 * Math.min(1, speed / 12)) * (whirlSlow ? 0.5 : 1);
   // heading-rate damping: the turn rate is a state with inertia. It follows
   // the rudder while you steer, and dies away fast (τ ~ 0.15 s) the moment
   // the rudder centres — the heading stops swinging instead of overshooting
@@ -2092,13 +2094,15 @@ function updateCamera(dt){
   const camZ = camZ0 * state.camZoom * (1 + speedN * 0.12);
   const camY = camY0 * (0.85 + 0.3 * state.camZoom);
   if(!state.freeLookActive) state.freeLook *= Math.max(0, 1 - dt * 1.2);
-  // chase cam: the camera's own heading trails the fleet's heading, and
+  // chase cam: the camera's own heading trails the fleet's heading. While
+  // turning it trails deliberately (v8.3, ~1.4/s) so the bow visibly swings
+  // onto the new course instead of the ship always pointing "up" the screen;
   // once the turn is over it converges fast (τ ~ 0.15 s) so the camera ends
   // up dead behind the flagship's stern instead of sitting side-on (v8.1)
   const turning = Math.abs(state.headingRate) > 0.06 || Math.abs(state.rudder) > 0.1;
   let dh = flag.heading - state.camHeading;
   dh = ((dh + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
-  state.camHeading += dh * (1 - Math.exp(-dt * (turning ? 2.6 : 7.0)));
+  state.camHeading += dh * (1 - Math.exp(-dt * (turning ? 1.4 : 7.0)));
   const fx = Math.sin(flag.heading), fz = -Math.cos(flag.heading);
   const chx = Math.sin(state.camHeading), chz = -Math.cos(state.camHeading);
   const crx = Math.cos(state.camHeading), crz = Math.sin(state.camHeading);
@@ -2114,11 +2118,14 @@ function updateCamera(dt){
   const hHalf = Math.atan(Math.tan(vHalf) * aspect);
   // the stiff follow trails the target in a turn by ~turnRate/kL radians;
   // the fit must leave room for that lag or the fleet swings out of frame
-  const lagAllow = Math.min(0.12, Math.abs(state.headingRate || 0) / 5.0);
+  const lagAllow = Math.min(0.35, Math.abs(state.headingRate || 0) / 2.0);
   const tanH = Math.tan(Math.max(0.05, hHalf * 0.88 - lagAllow));
   const tanV = Math.tan(Math.max(0.05, vHalf * 0.88));
   const lookAhead = 16 + speedN * 20;
-  const lx = flag.x + fx * lookAhead, lz = flag.z + fz * lookAhead;
+  // look along the camera's own (trailing) heading, not the flagship's, so a
+  // turn reads as a turn: the bow visibly swings away and the ship heads off
+  // in a new direction instead of always pointing "up" the screen (v8.3)
+  const lx = flag.x + chx * lookAhead, lz = flag.z + chz * lookAhead;
   let fitD = camZ;
   for(let it = 0; it < 12; it++){
     const tY = camY * (fitD / camZ) + Math.sin(state.t * 0.5) * 0.4;
@@ -2154,8 +2161,10 @@ function updateCamera(dt){
   // look well ahead of the flagship along its course, so the flagship sits
   // low in frame and you see where you are going; the camera banks gently
   // into the turn
-  camera.lookAt(flag.x + fx * lookAhead, 2, flag.z + fz * lookAhead);
-  const bankTarget = -state.rudder * 0.07 * speedN;
+  camera.lookAt(flag.x + chx * lookAhead, 2, flag.z + chz * lookAhead);
+  // gentler bank (v8.3): the old 0.07 tilt plus the wide swing made turns
+  // feel dramatic; a small bank keeps the horizon steadier
+  const bankTarget = -state.rudder * 0.03 * speedN;
   state.camBank += (bankTarget - state.camBank) * Math.min(1, dt * 3);
   camera.rotateZ(state.camBank);
   // the sky travels with the fleet: the sun glow stays ahead, clouds wrap around it
@@ -2169,7 +2178,7 @@ function updateCamera(dt){
   // the framing distance, so a wider lens keeps the pull-back (and the
   // apparent ship size) reasonable on a phone
   const baseFov = aspect < 0.75 ? 76 : aspect < 1.1 ? 70 : 66;
-  const targetFov = baseFov + speedN * 5 + (state.boost ? 7 : 0);
+  const targetFov = baseFov + speedN * 3 + (state.boost ? 7 : 0);
   if(Math.abs(camera.fov - targetFov) > 0.1){
     camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 4);
     camera.updateProjectionMatrix();
