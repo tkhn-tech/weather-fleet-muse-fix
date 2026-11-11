@@ -86,6 +86,18 @@
     .iconBtn{width:34px;height:34px;font-size:15px}
     #stageToast h2{font-size:24px}
   }
+  #camPanel{position:fixed;right:12px;top:calc(64px + env(safe-area-inset-top));z-index:11;width:264px;max-width:calc(100vw - 16px);background:rgba(6,18,30,.88);border:1px solid rgba(140,190,230,.35);border-radius:16px;padding:14px 16px;backdrop-filter:blur(8px)}
+  #camPanel h3{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#ffd166;margin-bottom:6px}
+  #camPanel .camNote{font-size:12px;color:#9db8cc;line-height:1.45;margin:6px 0}
+  #camPanel .camRow{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12.5px;font-weight:700;color:#cfe2ef}
+  #camPanel .camRow .val{color:#ffd166}
+  #camPanel input[type=range]{width:100%;margin-top:6px;accent-color:#ffd166}
+  #camPanel .camBtns{display:flex;gap:8px;align-items:center}
+  #camPanel .camBtns button{flex-shrink:0;width:32px;height:32px;border-radius:50%;border:1px solid rgba(140,190,230,.4);background:rgba(255,255,255,.08);color:#e8f1f8;font-size:18px;font-weight:800;cursor:pointer}
+  #camPanel .camBtns input{flex:1}
+  #camResetBtn{display:block;width:100%;margin-top:12px;background:#ffd166;color:#1a2a1a;border:none;border-radius:999px;padding:10px;font-size:14px;font-weight:800;cursor:pointer}
+  #camResetBtn:active{transform:scale(.97)}
+  @media (max-width:560px){ #camPanel{right:8px;left:8px;width:auto;top:calc(58px + env(safe-area-inset-top))} }
   .hidden{display:none!important}
 </style>
 <script type="importmap">
@@ -104,6 +116,20 @@
   <button class="iconBtn" id="soundBtn" title="Sound on/off">🔊</button>
   <button class="iconBtn" id="restartBtn" title="Restart round">↻</button>
   <button class="iconBtn" id="pauseBtn" title="Pause">⏸</button>
+  <button class="iconBtn" id="camBtn" title="Camera controls">🎥</button>
+</div>
+
+<div id="camPanel" class="hidden">
+  <h3>🎥 Camera</h3>
+  <p class="camNote">The camera stays behind the fleet. Zoom and look in any direction — the position stays fixed.</p>
+  <div class="camRow"><span class="lab">Zoom</span><span class="val" id="camZoomVal">1.0×</span></div>
+  <div class="camBtns"><button id="camZoomOut" title="Zoom out">−</button><input type="range" id="camZoomSlider" min="0.4" max="2.85" step="0.05" value="1"><button id="camZoomIn" title="Zoom in">+</button></div>
+  <div class="camRow"><span class="lab">Look ← →</span><span class="val" id="camPanXVal">0</span></div>
+  <input type="range" id="camPanXSlider" min="-30" max="30" step="1" value="0">
+  <div class="camRow"><span class="lab">Look ↑ ↓</span><span class="val" id="camPanYVal">0</span></div>
+  <input type="range" id="camPanYSlider" min="-12" max="18" step="1" value="0">
+  <button id="camResetBtn">↺ Reset camera</button>
+  <p class="camNote">Wheel zooms too · R resets</p>
 </div>
 
 <div id="miniMap"><canvas id="miniCv" width="128" height="128"></canvas></div>
@@ -130,19 +156,18 @@
         <button data-v="0">Calm</button><button data-v="1">Rough</button><button data-v="2">Storm</button><button data-v="3">Hurricane</button></div></div>
       <div class="seaRow"><span class="lab">Wave height</span><div class="seg" id="segWave">
         <button data-v="0.7">Low</button><button data-v="1">Normal</button><button data-v="1.6">Huge</button></div></div>
-      <div class="seaRow"><span class="lab">Rain</span><div class="seg" id="segRain">
-        <button data-v="0.5">Light</button><button data-v="1">Normal</button><button data-v="1.8">Storm</button></div></div>
       <div class="seaRow"><span class="lab">Hazards</span><div class="seg" id="segHazard">
         <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
+    <button class="ghostBtn" id="camBtnStart">🎥 Camera</button><br>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v10.3</div>
+    <div class="ver">v10.4</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
     </div>
     <p class="keys">Steer: joystick, drag, or ← → / A D &nbsp;·&nbsp; Throttle: hold joystick ↑ or W / S — release to drift to idle &nbsp;·&nbsp; Boost: hold BOOST or Shift &nbsp;·&nbsp; Pause: P<br>
-      Wheel: zoom &nbsp;·&nbsp; Right-drag: free look<br>
+      Wheel: zoom &nbsp;·&nbsp; Right-drag: free look &nbsp;·&nbsp; 🎥 Camera panel: zoom &amp; look in any direction, R resets the camera<br>
       Rogue wave −12 &nbsp;·&nbsp; Whirlpool −8 &nbsp;·&nbsp; Debris −6 &nbsp;·&nbsp; Supply crate +10</p>
   </div>
 </div>
@@ -334,12 +359,12 @@ const numTex125 = hullNumTex('125');
 
 // ---------- stages / settings ----------
 // One sea-state parameter drives everything: wind -> wave height/length/period,
-// fog, sky, rain, foam and camera shake all follow it (War Thunder preset style).
+// fog, sky, foam and camera shake all follow it (War Thunder preset style).
 const STAGES = [
-  {name:'Calm Seas', desc:'The fleet sails out. Hold formation.', speed:8,  amp:0.30, rain:0,   hazard:0.25, wind:5,  sky:0x9fc3d8, sea:0x1a5a78, fogFar:380, sunI:1.15},
-  {name:'Rough Seas', desc:'Swell building. Watch the crests.',      speed:10, amp:0.55, rain:80,  hazard:0.40, wind:10, sky:0x7e9db4, sea:0x174a64, fogFar:300, sunI:1.0},
-  {name:'Storm', desc:'Rain, lightning, rogue waves.',               speed:12, amp:0.90, rain:200, hazard:0.60, wind:15, sky:0x5a7286, sea:0x12394e, fogFar:220, sunI:0.85},
-  {name:'Hurricane', desc:'Everything the sea has. Hold on.',        speed:14, amp:1.30, rain:380, hazard:0.85, wind:20, sky:0x39434e, sea:0x0d2839, fogFar:150, sunI:0.6},
+  {name:'Calm Seas', desc:'The fleet sails out. Hold formation.', speed:8,  amp:0.30, hazard:0.25, wind:5,  sky:0x9fc3d8, sea:0x1a5a78, fogFar:380, sunI:1.15},
+  {name:'Rough Seas', desc:'Swell building. Watch the crests.',      speed:10, amp:0.55, hazard:0.40, wind:10, sky:0x7e9db4, sea:0x174a64, fogFar:300, sunI:1.0},
+  {name:'Storm', desc:'Lightning, rogue waves.',                     speed:12, amp:0.90, hazard:0.60, wind:15, sky:0x5a7286, sea:0x12394e, fogFar:220, sunI:0.85},
+  {name:'Hurricane', desc:'Everything the sea has. Hold on.',        speed:14, amp:1.30, hazard:0.85, wind:20, sky:0x39434e, sea:0x0d2839, fogFar:150, sunI:0.6},
 ];
 const STAGE_AT = [0, 400, 1100, 2100];
 
@@ -347,7 +372,9 @@ const savedSettings = JSON.parse(localStorage.getItem('hurricane_fleet_settings'
 const settings = {
   startStage: savedSettings.startStage ?? 0,
   wave: savedSettings.wave ?? 1,
-  rain: savedSettings.rain ?? 1,
+  camZoom: Math.max(0.35, Math.min(2.5, savedSettings.camZoom ?? 1)),
+  camPanX: Math.max(-30, Math.min(30, savedSettings.camPanX ?? 0)),
+  camPanY: Math.max(-12, Math.min(18, savedSettings.camPanY ?? 0)),
   hazard: savedSettings.hazard ?? 1,
 };
 function wireSeg(id, key, parse){
@@ -363,7 +390,6 @@ function wireSeg(id, key, parse){
 }
 wireSeg('segStart', 'startStage', v => parseInt(v, 10));
 wireSeg('segWave', 'wave', v => parseFloat(v));
-wireSeg('segRain', 'rain', v => parseFloat(v));
 wireSeg('segHazard', 'hazard', v => parseFloat(v));
 
 const store = JSON.parse(localStorage.getItem('hurricane_fleet_v1') || '{}');
@@ -398,6 +424,8 @@ const WAVES = [
   {lam: 9,   amp: 0.12, q: 0.75, dx: 0.55,  dz: 0.83,  ph: 4.0},
   {lam: 7,   amp: 0.15, q: 0.85, dx: -0.60, dz: 0.80,  ph: 5.2},
   {lam: 3.5, amp: 0.07, q: 0.90, dx: 0.80,  dz: 0.60,  ph: 2.3},
+  {lam: 5,   amp: 0.10, q: 0.85, dx: -0.45, dz: 0.89,  ph: 1.2},
+  {lam: 2.2, amp: 0.05, q: 0.90, dx: 0.70,  dz: 0.71,  ph: 3.7},
 ];
 WAVES.forEach(w => { w.k = 2 * Math.PI / w.lam; w.w = Math.sqrt(G_GAME * w.k); w.bdx = w.dx; w.bdz = w.dz; });
 const WAVE_AMP_SUM = WAVES.reduce((a, w) => a + w.amp, 0);
@@ -488,6 +516,43 @@ function waveSlope(x, z, t){
     sx: (waveHeight(x + e, z, t) - waveHeight(x - e, z, t)) / (2 * e),
     sz: (waveHeight(x, z + e, t) - waveHeight(x, z - e, t)) / (2 * e),
   };
+}
+// v10.4: hydrodynamic interaction between ships — a bow wave shoves a
+// nearby hull sideways, and two hulls running close abeam suck gently
+// toward each other (Bernoulli). Small forces; they make close formation
+// sailing feel alive instead of ships passing through each other's water.
+// Skipped during a U-turn, when the formation is carried rigidly.
+function shipInteractions(dt){
+  if(state.uturnActive) return;
+  for(let i = 0; i < fleet.length; i++){
+    const a = fleet[i];
+    if(!a.alive) continue;
+    for(let j = i + 1; j < fleet.length; j++){
+      const b = fleet[j];
+      if(!b.alive) continue;
+      const dx = b.x - a.x, dz = b.z - a.z;
+      const d = Math.hypot(dx, dz);
+      const minD = (a.group.userData.len + b.group.userData.len) * 0.5 + 26;
+      if(d > minD || d < 0.01) continue;
+      const nx = dx / d, nz = dz / d;
+      const prox = 1 - d / minD;
+      // bow-wave shove, away from the faster ship's bow
+      const spd = Math.max(a.motion.forwardSpeed, b.motion.forwardSpeed);
+      if(spd > 4){
+        const acc = 0.5 * (spd / 14) * prox;
+        b.motion.vx += nx * acc * dt; b.motion.vz += nz * acc * dt;
+        a.motion.vx -= nx * acc * dt * 0.5; a.motion.vz -= nz * acc * dt * 0.5;
+      }
+      // close-abeam suction: parallel hulls at speed draw together
+      let dh = a.heading - b.heading;
+      dh = ((dh + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+      if(Math.abs(dh) < 0.3 && a.motion.forwardSpeed > 5 && b.motion.forwardSpeed > 5){
+        const acc = 0.25 * prox;
+        b.motion.vx -= nx * acc * dt; b.motion.vz -= nz * acc * dt;
+        a.motion.vx += nx * acc * dt; a.motion.vz += nz * acc * dt;
+      }
+    }
+  }
 }
 // open ocean: a detailed patch that follows the flagship, snapped to the 8-unit
 // vertex grid so the wave field stays fixed in world space, not glued to the ship
@@ -1170,6 +1235,10 @@ class ShipMotion {
     this.x += (this.vx + (input.currentX ?? 0)) * dt;
     this.z += (this.vz + (input.currentZ ?? 0)) * dt;
     this.sampleWaves(input.time ?? 0);
+    // v10.4: surf the wave face — bow-down on a downslope accelerates the
+    // hull, bow-up climbing a crest slows her (pitch is from sampleWaves)
+    const surfA = -Math.sin(this.pitch) * 4.0 * dt;
+    this.vx += f.x * surfA; this.vz += f.z * surfA;
     if ((this.prevRudder === 0 && this.rudder !== 0) || Math.sign(this.rudder) !== Math.sign(this.prevRudder)) this.kickT = 0;
     this.kickT += dt;
     this.prevRudder = this.rudder;
@@ -1192,7 +1261,7 @@ class ShipMotion {
 // centres it horizontally and drops the waterline onto y = 0.
 const MODEL_CACHE = {};
 const MODEL_SPEC = {
-  // v10.0: lengths up ~10% (carrier 48, battleship 40, destroyer 23) so
+  // v10.4: lengths up again (carrier 58, battleship 48, destroyer 28) so
   // the real models have room to show their detail. The formation offsets
   // the formation offsets keep the fleet compact so all seven ships
   // are readable in one frame.
@@ -1201,9 +1270,9 @@ const MODEL_SPEC = {
   // the bow astern; this flips the bow forward while keeping the ship
   // upright. (A plain rotateX(+90) is a reflection, det -1 — it mirrored the
   // model and left the battleships floating in the sky in v9.8.)
-  carrier:    {uri: KENNEDY_GLB, len: 48, wid: 10.5, waterline: 3.25, rot: null},
-  battleship: {uri: NJ_GLB,      len: 40, wid: 7.3,  waterline: 7.4,  rot: [-1,0,0, 0,0,1, 0,1,0]},
-  destroyer:  {uri: DDG_GLB,     len: 23, wid: 4.8,  waterline: 627,  rot: [0,1,0, 0,0,1, 1,0,0]},
+  carrier:    {uri: KENNEDY_GLB, len: 58, wid: 12.6, waterline: 3.25, rot: null},
+  battleship: {uri: NJ_GLB,      len: 48, wid: 8.8,  waterline: 7.4,  rot: [-1,0,0, 0,0,1, 0,1,0]},
+  destroyer:  {uri: DDG_GLB,     len: 28, wid: 5.8,  waterline: 627,  rot: [0,1,0, 0,0,1, 1,0,0]},
 };
 let GLTFLoader = null, MeshoptDecoder = null;
 try {
@@ -1262,16 +1331,30 @@ const fleet = [
   // are the cruiser equivalents on the flanks, slightly ahead; four Burke
   // destroyers screen it — two forward pickets, two on the aft quarters.
   {type:'carrier',    label:'Carrier',    dx:0,     dz:0,    hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4, freeboard:2.2},
-  {type:'battleship', label:'Battleship', dx:-24,   dz:-6,   hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:2.0},
-  {type:'battleship', label:'Battleship', dx:24,    dz:-6,   hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:2.0},
-  {type:'destroyer',  label:'Destroyer',  dx:-35,   dz:-39,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.8},
-  {type:'destroyer',  label:'Destroyer',  dx:35,    dz:-39,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.8},
-  {type:'destroyer',  label:'Destroyer',  dx:-32,   dz:24,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.8},
-  {type:'destroyer',  label:'Destroyer',  dx:32,    dz:24,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.8},
+  {type:'battleship', label:'Battleship', dx:-26,   dz:-7,   hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:2.0},
+  {type:'battleship', label:'Battleship', dx:26,    dz:-7,   hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:2.0},
+  {type:'destroyer',  label:'Destroyer',  dx:-38,   dz:-42,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.8},
+  {type:'destroyer',  label:'Destroyer',  dx:38,    dz:-42,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.8},
+  {type:'destroyer',  label:'Destroyer',  dx:-35,   dz:26,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.8},
+  {type:'destroyer',  label:'Destroyer',  dx:35,    dz:26,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.8},
 ];
 fleet.forEach(s => {
   s.group = makeShip(s.type);
   s.group.position.set(s.dx, 0, s.dz);
+  // v10.4: navigation lights — port red, starboard green, white masthead.
+  // Real ships carry them; they read at dusk and in the hurricane murk.
+  {
+    const L = s.group.userData.len, W = s.group.userData.wid;
+    const mastH = s.type === 'carrier' ? 9 : s.type === 'battleship' ? 7 : 5;
+    const mkLight = (color, x, y, z) => {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 8),
+        new THREE.MeshBasicMaterial({color, fog: false}));
+      m.position.set(x, y, z); s.group.add(m);
+    };
+    mkLight(0xff2a2a, -W / 2, 2.5, -L * 0.30);
+    mkLight(0x2aff5a, W / 2, 2.5, -L * 0.30);
+    mkLight(0xfff6d8, 0, mastH, 0);
+  }
   s.x = s.dx; s.z = s.dz; s.heading = 0; s.y = 0;
   const mSpec = s.type === 'carrier' ? { mass: 2.0, thrustForce: 28, rudderTurnSpeed: 0.6 }
     : s.type === 'battleship' ? { mass: 1.5, thrustForce: 21, rudderTurnSpeed: 0.65 }
@@ -1380,36 +1463,7 @@ function updateSprites(dt){
   });
 }
 
-// ---------- rain, lightning, clouds, sun ----------
-const RAIN_MAX = 400;
-const rainGeo = new THREE.BufferGeometry();
-const rainPos = new Float32Array(RAIN_MAX * 6);
-const rainSeed = [];
-for(let i = 0; i < RAIN_MAX; i++){
-  rainSeed.push({x: (Math.random() - 0.5) * 180, y: Math.random() * 60, z: -200 + Math.random() * 280, l: 1.5 + Math.random() * 2});
-}
-rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
-const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({color: 0xbed7f0, transparent: true, opacity: 0.35}));
-rain.frustumCulled = false;
-scene.add(rain);
-let rainVisible = 0;
-function updateRain(dt){
-  const n = rainVisible;
-  const f = flagship() || fleet[0];
-  for(let i = 0; i < RAIN_MAX; i++){
-    const r = rainSeed[i];
-    if(i < n){
-      r.y -= (34 + state.stage * 12) * dt;
-      r.x -= (6 + state.stage * 4) * dt;
-      if(r.y < 0){ r.y = 55 + Math.random() * 8; r.x = (Math.random() - 0.5) * 180; r.z = -200 + Math.random() * 280; }
-      rainPos[i * 6] = r.x + f.x; rainPos[i * 6 + 1] = r.y; rainPos[i * 6 + 2] = r.z + f.z;
-      rainPos[i * 6 + 3] = r.x - 0.6 + f.x; rainPos[i * 6 + 4] = r.y - r.l; rainPos[i * 6 + 5] = r.z + f.z;
-    } else {
-      rainPos[i * 6 + 1] = -999; rainPos[i * 6 + 4] = -999;
-    }
-  }
-  rainGeo.attributes.position.needsUpdate = true;
-}
+// ---------- lightning, clouds, sun ----------
 let bolt = null;
 function makeBolt(){
   const f = flagship() || fleet[0];
@@ -1480,7 +1534,9 @@ const state = {
   hazards: [], pickups: [], spawnT: 0, pickupT: 0, boltT: 0, flashT: 0,
   speedLoss: 1, kickT: 99, prevRudder: 0,
   rogueDone: false, rogueTimer: -1, rogueWarned: false,
-  camZoom: 1, freeLook: 0, freeLookActive: false,
+  camZoom: settings.camZoom ?? 1, freeLook: 0, freeLookActive: false,
+  camPanX: settings.camPanX ?? 0, camPanY: settings.camPanY ?? 0,
+  capT: 0,
   camHeading: 0, camBank: 0, headingRate: 0, camZfSm: 0,
   lastWaveToast: -99,
   windDir: 0, curX: 0, curZ: 0, cog: 0,
@@ -1517,7 +1573,6 @@ function applyStage(i){
   oceanUniforms.uSky.value.setHex(st.sky);
   oceanUniforms.uSunI.value = st.sunI;
   ampTarget = st.amp * settings.wave;
-  rainVisible = Math.round(st.rain * settings.rain);
   sunGlow.material.opacity = i === 0 ? 0.8 : i === 1 ? 0.5 : i === 2 ? 0.2 : 0.08;
 }
 
@@ -1565,8 +1620,48 @@ window.addEventListener('blur', () => { state.freeLookActive = false; state.drag
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
-  state.camZoom = Math.max(0.7, Math.min(1.5, state.camZoom + e.deltaY * 0.0006));
+  state.camZoom = Math.max(0.35, Math.min(2.5, state.camZoom + e.deltaY * 0.0006));
+  saveCamera(); syncCameraUI();
 }, {passive: false});
+// ---------- camera customisation (v10.4) ----------
+// The camera POSITION stays fixed behind the fleet (the chase anchor never
+// moves). What the user changes is the zoom (distance along that fixed axis,
+// shown as a magnification: 1.0x default, up to ~2.9x in, down to 0.4x out)
+// and the look direction (pan left/right, up/down), so they can zoom in
+// toward any part of the scene. Reset restores the defaults.
+function clampCam(){
+  state.camZoom = Math.max(0.35, Math.min(2.5, state.camZoom));
+  state.camPanX = Math.max(-30, Math.min(30, state.camPanX));
+  state.camPanY = Math.max(-12, Math.min(18, state.camPanY));
+}
+function saveCamera(){
+  clampCam();
+  settings.camZoom = state.camZoom; settings.camPanX = state.camPanX; settings.camPanY = state.camPanY;
+  try{ localStorage.setItem('hurricane_fleet_settings', JSON.stringify(settings)); }catch(e){}
+}
+function syncCameraUI(){
+  const z = $('camZoomSlider'), zx = $('camPanXSlider'), zy = $('camPanYSlider');
+  if(z) z.value = (1 / state.camZoom).toFixed(2);
+  if(zx) zx.value = state.camPanX;
+  if(zy) zy.value = state.camPanY;
+  const zv = $('camZoomVal'); if(zv) zv.textContent = (1 / state.camZoom).toFixed(1) + '×';
+  const xv = $('camPanXVal'); if(xv) xv.textContent = (state.camPanX > 0 ? '+' : '') + Math.round(state.camPanX);
+  const yv = $('camPanYVal'); if(yv) yv.textContent = (state.camPanY > 0 ? '+' : '') + Math.round(state.camPanY);
+}
+function resetCamera(){
+  state.camZoom = 1; state.camPanX = 0; state.camPanY = 0; state.freeLook = 0; state.camZfSm = 0;
+  saveCamera(); syncCameraUI();
+}
+function toggleCamPanel(){ $('camPanel').classList.toggle('hidden'); }
+$('camBtn').addEventListener('click', toggleCamPanel);
+$('camBtnStart').addEventListener('click', toggleCamPanel);
+$('camResetBtn').addEventListener('click', resetCamera);
+$('camZoomSlider').addEventListener('input', e => { state.camZoom = 1 / parseFloat(e.target.value); saveCamera(); syncCameraUI(); });
+$('camPanXSlider').addEventListener('input', e => { state.camPanX = parseFloat(e.target.value); saveCamera(); syncCameraUI(); });
+$('camPanYSlider').addEventListener('input', e => { state.camPanY = parseFloat(e.target.value); saveCamera(); syncCameraUI(); });
+$('camZoomIn').addEventListener('click', () => { state.camZoom = Math.max(0.35, state.camZoom - 0.15); saveCamera(); syncCameraUI(); });
+$('camZoomOut').addEventListener('click', () => { state.camZoom = Math.min(2.5, state.camZoom + 0.15); saveCamera(); syncCameraUI(); });
+syncCameraUI();
 // virtual joystick: X = rudder, Y = engine throttle (push up for more speed)
 const joyEl = $('joy'), joyKnob = $('joyKnob');
 const JOY_R = 44;
@@ -1589,6 +1684,7 @@ window.addEventListener('keydown', e => {
   state.keys[e.key] = true;
   if(e.key === 'Shift') state.boost = true;
   if(e.key === 'p' || e.key === 'P') togglePause();
+  if(e.key === 'r' || e.key === 'R') resetCamera();
   if(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '].includes(e.key)) e.preventDefault();
 });
 window.addEventListener('keyup', e => {
@@ -1742,6 +1838,7 @@ function startGame(){
   $('startScreen').classList.add('hidden');
   $('overScreen').classList.add('hidden');
   $('pauseScreen').classList.add('hidden');
+  $('camPanel').classList.add('hidden');
   showStage(state.stage);
   try{ ac().resume(); }catch(e){}
 }
@@ -1782,9 +1879,16 @@ function drawMinimap(){
     ctx.fillStyle = col;
     ctx.beginPath(); ctx.arc(pp[0], pp[1], r, 0, 6.29); ctx.fill();
   };
+  // v10.4: solution quality (Cold Waters / Atlantic Fleet) — a contact is
+  // a sharp fix up close and a faint estimate at range, fainter still in
+  // Storm/Hurricane, so the minimap reads as tracking, not omniscience
   state.hazards.forEach(h => {
+    const dH = Math.hypot(h.x - f.x, h.z - f.z);
+    const q = Math.max(0.2, Math.min(1, (1.3 - dH / 300) * (state.stage >= 2 ? 0.7 : 1)));
+    ctx.globalAlpha = q;
     dot(h.x, h.z, h.kind === 'wave' ? 4 : 2.5,
       h.kind === 'wave' ? '#7fb8e8' : '#a08050');
+    ctx.globalAlpha = 1;
   });
   state.pickups.forEach(pp => dot(pp.x, pp.z, 2.5, '#7dffb0'));
   if(beacon){
@@ -1908,7 +2012,12 @@ function blastImpulse(x, z, power){
     s.motion.headingRate += (Math.random() - 0.5) * 0.05 * Math.min(1, fall / 6);
   });
 }
-function damageShip(ship, dmg, hx, hz){
+// Atlantic Fleet rule (v10.4): only hits at/below the waterline flood a
+// compartment. A crest washing the deck does structural damage and can start
+// a fire, but it does not breach a compartment or sink the ship — sinking
+// has to come from the waterline. Collisions and debris are waterline hits;
+// rogue-wave crests are not (passed as belowWaterline = false).
+function damageShip(ship, dmg, hx, hz, belowWaterline = true){
   if(!ship.alive) return;
   ship.hp -= dmg;
   state.shake = Math.min(18, state.shake + 10);
@@ -1920,7 +2029,7 @@ function damageShip(ship, dmg, hx, hz){
   // rupture the nearest watertight compartment (v10.1): the hit's position
   // along the hull picks the compartment — Forward Magazine at the bow,
   // Bow, Mid-Port/Starboard, Engine Room, Stern at the stern
-  {
+  if(belowWaterline){
     const along = (hx - ship.x) * Math.sin(ship.heading) - (hz - ship.z) * Math.cos(ship.heading);
     const across = (hx - ship.x) * Math.cos(ship.heading) + (hz - ship.z) * Math.sin(ship.heading);
     const L = ship.group.userData.len;
@@ -1938,13 +2047,15 @@ function damageShip(ship, dmg, hx, hz){
   burst(ship.x, 2, ship.z, 12, [1, 0.6, 0.2], 3, 3);
   const s = spawnSprite(ship.x, 3, ship.z, 0.9, 10, 10, 0.4, 0x666666, 0.55);
   s.vy = 4;
-  // compartment breach: flooding on the hit side and end (War Thunder grammar)
   const side = Math.sign(hx - ship.x) || 1;
   const end = Math.sign(hz - ship.z) || 1;
-  ship.floodSide = Math.max(-1, Math.min(1, ship.floodSide + side * 0.28));
-  ship.floodEnd = Math.max(-1, Math.min(1, ship.floodEnd + end * 0.22));
-  ship.floodTotal = Math.min(1, ship.floodTotal + 0.16);
-  if(dmg >= 12) ship.floodDestroyed = true; // rogue-wave breach: unrepairable
+  if(belowWaterline){
+    // compartment breach: flooding on the hit side and end (War Thunder grammar)
+    ship.floodSide = Math.max(-1, Math.min(1, ship.floodSide + side * 0.28));
+    ship.floodEnd = Math.max(-1, Math.min(1, ship.floodEnd + end * 0.22));
+    ship.floodTotal = Math.min(1, ship.floodTotal + 0.16);
+    if(dmg >= 12) ship.floodDestroyed = true; // hard breach: unrepairable
+  }
   // a hard hit can start a fire (War on the Sea: fires spread and burn a
   // ship down after the hit); a very hard hit in the forward magazine is a
   // detonation risk
@@ -2105,6 +2216,29 @@ function update(dt){
   fleet.forEach(s => {
     if(!s.alive || s === flag) return;
     const m = s.motion;
+    // v10.4: rigid-body formation turn — during a U-turn the escorts do NOT
+    // steer by rudder. The same rudder gives each ship a different yaw rate
+    // (turn rate scales with each ship's own speed), so the formation sheared
+    // and the v10.3 check sank the fleet in its own turn. Instead each escort
+    // is carried around the flagship on its slot: the slot rotates with the
+    // flagship's heading, the escort eases onto it, and its velocity is the
+    // flagship's, so the relative velocity — and collision energy — is ~0.
+    // Normal Arrive resumes when the turn ends.
+    if(state.uturnActive){
+      const c0 = Math.cos(flag.heading), sn0 = Math.sin(flag.heading);
+      const tx0 = flag.x + s.dx * c0 - s.dz * sn0;
+      const tz0 = flag.z + s.dx * sn0 + s.dz * c0;
+      const k0 = 1 - Math.exp(-dt * 4);
+      m.x += (tx0 - m.x) * k0; m.z += (tz0 - m.z) * k0;
+      let dh0 = flag.heading - m.heading;
+      dh0 = ((dh0 + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+      m.heading += dh0 * k0;
+      m.vx = flag.motion.vx; m.vz = flag.motion.vz;
+      m.headingRate = flag.motion.headingRate;
+      m.forwardSpeed = flag.motion.forwardSpeed; m.lateralSpeed = 0;
+      s.x = m.x; s.z = m.z; s.heading = m.heading;
+      return;
+    }
     const c = Math.cos(flag.heading), sn = Math.sin(flag.heading);
     let tx = flag.x + s.dx * c - s.dz * sn;
     let tz = flag.z + s.dx * sn + s.dz * c;
@@ -2158,16 +2292,11 @@ function update(dt){
     const av = m.avoid(obstacles, 26);
     rudderIn = Math.max(-1, Math.min(1, rudderIn + av.bias));
     let thrustIn = Math.max(0, Math.min(1, (desSpeed - m.forwardSpeed) / 5));
-    // v10.3: formation turn — during a U-turn the escorts turn WITH the
-    // flagship instead of chasing slots that swing 180 deg underneath them.
-    // Matching the flagship's rudder and throttle keeps the formation
-    // rotating as a rigid body, so the escorts stop cutting across each
-    // other and the flagship mid-turn (the v10.2 check sank the fleet in
-    // its own turn). The normal Arrive resumes once the turn ends.
-    if(state.uturnActive){
-      rudderIn = inputRudder;
-      thrustIn = throttleInput;
-    }
+    // v10.4: at rest, an escort already on its slot does not motor —
+    // wave drift plus slot-chasing is what ground hulls together at 0 kn
+    if(state.speed < 1 && distToSlot < 4) thrustIn = 0;
+    // (v10.4: U-turns are rigid-body now — see the top of this loop. The
+    // v10.3 rudder-matching is gone: same rudder, different yaw rates.)
     // v10.2: catch-up boost — an escort far from its slot gets extra speed
     // so it closes the gap and the formation tightens up after a turn
     // instead of staying loose and scattered
@@ -2226,33 +2355,45 @@ function update(dt){
       const ma = shipMass(a), mb = shipMass(b);
       const invMa = 1 / ma, invMb = 1 / mb;
       const invSum = invMa + invMb;
-      // inelastic impulse: low restitution, so the ships do not bounce.
-      // j = -(1+e) * vn / (invMa + invMb); applied along the normal, the
-      // lighter ship takes the bigger velocity change.
-      const e = PHYSICS.restitution;
-      const jn = -(1 + e) * vn / invSum;
-      a.motion.vx -= hit.nx * jn * invMa; a.motion.vz -= hit.nz * jn * invMa;
-      b.motion.vx += hit.nx * jn * invMb; b.motion.vz += hit.nz * jn * invMb;
-      // scraping friction: a glancing broadside scrape grinds the tangential
-      // velocity down instead of bouncing off it (mu ~ 0.3)
-      const jt = -vt * 0.3 / invSum;
-      a.motion.vx -= tx * jt * invMa; a.motion.vz -= tz * jt * invMa;
-      b.motion.vx += tx * jt * invMb; b.motion.vz += tz * jt * invMb;
+      // v10.4: only an APPROACHING pair gets an impulse (vn < 0). The old code
+      // applied it unconditionally — for a separating pair the formula runs
+      // backwards and pumps energy in, so resting hulls ground each other
+      // faster every frame until the closing speed tripped the damage guard.
+      // That is what sank the fleet at rest in the v10.3 check. A separating
+      // pair is only separated, by the positional correction below.
+      let jn = 0;
+      if(vn < 0){
+        // inelastic impulse: low restitution, so the ships do not bounce.
+        // j = -(1+e) * vn / (invMa + invMb); applied along the normal, the
+        // lighter ship takes the bigger velocity change.
+        const e = PHYSICS.restitution;
+        jn = -(1 + e) * vn / invSum;
+        a.motion.vx -= hit.nx * jn * invMa; a.motion.vz -= hit.nz * jn * invMa;
+        b.motion.vx += hit.nx * jn * invMb; b.motion.vz += hit.nz * jn * invMb;
+        // scraping friction: a glancing broadside scrape grinds the tangential
+        // velocity down instead of bouncing off it (mu ~ 0.3)
+        const jt = -vt * 0.3 / invSum;
+        a.motion.vx -= tx * jt * invMa; a.motion.vz -= tz * jt * invMa;
+        b.motion.vx += tx * jt * invMb; b.motion.vz += tz * jt * invMb;
+      }
       // positional correction so the hulls do not stay interpenetrated
       const push = hit.depth * 0.8;
       a.x -= hit.nx * push * (invMa / invSum);
       a.z -= hit.nz * push * (invMa / invSum);
       b.x += hit.nx * push * (invMb / invSum);
       b.z += hit.nz * push * (invMb / invSum);
-      // off-centre torques: the contact point is rarely on the centreline,
-      // so the blow swings the struck bow/stern (yaw) and heels the ship
-      // away from the blow (roll). Lever arm = along-hull offset of the hit.
-      const leverA = (hit.x - a.x) * Math.sin(a.heading) - (hit.z - a.z) * Math.cos(a.heading);
-      const leverB = (hit.x - b.x) * Math.sin(b.heading) - (hit.z - b.z) * Math.cos(b.heading);
-      a.motion.headingRate += -leverA * jn * 0.004 * invMa;
-      b.motion.headingRate += leverB * jn * 0.004 * invMb;
-      a.heelKick = (a.heelKick || 0) + Math.sign(leverA || 1) * 0.12 * Math.min(1, closing / 8);
-      b.heelKick = (b.heelKick || 0) + Math.sign(leverB || 1) * 0.12 * Math.min(1, closing / 8);
+      // torques and heel only on a real (approaching) impact, as above
+      if(vn < 0){
+        // off-centre torques: the contact point is rarely on the centreline,
+        // so the blow swings the struck bow/stern (yaw) and heels the ship
+        // away from the blow (roll). Lever arm = along-hull offset of the hit.
+        const leverA = (hit.x - a.x) * Math.sin(a.heading) - (hit.z - a.z) * Math.cos(a.heading);
+        const leverB = (hit.x - b.x) * Math.sin(b.heading) - (hit.z - b.z) * Math.cos(b.heading);
+        a.motion.headingRate += -leverA * jn * 0.004 * invMa;
+        b.motion.headingRate += leverB * jn * 0.004 * invMb;
+        a.heelKick = (a.heelKick || 0) + Math.sign(leverA || 1) * 0.12 * Math.min(1, closing / 8);
+        b.heelKick = (b.heelKick || 0) + Math.sign(leverB || 1) * 0.12 * Math.min(1, closing / 8);
+      }
       // one impact per pair every 1.5 s — the shove above keeps the hulls
       // from grinding, the cooldown keeps the damage from repeating
       const key = i + ':' + j;
@@ -2280,6 +2421,8 @@ function update(dt){
     }
   }
 
+
+  shipInteractions(dt);
 
   // per-ship physics: buoyancy, flooding, list/trim, smoke, fire, wakes
   fleet.forEach(s => {
@@ -2642,7 +2785,7 @@ function update(dt){
       }
       if(hit){
         h.hitShips.add(s);
-        damageShip(s, h.kind === 'wave' ? 12 : 6, h.x, h.z);
+        damageShip(s, h.kind === 'wave' ? 12 : 6, h.x, h.z, h.kind !== 'wave');
         if(h.kind === 'wave'){
           // the crest shoves the ship sideways and heels it over
           const dirx = h.dirx || 0, dirz = h.dirz === undefined ? 1 : h.dirz;
@@ -2669,13 +2812,25 @@ function update(dt){
   });
   state.pickups = state.pickups.filter(p => !p.got);
 
-  // rain, lightning, clouds
-  updateRain(dt);
+  // lightning, clouds
   clouds.forEach(c => {
     c.position.x += 0.6 * dt;
     if(c.position.x - flag.x > 200) c.position.x -= 400;
     if(c.position.x - flag.x < -200) c.position.x += 400;
   });
+  // v10.4: whitecaps — in Storm/Hurricane, foam patches burst on the
+  // steepest crests near the fleet (the worse the weather, the more
+  // broken water, Cold Waters' sea-state feel)
+  state.capT += dt;
+  if(state.stage >= 2 && state.capT > 0.12){
+    state.capT = 0;
+    const cx = flag.x + (Math.random() - 0.5) * 320;
+    const cz = flag.z + (Math.random() - 0.5) * 320;
+    if(waveHeight(cx, cz, state.t) > ampCur * 1.05){
+      const cap = spawnSprite(cx, waveHeight(cx, cz, state.t) + 0.3, cz, 2.5, 6 + Math.random() * 6, 3, 0.5, 0xffffff, 0.35);
+      cap.vy = 0.4;
+    }
+  }
   if(state.stage >= 2){
     state.boltT += dt;
     if(state.boltT > 6 + Math.random() * 6){
@@ -2755,7 +2910,7 @@ function fleetFits(tx, ty, tz, lx, ly, lz, tanH, tanV){
 }
 
 // ---------- camera (Asphalt action-mode chase: rigidly behind the flagship's
-// stern in the fleet's frame; wheel zoom + RMB free-look, WoWS style) ----------
+// stern in the fleet's frame; custom zoom + look pan + RMB free-look, WoWS style) ----------
 function updateCamera(dt){
   const flag = flagship() || fleet[0];
   const aspect = window.innerWidth / window.innerHeight;
@@ -2796,20 +2951,29 @@ function updateCamera(dt){
   // look along the camera's own (trailing) heading, not the flagship's, so a
   // turn reads as a turn: the bow visibly swings away and the ship heads off
   // in a new direction instead of always pointing "up" the screen (v8.3)
-  const lx = flag.x + chx * lookAhead, lz = flag.z + chz * lookAhead;
+  // v10.4 camera customisation: the camera position stays locked behind the
+  // fleet — only the look direction pans (left/right, up/down), so the user
+  // zooms in toward any part of the scene from a fixed position.
+  const lx = flag.x + chx * lookAhead + crx * state.camPanX, lz = flag.z + chz * lookAhead + crz * state.camPanX;
+  const lookY = 2 + state.camPanY;
   let fitD = camZ;
   for(let it = 0; it < 12; it++){
     const tY = camY * (fitD / camZ) + Math.sin(state.t * 0.5) * 0.4;
     const tX = flag.x - chx * fitD * Math.cos(a) + crx * fitD * Math.sin(a) * 0.55;
     const tZ = flag.z - chz * fitD * Math.cos(a) + crz * fitD * Math.sin(a) * 0.55;
-    if(fleetFits(tX, tY, tZ, lx, 2, lz, tanH, tanV)) break;
+    if(fleetFits(tX, tY, tZ, lx, lookY, lz, tanH, tanV)) break;
     fitD *= 1.15;
-    if(fitD >= camZ * 1.3){ fitD = camZ * 1.3; break; }
+    // v10.4: a deliberate close zoom accepts cropping — the auto fit must
+    // not pull the camera back out past the user's zoom (only when zoomed
+    // out does the fit still add room, up to 1.3x).
+    const fitCap = state.camZoom < 1 ? camZ : camZ * 1.3;
+    if(fitD >= fitCap){ fitD = fitCap; break; }
   }
   // smooth the fit distance: snap out instantly when the fleet needs room,
   // ease back in slowly so the camera does not pulse in and out of turns
   if(fitD > state.camZfSm) state.camZfSm = fitD;
   else state.camZfSm += (fitD - state.camZfSm) * (1 - Math.exp(-dt * 2.5));
+  if(state.camZoom < 1) state.camZfSm = camZ; // v10.4: a stored fit pull-back must not defeat a close zoom
   const camZf = Math.max(camZ, state.camZfSm);
   const camYf = camY * (camZf / camZ);
   const tx = flag.x - chx * camZf * Math.cos(a) + crx * camZf * Math.sin(a) * 0.55;
@@ -2832,7 +2996,7 @@ function updateCamera(dt){
   // look well ahead of the flagship along its course, so the flagship sits
   // low in frame and you see where you are going; the camera banks gently
   // into the turn
-  camera.lookAt(flag.x + chx * lookAhead, 2, flag.z + chz * lookAhead);
+  camera.lookAt(lx, lookY, lz);
   // gentler bank (v8.3): the old 0.07 tilt plus the wide swing made turns
   // feel dramatic; a small bank keeps the horizon steadier
   const bankTarget = -state.rudder * 0.03 * speedN;
