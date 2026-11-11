@@ -161,7 +161,7 @@
     </div>
     <button class="ghostBtn" id="camBtnStart">🎥 Camera</button><br>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v10.5</div>
+    <div class="ver">v10.5b</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -2341,18 +2341,23 @@ function update(dt){
       const a = fleet[i], b = fleet[j];
       if(!a.alive || !b.alive) continue;
       const cA = hullCircles(a), cB = hullCircles(b);
+      // v10.5b: take the DEEPEST overlap, not the first pair found. With
+      // five circles per hull, a shallow bow graze can be found first while
+      // a deeper mid-hull overlap exists in the same frame — and the graze
+      // gate would then throw a real impact out as a brush-past.
       let hit = null;
       for(const ca of cA){
         for(const cb of cB){
           const dx = cb.x - ca.x, dz = cb.z - ca.z;
           const d = Math.hypot(dx, dz);
           if(d < ca.r + cb.r && d > 0.01){
-            hit = {x: (ca.x + cb.x) / 2, z: (ca.z + cb.z) / 2,
-                   nx: dx / d, nz: dz / d, depth: (ca.r + cb.r) - d};
-            break;
+            const depth = (ca.r + cb.r) - d;
+            if(!hit || depth > hit.depth){
+              hit = {x: (ca.x + cb.x) / 2, z: (ca.z + cb.z) / 2,
+                     nx: dx / d, nz: dz / d, depth};
+            }
           }
         }
-        if(hit) break;
       }
       if(!hit) continue;
       // relative velocity at the contact point, split into normal (crushing)
@@ -2404,11 +2409,13 @@ function update(dt){
         a.heelKick = (a.heelKick || 0) + Math.sign(leverA || 1) * 0.12 * Math.min(1, closing / 8);
         b.heelKick = (b.heelKick || 0) + Math.sign(leverB || 1) * 0.12 * Math.min(1, closing / 8);
       }
-      // one impact per pair every 1.5 s — the shove above keeps the hulls
-      // from grinding, the cooldown keeps the damage from repeating
+      // one damaging impact per pair every 1.5 s — the shove above keeps
+      // the hulls from grinding, the cooldown keeps the damage from
+      // repeating. v10.5b: the cooldown starts only when damage is actually
+      // dealt — a graze or gentle nudge used to start the window and then a
+      // real hit landing inside it was silently skipped.
       const key = i + ':' + j;
       if(state.collCool[key] && state.t - state.collCool[key] < 1.5) continue;
-      state.collCool[key] = state.t;
       // v10.3: gentle contact deals no damage — two hulls drifting together
       // at rest (or a slow nudge) should not grind each other down. Only a
       // real ram, with a closing speed above 1.5, does damage. The impulse
@@ -2418,6 +2425,7 @@ function update(dt){
       // they brush past with no damage and no banner, even at speed.
       // (The banner and damage below only run for a real overlap.)
       if(hit.depth < 0.5) continue;
+      state.collCool[key] = state.t;
       // kinetic energy at the contact point becomes the localized damage:
       // KE = 1/2 * reduced mass * closing speed^2, scaled to the game's HP.
       // v10.2: raised so the sinking modes are actually reachable — two or
