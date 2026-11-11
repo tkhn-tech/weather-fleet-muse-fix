@@ -445,12 +445,17 @@ const oceanMat = new THREE.ShaderMaterial({
       float dist = length(cameraPosition - vWorldPos);
       vec2 wp = vWorldPos.xz;
       // fine ripple detail in the normal, fading out with distance so the
-      // far sea stays calm (footprint fade)
+      // far sea stays calm (footprint fade). The perturbation is the
+      // gradient of value noise, not a product of sines — a sine product
+      // tiles into a regular ribbed/corrugated pattern on a calm sea (v8.1).
       float detailFade = exp(-dist / 170.0);
       vec3 N = normalize(vNormal);
-      N.xz += 0.07 * detailFade * vec2(
-        sin(wp.x * 0.9 + uTime * 1.3) * sin(wp.y * 0.7 - uTime * 0.9),
-        sin(wp.y * 1.1 + uTime * 1.1) * sin(wp.x * 0.6 - uTime * 1.4));
+      vec2 rp = wp * 0.6 + vec2(uTime * 0.4, -uTime * 0.25);
+      float e = 0.6;
+      float h0 = vnoise(rp);
+      float hx = vnoise(rp + vec2(e, 0.0));
+      float hy = vnoise(rp + vec2(0.0, e));
+      N.xz += 0.3 * detailFade * vec2(h0 - hx, h0 - hy);
       N = normalize(N);
       float ndv = max(dot(N, V), 0.0);
       // deep colour in the troughs, lighter toward the crests
@@ -462,10 +467,11 @@ const oceanMat = new THREE.ShaderMaterial({
       // Schlick Fresnel: sky reflection takes over at grazing angles
       float F = 0.03 + 0.97 * pow(1.0 - ndv, 5.0);
       vec3 col = mix(water, uSky, F * 0.85);
-      // tight HDR sun glint + a broader sheen
+      // tight HDR sun glint + a narrow sheen (the old broad sheen read as
+      // large soft blown-out white/yellow blobs, v8.1)
       vec3 H = normalize(V + uSunDir);
       float ndh = max(dot(N, H), 0.0);
-      col += vec3(1.0, 0.95, 0.8) * (pow(ndh, 700.0) * 3.0 + pow(ndh, 80.0) * 0.22) * uSunI;
+      col += vec3(1.0, 0.95, 0.8) * (pow(ndh, 900.0) * 2.4 + pow(ndh, 120.0) * 0.08) * uSunI;
       // crest foam: gated on Gerstner steepness + height, laced with
       // per-pixel noise, faded with distance
       float n = vnoise(wp * 0.35) * 0.6 + vnoise(wp * 1.3) * 0.4;
@@ -486,7 +492,8 @@ let seaDeep = [0, 0, 0], seaBase = [0, 0, 0], seaCrest = [0, 0, 0];
 function setSeaColors(hex){
   const c = new THREE.Color(hex), cr = new THREE.Color(0x9fd4e8);
   seaBase = [c.r, c.g, c.b];
-  seaDeep = [c.r * 0.5, c.g * 0.5, c.b * 0.5];
+  // lift the trough floor: at half strength the hurricane sea was near-black (v8.1)
+  seaDeep = [c.r * 0.6 + 0.02, c.g * 0.6 + 0.02, c.b * 0.6 + 0.02];
   seaCrest = [c.r + (cr.r - c.r) * 0.55, c.g + (cr.g - c.g) * 0.55, c.b + (cr.b - c.b) * 0.55];
   oceanUniforms.uDeep.value.setRGB(seaDeep[0], seaDeep[1], seaDeep[2]);
   oceanUniforms.uBase.value.setRGB(seaBase[0], seaBase[1], seaBase[2]);
@@ -1064,13 +1071,19 @@ loadIslands();
 let beacon = null;
 function makeBeacon(x, z){
   const g = new THREE.Group();
+  // the beam is normal-blended, not additive: an additive gold beam over
+  // the bright Calm sky saturates to white. Normal blending composites gold
+  // over any sky, so the beam reads gold in every stage (v8.1: white in Calm)
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 2.2, 60, 8, 1, true),
-    new THREE.MeshBasicMaterial({color: 0xffd166, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false}));
+    new THREE.MeshBasicMaterial({color: 0xffc233, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, fog: false}));
   beam.position.y = 30; g.add(beam);
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.8, 60, 8, 1, true),
+    new THREE.MeshBasicMaterial({color: 0xffd166, transparent: true, opacity: 0.65, side: THREE.DoubleSide, depthWrite: false, fog: false}));
+  core.position.y = 30; g.add(core);
   const gem = new THREE.Mesh(new THREE.OctahedronGeometry(2.2),
     new THREE.MeshStandardMaterial({color: 0xffd166, emissive: 0xaa7700, roughness: 0.3, metalness: 0.6}));
   gem.position.y = 4; g.add(gem);
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({map: softTex, color: 0xffd166, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending}));
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({map: softTex, color: 0xffd166, transparent: true, opacity: 0.5, depthWrite: false}));
   glow.scale.set(16, 16, 1); glow.position.y = 4; g.add(glow);
   g.position.set(x, 0, z);
   scene.add(g);
@@ -1095,7 +1108,8 @@ const state = {
   speedLoss: 1, kickT: 99, prevRudder: 0,
   rogueDone: false, rogueTimer: -1, rogueWarned: false,
   camZoom: 1, freeLook: 0, freeLookActive: false,
-  camHeading: 0, camBank: 0,
+  camHeading: 0, camBank: 0, headingRate: 0, camZfSm: 0,
+  lastWaveToast: -99,
   windDir: 0, curX: 0, curZ: 0, cog: 0, islandT: 0,
 };
 let frameCount = 0;
@@ -1168,6 +1182,10 @@ canvas.addEventListener('pointermove', e => {
   if(state.freeLookActive) state.freeLook = Math.max(-0.6, Math.min(0.6, state.freeLook + e.movementX * 0.003));
 });
 window.addEventListener('pointerup', e => { if(e.button === 2) state.freeLookActive = false; if(e.button === 0) state.dragSteer = false; });
+// a missed pointerup (pointercancel, window blur) must not leave a steering
+// input latched on — a latched rudder keeps the ship turning after release
+window.addEventListener('pointercancel', () => { state.freeLookActive = false; state.dragSteer = false; joyEnd(); });
+window.addEventListener('blur', () => { state.freeLookActive = false; state.dragSteer = false; state.keys = {}; joyEnd(); });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
@@ -1255,10 +1273,17 @@ function spawnHazard(forceKind){
     // no mesh at all: the rogue wave is a localised Gerstner bump in the shared
     // wave field, so the sea itself rises into a crest with a foam cap and the
     // ships ride up its face — there is no wall standing in the ocean
-    const span = (state.stage >= 3 ? 60 : 45) + Math.random() * 25;
+    const span = (state.stage >= 3 ? 65 : 55) + Math.random() * 25;
     const wp = aheadOfFleet(170 + Math.random() * 60, 50);
     h = {kind, group: g, x: wp.x, z: wp.z, span, r: span / 2, hitShips: new Set(),
-         bumpA: state.stage >= 3 ? 2.4 : 1.6, ph: Math.random() * 6.28, dirx: wp.hx, dirz: wp.hz, born: state.t};
+         bumpA: state.stage >= 3 ? 3.2 : 2.4, ph: Math.random() * 6.28, dirx: wp.hx, dirz: wp.hz, born: state.t, foamT: 0};
+    // telegraph it: a rogue crest with no warning reads as nothing at all
+    // (v8.1: waves spawned every few seconds in Storm/Hurricane but were
+    // never noticed). Throttled so a storm does not spam the toast.
+    if(!forceKind && state.t - state.lastWaveToast > 25){
+      state.lastWaveToast = state.t;
+      toast('⚠️ ROGUE WAVE', 'A crest is building ahead — brace for it');
+    }
   } else if(kind === 'whirl'){
     const disc = new THREE.Mesh(new THREE.CircleGeometry(8, 24), new THREE.MeshBasicMaterial({color: 0x0a1826}));
     disc.rotation.x = -Math.PI / 2; disc.position.y = 0.25;
@@ -1312,8 +1337,12 @@ function reset(){
   state.shake = 0; state.over = false; state.paused = false;
   state.spawnT = 0; state.pickupT = 0; state.boltT = 0; state.flashT = 0;
   state.rudder = 0; state.dragSteer = false; state.speedLoss = 1; state.kickT = 99; state.prevRudder = 0;
-  state.camHeading = 0; state.camBank = 0;
+  state.camHeading = 0; state.camBank = 0; state.headingRate = 0; state.camZfSm = 0;
   state.rogueDone = false; state.rogueTimer = -1; state.rogueWarned = false;
+  // a run that STARTS in the hurricane never crosses the stage boundary, so
+  // the scripted climax (armed on entering stage 3) would never fire — arm
+  // it here too (v8.1: no rogue wave at all in a Hurricane-start run)
+  if(state.stage === 3){ state.rogueTimer = 20; state.rogueWarned = false; }
   clearWorld();
   fleet.forEach(s => {
     s.hp = s.maxHp; s.alive = true; s.sinkT = 0;
@@ -1378,12 +1407,15 @@ function drawCompass(course, cog){
     const da = ((d[0] - course + 540) % 360) - 180;
     if(Math.abs(da) <= 58) ctx.fillText(d[1], W / 2 + da * pxPerDeg, 25);
   });
-  // COG tick (cyan): where the ship is actually going, current included
-  const daCog = ((cog - course + 540) % 360) - 180;
-  if(Math.abs(daCog) <= 58){
-    ctx.fillStyle = '#7fd4ff';
-    const x = W / 2 + daCog * pxPerDeg;
-    ctx.beginPath(); ctx.moveTo(x - 4, 7); ctx.lineTo(x + 4, 7); ctx.lineTo(x, 12); ctx.closePath(); ctx.fill();
+  // COG tick (cyan): where the ship is actually going, current included.
+  // Hidden at idle (cog null — see updateHud) where COG is just wind drift.
+  if(cog !== null && cog !== undefined){
+    const daCog = ((cog - course + 540) % 360) - 180;
+    if(Math.abs(daCog) <= 58){
+      ctx.fillStyle = '#7fd4ff';
+      const x = W / 2 + daCog * pxPerDeg;
+      ctx.beginPath(); ctx.moveTo(x - 4, 7); ctx.lineTo(x + 4, 7); ctx.lineTo(x, 12); ctx.closePath(); ctx.fill();
+    }
   }
   ctx.fillStyle = '#ffd166';
   ctx.beginPath(); ctx.moveTo(W / 2 - 5, 0); ctx.lineTo(W / 2 + 5, 0); ctx.lineTo(W / 2, 6); ctx.closePath(); ctx.fill();
@@ -1448,10 +1480,14 @@ function updateHud(){
   // compass + position (open world: heading and nm from the start point)
   const f = flagship() || fleet[0];
   const course = ((f.heading * 180 / Math.PI) % 360 + 360) % 360;
-  drawCompass(course, state.cog);
+  // COG is meaningless at idle: the fleet only drifts on wind/current, so a
+  // COG of ~200° against HDG 000° at 0 kn is noise, not a course (v8.1)
+  const kn = state.speed * 2.2;
+  drawCompass(course, kn < 1 ? null : state.cog);
   drawMinimap();
   const nmE = f.x / 111.6, nmN = -f.z / 111.6;
-  $('navText').textContent = 'HDG ' + String(Math.round(course)).padStart(3, '0') + '° · COG ' + String(Math.round(state.cog)).padStart(3, '0') + '° · ' + Math.abs(nmN).toFixed(1) + (nmN >= 0 ? 'N' : 'S') + ' ' + Math.abs(nmE).toFixed(1) + (nmE >= 0 ? 'E' : 'W');
+  const cogText = kn < 1 ? '—' : String(Math.round(state.cog)).padStart(3, '0') + '°';
+  $('navText').textContent = 'HDG ' + String(Math.round(course)).padStart(3, '0') + '° · COG ' + cogText + ' · ' + Math.abs(nmN).toFixed(1) + (nmN >= 0 ? 'N' : 'S') + ' ' + Math.abs(nmE).toFixed(1) + (nmE >= 0 ? 'E' : 'W');
 }
 
 // ---------- damage / flooding / sinking ----------
@@ -1589,7 +1625,7 @@ function update(dt){
       const h = state.hazards[state.hazards.length - 1];
       if(h){
         const p = aheadOfFleet(150, 30);
-        h.span = 75; h.bumpA = 2.8; h.x = p.x; h.z = p.z; h.dirx = p.hx; h.dirz = p.hz;
+        h.span = 75; h.bumpA = 3.4; h.x = p.x; h.z = p.z; h.dirx = p.hx; h.dirz = p.hz;
         h.group.position.set(h.x, 0, h.z);
       }
     }
@@ -1599,17 +1635,17 @@ function update(dt){
   if(!flag){ gameOver(); return; }
 
   // steering: keys give a hard rudder; joystick X is the rudder; drag steers too.
-  // No input and the rudder centres — the fleet holds its course and sails on.
+  // The rudder is a first-order system driven by the input: it answers
+  // promptly while you steer and centres FAST (τ ~ 0.12 s) when you let go.
   let keyRudder = 0;
   if(state.keys['ArrowLeft'] || state.keys['a']) keyRudder -= 1;
   if(state.keys['ArrowRight'] || state.keys['d']) keyRudder += 1;
-  if(keyRudder !== 0){
-    state.rudder = keyRudder;
-  } else if(Math.abs(state.joyX) > 0.08){
-    state.rudder = state.joyX;
-  } else if(!state.dragSteer){
-    state.rudder *= Math.max(0, 1 - dt * 3);
-  }
+  let inputRudder = 0;
+  if(keyRudder !== 0) inputRudder = keyRudder;
+  else if(Math.abs(state.joyX) > 0.08) inputRudder = state.joyX;
+  else if(state.dragSteer) inputRudder = state.rudder;
+  const rudderK = inputRudder === 0 ? 8 : 5;
+  state.rudder += (inputRudder - state.rudder) * (1 - Math.exp(-dt * rudderK));
   // heel in a turn: brief inward kick, then sustained outward heel growing with V^2
   if((state.prevRudder === 0 && state.rudder !== 0) || Math.sign(state.rudder) !== Math.sign(state.prevRudder)) state.kickT = 0;
   state.kickT += dt;
@@ -1617,9 +1653,16 @@ function update(dt){
   const whirlSlow = fleet.some(s => s.alive && state.hazards.some(h => h.kind === 'whirl' && Math.hypot(s.x - h.x, s.z - h.z) < 20));
   // steerage needs way on: a ship with no speed barely answers the helm
   const turnRate = 0.5 * (0.12 + 0.88 * Math.min(1, speed / 12)) * (whirlSlow ? 0.5 : 1);
+  // heading-rate damping: the turn rate is a state with inertia. It follows
+  // the rudder while you steer, and dies away fast (τ ~ 0.15 s) the moment
+  // the rudder centres — the heading stops swinging instead of overshooting
+  // ~75° after release like a spinning top (v8.1)
+  const targetRate = state.rudder * turnRate;
+  const rateK = Math.abs(state.rudder) < 0.05 ? 7 : 4;
+  state.headingRate += (targetRate - state.headingRate) * (1 - Math.exp(-dt * rateK));
   // open world: the heading is free (full 360°) and the flagship truly travels
   // along it — x and z both change, so steering changes the course for real
-  flag.heading += state.rudder * turnRate * dt;
+  flag.heading += state.headingRate * dt;
   flag.x += Math.sin(flag.heading) * speed * dt;
   flag.z -= Math.cos(flag.heading) * speed * dt;
   // the current carries the whole fleet sideways
@@ -1768,13 +1811,15 @@ function update(dt){
     s.foam.material.opacity = s.alive ? 0.14 + 0.22 * spd : Math.max(0, 0.22 * (1 - s.sinkT));
     s.foam.scale.setScalar(1 + 0.45 * spd);
     if(s.alive){
-      // stern wash + Kelvin wake: V-arms at 19.5 deg, widening and fading astern
+      // stern wash + Kelvin wake: V-arms at 19.5 deg, widening and fading astern.
+      // Small, soft, frequent puffs — the old big discrete slabs read as
+      // stepped white blocks (v8.1).
       s.wakeT += dt;
-      if(s.wakeT > 0.16 - 0.09 * spd){
+      if(s.wakeT > 0.10 - 0.05 * spd){
         s.wakeT = 0;
         const stX = s.x - Math.sin(s.heading) * s.group.userData.len / 2;
         const stZ = s.z + Math.cos(s.heading) * s.group.userData.len / 2;
-        const w = spawnSprite(stX, waveHeight(stX, stZ, state.t) + 0.2, stZ, 2.5, 5 * (0.7 + 0.6 * spd), 2.5, 0.5, 0xffffff, 0.3);
+        const w = spawnSprite(stX, waveHeight(stX, stZ, state.t) + 0.2, stZ, 3.5, 3.5 * (0.6 + 0.5 * spd), 2.0, 0.9, 0xffffff, 0.22);
         w.vz = 0;
       }
       s.kelvinT += dt;
@@ -1788,7 +1833,7 @@ function update(dt){
           const ax = (Math.sin(s.heading) * Math.cos(a) + Math.cos(s.heading) * Math.sin(a) * arm) * d;
           const az = (Math.cos(s.heading) * Math.cos(a) - Math.sin(s.heading) * Math.sin(a) * arm) * d;
           const kx = s.x + ax, kz = s.z + az;
-          const sp = spawnSprite(kx, waveHeight(kx, kz, state.t) + 0.15, kz, 3 * (0.7 + 0.6 * spd), 3.5 * (0.7 + 0.6 * spd), 1.8, 0.4, 0xffffff, 0.16);
+          const sp = spawnSprite(kx, waveHeight(kx, kz, state.t) + 0.15, kz, 3.5, 2.8 * (0.7 + 0.6 * spd), 1.6, 0.6, 0xffffff, 0.12);
           sp.vz = 0;
         });
       }
@@ -1883,9 +1928,21 @@ function update(dt){
       h.group.rotation.z = Math.sin(state.t + h.ph) * 0.15;
     }
     if(h.kind === 'wave'){
-      if(Math.random() < 0.4){
-        spawnParticle(h.x + (Math.random() - 0.5) * h.span * 0.8, waveHeight(h.x, h.z, state.t) + 1.5 + Math.random() * 2, h.z,
-          (Math.random() - 0.5) * 2, 1 + Math.random(), 2, 0.8, 0.9, 0.95, 1, -2);
+      // a foaming ridge along the crest, so the rogue wave is visible as a
+      // raised white-capped ridge in the water — not just a swell
+      h.foamT -= dt;
+      if(h.foamT <= 0){
+        h.foamT = 0.35;
+        const dirx = h.dirx || 0, dirz = h.dirz === undefined ? 1 : h.dirz;
+        const across = (Math.random() - 0.5) * h.span * 0.8;
+        const fx2 = h.x + (-dirz) * across, fz2 = h.z + dirx * across;
+        spawnSprite(fx2, waveHeight(fx2, fz2, state.t) + 0.3, fz2, 2.5, 6 + Math.random() * 4, 2.5, 0.6, 0xffffff, 0.35);
+      }
+      if(Math.random() < 0.6){
+        for(let k = 0; k < 2; k++){
+          spawnParticle(h.x + (Math.random() - 0.5) * h.span * 0.8, waveHeight(h.x, h.z, state.t) + 1.5 + Math.random() * 2, h.z,
+            (Math.random() - 0.5) * 2, 1 + Math.random(), 2, 0.8, 0.9, 0.95, 1, -2);
+        }
       }
     }
   });
@@ -1990,6 +2047,40 @@ function update(dt){
   if(aliveCount() === 0) gameOver();
 }
 
+// frustum fit test: does every alive ship fit inside the real camera frustum
+// from a candidate camera position? Tests the waterline corners (the ones
+// that clip at the bottom of frame when the camera sits behind the flagship)
+// plus a mast-top point per ship. Basis vectors are built from the real
+// view axis (camera -> lookAt), so free-look and turn lag are accounted for.
+function fleetFits(tx, ty, tz, lx, ly, lz, tanH, tanV){
+  let fx = lx - tx, fy = ly - ty, fz = lz - tz;
+  const fl = Math.sqrt(fx * fx + fy * fy + fz * fz) || 1;
+  fx /= fl; fy /= fl; fz /= fl;
+  let rx = -fz, rz = fx;
+  const rl = Math.sqrt(rx * rx + rz * rz) || 1;
+  rx /= rl; rz /= rl;
+  const ux = -rz * fy, uy = rz * fx - rx * fz, uz = rx * fy;
+  for(let i = 0; i < fleet.length; i++){
+    const s = fleet[i];
+    if(!s.alive) continue;
+    const L = s.group.userData.len, W = s.group.userData.wid;
+    const c = Math.cos(s.heading), sn = Math.sin(s.heading);
+    const corners = [[-W / 2, -L / 2], [W / 2, -L / 2], [-W / 2, L / 2], [W / 2, L / 2], [0, 0]];
+    for(let j = 0; j < corners.length; j++){
+      const wx = s.x + corners[j][0] * c + corners[j][1] * sn;
+      const wz = s.z + (-corners[j][0] * sn + corners[j][1] * c);
+      const wy = j === 4 ? 6 : 0;
+      const dx = wx - tx, dy = wy - ty, dz = wz - tz;
+      const zc = dx * fx + dy * fy + dz * fz;
+      if(zc < 2) return false;
+      const xc = dx * rx + dz * rz;
+      const yc = dx * ux + dy * uy + dz * uz;
+      if(Math.abs(xc) > zc * tanH || Math.abs(yc) > zc * tanV) return false;
+    }
+  }
+  return true;
+}
+
 // ---------- camera (Asphalt action-mode chase: rigidly behind the flagship's
 // stern in the fleet's frame; wheel zoom + RMB free-look, WoWS style) ----------
 function updateCamera(dt){
@@ -2001,41 +2092,58 @@ function updateCamera(dt){
   const camZ = camZ0 * state.camZoom * (1 + speedN * 0.12);
   const camY = camY0 * (0.85 + 0.3 * state.camZoom);
   if(!state.freeLookActive) state.freeLook *= Math.max(0, 1 - dt * 1.2);
-  // frame the whole fleet, not just the flagship: the formation spreads in a
-  // turn, so the camera pulls back to fit it (in portrait the narrow
-  // horizontal field of view is what sets the distance, not the base offset)
-  const alive = fleet.filter(s => s.alive);
-  let cx = 0, cz = 0;
-  alive.forEach(s => { cx += s.x; cz += s.z; });
-  cx /= alive.length; cz /= alive.length;
-  let spread = 0;
-  alive.forEach(s => { spread = Math.max(spread, Math.hypot(s.x - cx, s.z - cz)); });
-  const hHalf = Math.atan(Math.tan(camera.fov * Math.PI / 360) * aspect);
-  const fitTan = Math.min(Math.tan(camera.fov * Math.PI / 360), Math.tan(hHalf));
-  const need = (spread + 8) / Math.max(0.2, fitTan);
-  const camZf = Math.max(camZ, Math.min(camZ * 2.2, need));
-  const camYf = camY * (camZf / camZ);
-  // chase cam: the camera's own heading trails the fleet's heading stiffly,
-  // and the camera is anchored rigidly behind the flagship's stern — when
-  // you steer, the fleet turns inside the frame and the world swings around
-  // it. The follow is stiffer along the direction of travel so the camera
-  // keeps up at speed instead of lagging behind.
+  // chase cam: the camera's own heading trails the fleet's heading, and
+  // once the turn is over it converges fast (τ ~ 0.15 s) so the camera ends
+  // up dead behind the flagship's stern instead of sitting side-on (v8.1)
+  const turning = Math.abs(state.headingRate) > 0.06 || Math.abs(state.rudder) > 0.1;
   let dh = flag.heading - state.camHeading;
   dh = ((dh + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
-  state.camHeading += dh * (1 - Math.exp(-dt * 2.6));
+  state.camHeading += dh * (1 - Math.exp(-dt * (turning ? 2.6 : 7.0)));
   const fx = Math.sin(flag.heading), fz = -Math.cos(flag.heading);
   const chx = Math.sin(state.camHeading), chz = -Math.cos(state.camHeading);
   const crx = Math.cos(state.camHeading), crz = Math.sin(state.camHeading);
   const a = state.freeLook;
+  // frame the whole fleet, not just the flagship: the camera sits behind
+  // the flagship, so the rear escorts are much closer to the lens than the
+  // flagship and subtend a big angle — a fit measured from the formation
+  // centroid (v7.2/v8.1) under-reads that badly, which is why the rear
+  // escorts were already clipped by the bottom corners at idle. Instead,
+  // test the actual ship corners against the real frustum (current FOV +
+  // aspect) and pull back until every alive ship fits with margin.
+  const vHalf = camera.fov * Math.PI / 360;
+  const hHalf = Math.atan(Math.tan(vHalf) * aspect);
+  // the stiff follow trails the target in a turn by ~turnRate/kL radians;
+  // the fit must leave room for that lag or the fleet swings out of frame
+  const lagAllow = Math.min(0.12, Math.abs(state.headingRate || 0) / 5.0);
+  const tanH = Math.tan(Math.max(0.05, hHalf * 0.88 - lagAllow));
+  const tanV = Math.tan(Math.max(0.05, vHalf * 0.88));
+  const lookAhead = 16 + speedN * 20;
+  const lx = flag.x + fx * lookAhead, lz = flag.z + fz * lookAhead;
+  let fitD = camZ;
+  for(let it = 0; it < 12; it++){
+    const tY = camY * (fitD / camZ) + Math.sin(state.t * 0.5) * 0.4;
+    const tX = flag.x - chx * fitD * Math.cos(a) + crx * fitD * Math.sin(a) * 0.55;
+    const tZ = flag.z - chz * fitD * Math.cos(a) + crz * fitD * Math.sin(a) * 0.55;
+    if(fleetFits(tX, tY, tZ, lx, 2, lz, tanH, tanV)) break;
+    fitD *= 1.15;
+    if(fitD >= camZ * 3.4){ fitD = camZ * 3.4; break; }
+  }
+  // smooth the fit distance: snap out instantly when the fleet needs room,
+  // ease back in slowly so the camera does not pulse in and out of turns
+  if(fitD > state.camZfSm) state.camZfSm = fitD;
+  else state.camZfSm += (fitD - state.camZfSm) * (1 - Math.exp(-dt * 1.2));
+  const camZf = Math.max(camZ, state.camZfSm);
+  const camYf = camY * (camZf / camZ);
   const tx = flag.x - chx * camZf * Math.cos(a) + crx * camZf * Math.sin(a) * 0.55;
   const ty = camYf + Math.sin(state.t * 0.5) * 0.4;
   const tz = flag.z - chz * camZf * Math.cos(a) + crz * camZf * Math.sin(a) * 0.55;
   // stiff follow: faster along the direction of travel, softer sideways,
-  // so the camera keeps up at speed without snapping in a turn
+  // so the camera keeps up at speed without snapping in a turn — and
+  // stiffer once the turn ends, so it settles behind the stern promptly
   const ex = tx - camera.position.x, ez = tz - camera.position.z;
   const along = ex * chx + ez * chz;
   const perp = ex * (-chz) + ez * chx;
-  const kA = 1 - Math.exp(-dt * 5.5), kL = 1 - Math.exp(-dt * 3.0);
+  const kA = 1 - Math.exp(-dt * (turning ? 5.5 : 7.5)), kL = 1 - Math.exp(-dt * (turning ? 5.0 : 6.5));
   camera.position.x += chx * along * kA + (-chz) * perp * kL;
   camera.position.z += chz * along * kA + chx * perp * kL;
   camera.position.y += (ty - camera.position.y) * (1 - Math.exp(-dt * 4));
@@ -2046,7 +2154,6 @@ function updateCamera(dt){
   // look well ahead of the flagship along its course, so the flagship sits
   // low in frame and you see where you are going; the camera banks gently
   // into the turn
-  const lookAhead = 16 + speedN * 20;
   camera.lookAt(flag.x + fx * lookAhead, 2, flag.z + fz * lookAhead);
   const bankTarget = -state.rudder * 0.07 * speedN;
   state.camBank += (bankTarget - state.camBank) * Math.min(1, dt * 3);
@@ -2058,7 +2165,11 @@ function updateCamera(dt){
       c.position.set(flag.x + (Math.random() - 0.5) * 300, 55 + Math.random() * 30, flag.z - 220 + Math.random() * 180);
     }
   });
-  const targetFov = 66 + speedN * 5 + (state.boost ? 7 : 0);
+  // wider base FOV in portrait: the narrow horizontal field is what sets
+  // the framing distance, so a wider lens keeps the pull-back (and the
+  // apparent ship size) reasonable on a phone
+  const baseFov = aspect < 0.75 ? 76 : aspect < 1.1 ? 70 : 66;
+  const targetFov = baseFov + speedN * 5 + (state.boost ? 7 : 0);
   if(Math.abs(camera.fov - targetFov) > 0.1){
     camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 4);
     camera.updateProjectionMatrix();
