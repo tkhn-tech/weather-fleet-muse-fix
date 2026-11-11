@@ -136,7 +136,7 @@
         <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v9.9</div>
+    <div class="ver">v10.0</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -196,6 +196,7 @@ const canvas = $('game');
 let renderer;
 try {
   renderer = new THREE.WebGLRenderer({canvas, antialias: true});
+  renderer.localClippingEnabled = true; // break-up sinking splits a ship into two clipped halves
 } catch (e) {
   loadErr.textContent = "This device couldn't start 3D graphics (WebGL). Try another browser.";
   throw e;
@@ -374,12 +375,15 @@ $('bestScore').textContent = best.score;
 // 1 world unit ~ 16.6 m (carrier 22 units = 333 m). g in game units = 9.81 / 16.6.
 const G_GAME = 0.59;
 const WAVES = [
+  {lam: 180, amp: 0.35, q: 0.25, dx: 0.20,  dz: 0.98,  ph: 2.0},
   {lam: 110, amp: 0.80, q: 0.30, dx: 0.30,  dz: 0.95,  ph: 4.4},
   {lam: 55,  amp: 1.00, q: 0.35, dx: 0.12,  dz: 0.99,  ph: 0.0},
-  {lam: 28,  amp: 0.55, q: 0.50, dx: -0.25, dz: 0.97,  ph: 1.7},
-  {lam: 14,  amp: 0.30, q: 0.60, dx: 0.45,  dz: 0.89,  ph: 3.1},
-  {lam: 7,   amp: 0.15, q: 0.70, dx: -0.60, dz: 0.80,  ph: 5.2},
-  {lam: 3.5, amp: 0.07, q: 0.80, dx: 0.80,  dz: 0.60,  ph: 2.3},
+  {lam: 40,  amp: 0.25, q: 0.45, dx: -0.35, dz: 0.94,  ph: 0.8},
+  {lam: 28,  amp: 0.55, q: 0.65, dx: -0.25, dz: 0.97,  ph: 1.7},
+  {lam: 14,  amp: 0.30, q: 0.75, dx: 0.45,  dz: 0.89,  ph: 3.1},
+  {lam: 9,   amp: 0.12, q: 0.75, dx: 0.55,  dz: 0.83,  ph: 4.0},
+  {lam: 7,   amp: 0.15, q: 0.85, dx: -0.60, dz: 0.80,  ph: 5.2},
+  {lam: 3.5, amp: 0.07, q: 0.90, dx: 0.80,  dz: 0.60,  ph: 2.3},
 ];
 WAVES.forEach(w => { w.k = 2 * Math.PI / w.lam; w.w = Math.sqrt(G_GAME * w.k); w.bdx = w.dx; w.bdz = w.dz; });
 const WAVE_AMP_SUM = WAVES.reduce((a, w) => a + w.amp, 0);
@@ -473,7 +477,7 @@ const oceanUniforms = {
   uBase:  {value: new THREE.Color(0x1a5a78)},
   uCrest: {value: new THREE.Color(0x9fd4e8)},
   uSky:   {value: new THREE.Color(0x9fc3d8)},
-  uSunDir:{value: new THREE.Vector3(60, 90, 40).normalize()},
+  uSunDir:{value: new THREE.Vector3(30, 35, -80).normalize()}, // v10.0: low, ahead of the fleet — the glitter path reads on the sea
   uSunI:  {value: 1.15},
   uTime:  {value: 0},
   uFoam:  {value: new THREE.Color(0xdde8ee)},
@@ -574,14 +578,14 @@ const oceanMat = new THREE.ShaderMaterial({
       // large soft blown-out white/yellow blobs, v8.1)
       vec3 H = normalize(V + uSunDir);
       float ndh = max(dot(N, H), 0.0);
-      col += vec3(1.0, 0.95, 0.8) * (pow(ndh, 300.0) * 2.0 + pow(ndh, 60.0) * 0.25) * uSunI;
+      col += vec3(1.0, 0.95, 0.8) * (pow(ndh, 300.0) * 3.0 + pow(ndh, 60.0) * 0.5) * uSunI;
       // crest foam: gated on Gerstner steepness + height, laced with
       // per-pixel noise, faded with distance
       float n = vnoise(wp * 0.35) * 0.6 + vnoise(wp * 1.3) * 0.4;
-      float foamGate = smoothstep(0.22, 0.62, vSteep) * smoothstep(0.05, 0.45, vH);
+      float foamGate = smoothstep(0.15, 0.55, vSteep) * smoothstep(0.0, 0.4, vH);
       float foam = smoothstep(0.5, 0.85, foamGate + (n - 0.5) * 0.7);
       foam *= exp(-dist / 260.0);
-      col = mix(col, uFoam, foam * 0.85);
+      col = mix(col, uFoam, foam * 0.9);
       gl_FragColor = vec4(col, 1.0);
       #include <fog_fragment>
     }`,
@@ -1115,7 +1119,7 @@ class ShipMotion {
 // centres it horizontally and drops the waterline onto y = 0.
 const MODEL_CACHE = {};
 const MODEL_SPEC = {
-  // v9.8: 2.0x the v9.5 lengths (carrier 44, battleship 36, destroyer 21) so
+  // v10.0: lengths up ~10% (carrier 48, battleship 40, destroyer 23) so
   // the real models have room to show their detail. The formation offsets
   // the formation offsets keep the fleet compact so all seven ships
   // are readable in one frame.
@@ -1124,9 +1128,9 @@ const MODEL_SPEC = {
   // the bow astern; this flips the bow forward while keeping the ship
   // upright. (A plain rotateX(+90) is a reflection, det -1 — it mirrored the
   // model and left the battleships floating in the sky in v9.8.)
-  carrier:    {uri: KENNEDY_GLB, len: 44, wid: 10.5, waterline: 3.25, rot: null},
-  battleship: {uri: NJ_GLB,      len: 36, wid: 7.3,  waterline: 7.4,  rot: [-1,0,0, 0,0,1, 0,1,0]},
-  destroyer:  {uri: DDG_GLB,     len: 21, wid: 4.8,  waterline: 627,  rot: [0,1,0, 0,0,1, 1,0,0]},
+  carrier:    {uri: KENNEDY_GLB, len: 48, wid: 10.5, waterline: 3.25, rot: null},
+  battleship: {uri: NJ_GLB,      len: 40, wid: 7.3,  waterline: 7.4,  rot: [-1,0,0, 0,0,1, 0,1,0]},
+  destroyer:  {uri: DDG_GLB,     len: 23, wid: 4.8,  waterline: 627,  rot: [0,1,0, 0,0,1, 1,0,0]},
 };
 let GLTFLoader = null, MeshoptDecoder = null;
 try {
@@ -1184,13 +1188,13 @@ const fleet = [
   // Carrier Strike Group screen (v9.9): carrier centre; the two battleships
   // are the cruiser equivalents on the flanks, slightly ahead; four Burke
   // destroyers screen it — two forward pickets, two on the aft quarters.
-  {type:'carrier',    label:'Carrier',    dx:0,     dz:0,    hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4, freeboard:2.0},
-  {type:'battleship', label:'Battleship', dx:-22,   dz:-6,   hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:1.8},
-  {type:'battleship', label:'Battleship', dx:22,    dz:-6,   hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:1.8},
-  {type:'destroyer',  label:'Destroyer',  dx:-32,   dz:-36,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.6},
-  {type:'destroyer',  label:'Destroyer',  dx:32,    dz:-36,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.6},
-  {type:'destroyer',  label:'Destroyer',  dx:-30,   dz:22,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.6},
-  {type:'destroyer',  label:'Destroyer',  dx:30,    dz:22,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.6},
+  {type:'carrier',    label:'Carrier',    dx:0,     dz:0,    hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4, freeboard:2.2},
+  {type:'battleship', label:'Battleship', dx:-24,   dz:-6,   hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:2.0},
+  {type:'battleship', label:'Battleship', dx:24,    dz:-6,   hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:2.0},
+  {type:'destroyer',  label:'Destroyer',  dx:-35,   dz:-39,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.8},
+  {type:'destroyer',  label:'Destroyer',  dx:35,    dz:-39,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.8},
+  {type:'destroyer',  label:'Destroyer',  dx:-32,   dz:24,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.8},
+  {type:'destroyer',  label:'Destroyer',  dx:32,    dz:24,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.8},
 ];
 fleet.forEach(s => {
   s.group = makeShip(s.type);
@@ -1642,6 +1646,8 @@ function reset(){
     s.pitchSm = 0; s.rollSm = 0; s.groundT = 0; s.shoveX = 0; s.shoveZ = 0; s.heelKick = 0;
     s.floodSide = 0; s.floodEnd = 0; s.floodTotal = 0; s.floodDestroyed = false;
     s.list = 0; s.trim = 0; s.draft = 0; s.speedFactor = 1; s.capsize = false;
+    s.sinkMode = 'settle'; s.fire = 0;
+    if(s.breakParts){ scene.remove(s.breakParts.bow); scene.remove(s.breakParts.stern); s.breakParts = null; }
     s.group.visible = true;
     s.group.position.set(s.dx, 0, s.dz);
     s.group.rotation.set(0, 0, 0);
@@ -1741,11 +1747,47 @@ function updateHud(){
 }
 
 // ---------- damage / flooding / sinking ----------
-function sinkShip(ship, capsize){
+function pickSinkMode(ship, dmg){
+  if(dmg >= 25) return 'breakup'; // magazine detonation — she breaks in two
+  if(Math.abs(ship.floodSide) > 0.6) return 'capsize'; // one-sided flooding rolls her over
+  if(ship.floodEnd > 0.5) return 'bow'; // bow compartments flooded — down by the bow
+  if(ship.floodEnd < -0.5) return 'stern'; // stern flooded — down by the stern
+  return 'settle'; // even flooding — she settles upright
+}
+function splitShip(ship){
+  // A magazine detonation breaks the ship in two. Clone the model twice and
+  // clip each clone to one half (bow / stern) with a world-space plane
+  // through the ship's centre, so the real model detail survives in both
+  // pieces. The planes are re-aimed each frame in the sinking branch so the
+  // cut follows each half as it drifts and turns.
+  const fx = Math.sin(ship.heading), fz = -Math.cos(ship.heading);
+  const mkHalf = (sign) => {
+    const g = ship.group.clone(true);
+    const plane = new THREE.Plane(new THREE.Vector3(fx * sign, 0, fz * sign), 0);
+    plane.constant = -(fx * sign * ship.x + fz * sign * ship.z);
+    g.traverse(o => {
+      if(o.isMesh){
+        o.material = o.material.clone();
+        o.material.clippingPlanes = [plane];
+      }
+    });
+    g.position.copy(ship.group.position);
+    g.rotation.copy(ship.group.rotation);
+    g.userData.clipPlane = plane;
+    g.userData.clipSign = sign;
+    scene.add(g);
+    return g;
+  };
+  const bow = mkHalf(1), stern = mkHalf(-1);
+  ship.group.visible = false;
+  return {bow, stern};
+}
+function sinkShip(ship, mode){
   if(!ship.alive) return;
   ship.alive = false;
   ship.sinkT = 0;
-  ship.capsize = !!capsize;
+  ship.sinkMode = mode || 'settle';
+  ship.capsize = ship.sinkMode === 'capsize';
   state.lost++;
   burst(ship.x, 2, ship.z, 40, [1, 0.55, 0.15], 7, 4);
   burst(ship.x, 2, ship.z, 24, [1, 1, 0.9], 5, 5);
@@ -1753,8 +1795,15 @@ function sinkShip(ship, capsize){
     const sm = spawnSprite(ship.x + (Math.random() - 0.5) * 6, 4 + i * 2, ship.z + (Math.random() - 0.5) * 6, 2.5, 12, 12, 0.5, 0x333333, 0.6);
     sm.vy = 5;
   }
+  if(ship.sinkMode === 'breakup'){
+    ship.breakParts = splitShip(ship);
+    burst(ship.x, 6, ship.z, 60, [1, 0.8, 0.4], 9, 6); // secondary explosion
+    burst(ship.x, 3, ship.z, 30, [0.3, 0.3, 0.3], 5, 5);
+    state.shake = Math.min(18, state.shake + 14);
+    toast('💥 ' + ship.label + ' broke in two', 'magazine detonation — she is gone');
+  }
   const next = flagship();
-  if(next){
+  if(next && ship.sinkMode !== 'breakup'){
     toast('⚠️ ' + ship.label + ' is going down', next.label + ' takes command — ' + aliveCount() + ' ships left');
   }
 }
@@ -1776,6 +1825,10 @@ function damageShip(ship, dmg, hx, hz){
   ship.floodEnd = Math.max(-1, Math.min(1, ship.floodEnd + end * 0.22));
   ship.floodTotal = Math.min(1, ship.floodTotal + 0.16);
   if(dmg >= 12) ship.floodDestroyed = true; // rogue-wave breach: unrepairable
+  // a hard hit can start a fire (War on the Sea: fires spread and burn a
+  // ship down after the hit); a very hard hit in the forward magazine is a
+  // detonation risk
+  if(dmg >= 8) ship.fire = Math.min(1, (ship.fire || 0) + 0.5);
   // fire at the breached compartment, bent backward by speed (WoWS damage grammar)
   const fx = ship.x + side * ship.group.userData.wid * 0.3;
   const fz = ship.z + end * ship.group.userData.len * 0.3;
@@ -1784,7 +1837,7 @@ function damageShip(ship, dmg, hx, hz){
       (Math.random() - 0.5) * 1.5, 2 + Math.random() * 2, state.speed * 0.25,
       0.7, 1, 0.6 + Math.random() * 0.3, 0.15, -0.5);
   }
-  if(ship.hp <= 0) sinkShip(ship, false);
+  if(ship.hp <= 0) sinkShip(ship, pickSinkMode(ship, dmg));
 }
 
 // ---------- buoyancy sampling (4-6 points per hull; long hulls average out swell) ----------
@@ -1815,7 +1868,11 @@ function update(dt){
     err = ((err + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
     state.uturnErr = err;
     const mag = state.joyActive ? Math.min(1, Math.hypot(state.joyX, state.joyY)) : 1;
-    throttleInput = mag * Math.max(0, Math.cos(err));
+    // v10.0: keep way on during the turn — thrust fell to zero while the bow
+    // was ~180 deg off, so the ship coasted slow and the speed-scaled turn
+    // rate collapsed (v9.9 check: ~30 deg in 2 min). A real ship turns while
+    // moving; a minimum thrust keeps the swing going at a usable rate.
+    throttleInput = Math.max(0.35, mag * Math.max(0, Math.cos(err)));
     if(Math.abs(err) < 0.2 || !pullBack){ state.uturnActive = false; state.uturnTarget = null; }
   } else if(state.keys['ArrowUp'] || state.keys['w']) throttleInput = 1;
   else if(state.joyActive && state.joyY < -0.08) throttleInput = Math.min(1, -state.joyY);
@@ -1928,8 +1985,37 @@ function update(dt){
     if(!s.alive || s === flag) return;
     const m = s.motion;
     const c = Math.cos(flag.heading), sn = Math.sin(flag.heading);
-    const tx = flag.x + s.dx * c - s.dz * sn;
-    const tz = flag.z + s.dx * sn + s.dz * c;
+    let tx = flag.x + s.dx * c - s.dz * sn;
+    let tz = flag.z + s.dx * sn + s.dz * c;
+    // flagship keep-out (v10.0): the lead ship is a moving wall. If this
+    // escort is inside the keep-out box around the flagship, shift its
+    // Arrive target laterally clear so it swerves around the flagship and
+    // falls back into formation once clear, instead of cutting across the
+    // flagship's bow. The box runs longer ahead than astern so escorts clear
+    // the bow early.
+    {
+      const fLen = flag.group.userData.len, fWid = flag.group.userData.wid;
+      const eLen = s.group.userData.len, eWid = s.group.userData.wid;
+      const fx = Math.sin(flag.heading), fz = -Math.cos(flag.heading); // forward
+      const rx = Math.cos(flag.heading), rz = Math.sin(flag.heading);  // starboard
+      const ex = m.x - flag.x, ez = m.z - flag.z;
+      const ahead = ex * fx + ez * fz; // + = ahead of the flagship
+      const side = ex * rx + ez * rz;  // + = starboard of the flagship
+      const keepAhead = (fLen + eLen) * 0.5 + 18;
+      const keepAstern = (fLen + eLen) * 0.5 + 8;
+      const keepWid = (fWid + eWid) * 0.5 + 8;
+      const keepLen = ahead >= 0 ? keepAhead : keepAstern;
+      if(Math.abs(ahead) < keepLen && Math.abs(side) < keepWid){
+        const swerve = side >= 0 ? 1 : -1; // the side we're already on
+        const clearBy = keepWid - Math.abs(side) + 5;
+        tx += rx * swerve * clearBy;
+        tz += rz * swerve * clearBy;
+        if(ahead > 0) { // in the flagship's path: also fall back astern
+          tx -= fx * (keepLen - ahead + 5);
+          tz -= fz * (keepLen - ahead + 5);
+        }
+      }
+    }
     const desired = m.arrive({ x: tx, z: tz }, 30, Math.max(6, state.speed + 4));
     const desSpeed = Math.hypot(desired.x, desired.z);
     let desHeading = desSpeed > 0.5 ? Math.atan2(desired.x, -desired.z) : s.heading;
@@ -1955,28 +2041,68 @@ function update(dt){
     m.update(dt, { thrust: thrustIn, rudder: rudderIn, currentX: state.curX, currentZ: state.curZ, time: state.t });
     s.x = m.x; s.z = m.z; s.heading = m.heading;
   });
-  // ship-to-ship separation: no bounce, gentle push-apart, carrier mass wins
+  // ship-to-ship collisions (v10.0): hulls are three circles along the
+  // length, so long narrow ships only collide when they actually overlap.
+  // On impact both ships take damage scaled by the closing speed (lighter
+  // takes more), with a fireball, a shove apart, a heel kick and a
+  // compartment breach. A per-pair cooldown keeps one impact from
+  // machine-gunning damage while the hulls stay in contact.
+  const shipMass = sh => sh.type === 'carrier' ? 10 : sh.type === 'battleship' ? 5 : 2;
+  const hullCircles = sh => {
+    const L = sh.group.userData.len, W = sh.group.userData.wid;
+    const fx = Math.sin(sh.heading), fz = -Math.cos(sh.heading);
+    const r = Math.max(W * 0.7, 3.5);
+    return [
+      {x: sh.x + fx * L * 0.3, z: sh.z + fz * L * 0.3, r},
+      {x: sh.x, z: sh.z, r},
+      {x: sh.x - fx * L * 0.3, z: sh.z - fz * L * 0.3, r},
+    ];
+  };
+  if(!state.collCool) state.collCool = {};
   for(let i = 0; i < fleet.length; i++){
     for(let j = i + 1; j < fleet.length; j++){
       const a = fleet[i], b = fleet[j];
       if(!a.alive || !b.alive) continue;
-      const dx = b.x - a.x, dz = b.z - a.z;
-      const d2 = dx * dx + dz * dz;
-      if(d2 < 64 && d2 > 0.01){
-        const d = Math.sqrt(d2), push = (8 - d) * 0.5;
-        const nx = dx / d, nz = dz / d;
-        const ma = a.type === 'carrier' ? 10 : a.type === 'battleship' ? 5 : 2;
-        const mb = b.type === 'carrier' ? 10 : b.type === 'battleship' ? 5 : 2;
-        a.x -= nx * push * (mb / (ma + mb)) * 2;
-        a.z -= nz * push * (mb / (ma + mb)) * 2;
-        b.x += nx * push * (ma / (ma + mb)) * 2;
-        b.z += nz * push * (ma / (ma + mb)) * 2;
-        if(Math.abs(a.x - b.x) < 6 && Math.abs(a.z - b.z) < 6){
-          // hard contact at speed: scrape damage on the lighter ship
-          const lighter = ma < mb ? a : b;
-          if(Math.abs(state.rudder) > 0.3) damageShip(lighter, 3, lighter.x, lighter.z);
+      const cA = hullCircles(a), cB = hullCircles(b);
+      let hit = null;
+      for(const ca of cA){
+        for(const cb of cB){
+          const dx = cb.x - ca.x, dz = cb.z - ca.z;
+          const d = Math.hypot(dx, dz);
+          if(d < ca.r + cb.r && d > 0.01){
+            hit = {x: (ca.x + cb.x) / 2, z: (ca.z + cb.z) / 2,
+                   nx: dx / d, nz: dz / d, depth: (ca.r + cb.r) - d};
+            break;
+          }
         }
+        if(hit) break;
       }
+      if(!hit) continue;
+      // closing speed along the impact normal: + = moving into each other
+      const rvx = b.motion.vx - a.motion.vx, rvz = b.motion.vz - a.motion.vz;
+      const closing = Math.max(0, -(rvx * hit.nx + rvz * hit.nz));
+      const ma = shipMass(a), mb = shipMass(b);
+      // shove apart (impulse) — the lighter ship moves more
+      const push = hit.depth + closing * 0.4;
+      a.x -= hit.nx * push * (mb / (ma + mb));
+      a.z -= hit.nz * push * (mb / (ma + mb));
+      b.x += hit.nx * push * (ma / (ma + mb));
+      b.z += hit.nz * push * (ma / (ma + mb));
+      a.heelKick = (a.heelKick || 0) + (Math.random() < 0.5 ? -1 : 1) * 0.15;
+      b.heelKick = (b.heelKick || 0) + (Math.random() < 0.5 ? -1 : 1) * 0.15;
+      // one impact per pair every 1.5 s — the shove above keeps the hulls
+      // from grinding, the cooldown keeps the damage from repeating
+      const key = i + ':' + j;
+      if(state.collCool[key] && state.t - state.collCool[key] < 1.5) continue;
+      state.collCool[key] = state.t;
+      const dmgBase = 8 + closing * 2.5; // a touch is 8, a hard hit ~40
+      const dmgA = Math.max(1, Math.round(dmgBase * (mb / (ma + mb)) * 2));
+      const dmgB = Math.max(1, Math.round(dmgBase * (ma / (ma + mb)) * 2));
+      burst(hit.x, 3, hit.z, 30, [1, 0.7, 0.3], 6, 4);
+      burst(hit.x, 4, hit.z, 16, [0.25, 0.25, 0.25], 3, 3);
+      toast('💥 COLLISION', a.label + ' and ' + b.label + ' collided!');
+      damageShip(a, dmgA, hit.x, hit.z);
+      if(b.alive) damageShip(b, dmgB, hit.x, hit.z);
     }
   }
 
@@ -1993,6 +2119,29 @@ function update(dt){
       } else {
         s.floodTotal = Math.min(1, s.floodTotal + dt * 0.02);
       }
+      // War on the Sea: flooding spreads to neighbouring compartments, and
+      // speed forces more water in — a breached ship cannot just cruise away
+      if(s.floodTotal > 0.25){
+        s.floodTotal = Math.min(1, s.floodTotal + dt * 0.008 * (1 + state.speed / 14));
+        s.floodSide = Math.max(-1, Math.min(1, s.floodSide + (s.listDir * 0.01 * dt)));
+      }
+      // fire: a hit can start one; it burns the ship down, spawns flame and
+      // smoke, and spreads while it burns. Flooding puts it out, damage
+      // control slowly beats it down. A big fire in the forward magazine is
+      // what breaks a ship in two.
+      if(s.fire > 0){
+        s.hp -= s.fire * dt * 1.5;
+        s.fireT = (s.fireT || 0) + dt;
+        if(s.fireT > 0.15){
+          s.fireT = 0;
+          const fx = s.x + (Math.random() - 0.5) * s.group.userData.wid;
+          const fz = s.z + (Math.random() - 0.5) * s.group.userData.len * 0.5;
+          spawnParticle(fx, s.y + 2, fz, (Math.random() - 0.5), 2 + Math.random() * 2, (Math.random() - 0.5),
+            0.5, 1, 0.55, 0.15, -0.5);
+        }
+        s.fire = Math.max(0, s.fire - dt * (s.floodTotal > 0.4 ? 0.12 : 0.04));
+        if(s.hp <= 0) sinkShip(s, pickSinkMode(s, 25));
+      }
       // counter-flooding: list straightens, but draft and weight grow
       const cf = Math.abs(s.floodSide) > 0.45 ? 0.5 : 1;
       s.list = s.floodSide * 0.18 * cf;
@@ -2001,7 +2150,12 @@ function update(dt){
       s.speedFactor = 1 - 0.12 * s.floodTotal;
       // capsize: list past ~35-45 deg or flooding past ~90% of buoyancy
       if(Math.abs(s.floodSide) > 0.92 || s.floodTotal > 0.9){
-        sinkShip(s, true);
+        // War on the Sea: a ship that floods out goes down by the damage —
+        // one-sided flooding capsizes her, bow/stern flooding takes her down
+        // by that end, even flooding settles her upright
+        const m = Math.abs(s.floodSide) > 0.7 ? 'capsize'
+          : s.floodEnd > 0.4 ? 'bow' : s.floodEnd < -0.4 ? 'stern' : 'settle';
+        sinkShip(s, m);
         return;
       }
       const mo = s.motion; // waves, heel and yaw all come from ShipMotion now
@@ -2062,20 +2216,54 @@ function update(dt){
       s.group.position.set(s.x, s.y, s.z);
       s.group.rotation.set(s.pitchSm + s.trim, -s.heading, s.rollSm + s.list + mo.heel + kick + s.heelKick);
     } else {
-      // sinking: list grows, trim by the bow/stern, deck edge dips, roll accelerates
+      // sinking (v10.0): how she goes down depends on the damage — capsize
+      // rolls her over, bow/stern take her down by that end, settle sinks
+      // her nearly level, break-up sends the two halves down separately
       s.sinkT += dt / 6;
       const f = Math.min(1, s.sinkT);
       s.motion.sampleWaves(state.t);
+      const sideSign = s.floodSide !== 0 ? Math.sign(s.floodSide) : s.listDir;
+      const endSign = s.floodEnd !== 0 ? Math.sign(s.floodEnd) : 1;
+      let rollTarget, pitchTarget;
+      const mode = s.sinkMode || 'settle';
+      if(mode === 'capsize'){ rollTarget = 1.5 * sideSign; pitchTarget = 0.1 * endSign; }
+      else if(mode === 'bow'){ rollTarget = 0.95 * s.listDir; pitchTarget = 0.35; }
+      else if(mode === 'stern'){ rollTarget = 0.95 * s.listDir; pitchTarget = -0.35; }
+      else if(mode === 'breakup'){ rollTarget = 0.6 * s.listDir; pitchTarget = 0.15; }
+      else { rollTarget = 0.15 * s.listDir; pitchTarget = 0.05; } // settle
       s.y = s.motion.y * 0.75 - f * f * 9;
-      s.group.position.set(s.x, s.y, s.z);
-      const rollTarget = s.capsize ? 1.5 * (s.floodSide !== 0 ? Math.sign(s.floodSide) : s.listDir) : 0.95 * s.listDir;
-      s.group.rotation.set(s.pitchSm + f * 0.22 * (s.floodEnd !== 0 ? Math.sign(s.floodEnd) : 1), -s.heading, s.rollSm + f * rollTarget);
+      if(mode === 'breakup' && s.breakParts){
+        // the two halves sink apart: the bow section plunges forward, the
+        // stern section rolls away. Re-aim each half's clip plane so the cut
+        // follows the half as it drifts and turns.
+        const fx = Math.sin(s.heading), fz = -Math.cos(s.heading);
+        const bp = s.breakParts;
+        const bowY = s.y - f * 2, sternY = s.y - f * 1;
+        bp.bow.position.set(s.x + fx * f * 8, bowY, s.z + fz * f * 8);
+        bp.bow.rotation.set(s.pitchSm + f * 0.5, -s.heading, s.rollSm + f * 0.2);
+        bp.stern.position.set(s.x - fx * f * 6, sternY, s.z - fz * f * 6);
+        bp.stern.rotation.set(s.pitchSm - f * 0.15, -s.heading, s.rollSm + f * 1.2 * sideSign);
+        for(const half of [bp.bow, bp.stern]){
+          const pl = half.userData.clipPlane, sg = half.userData.clipSign;
+          pl.normal.set(fx * sg, 0, fz * sg);
+          pl.constant = -(fx * sg * half.position.x + fz * sg * half.position.z);
+        }
+        if(Math.random() < 0.6){
+          spawnParticle(s.x + (Math.random() - 0.5) * 8, s.y + 1, s.z + (Math.random() - 0.5) * 8,
+            (Math.random() - 0.5) * 2, 1 + Math.random() * 2, (Math.random() - 0.5) * 2,
+            0.9, 0.4, 0.35, 0.3, 1.5); // debris from the break
+        }
+      } else {
+        s.group.position.set(s.x, s.y, s.z);
+        s.group.rotation.set(s.pitchSm + f * pitchTarget, -s.heading, s.rollSm + f * rollTarget);
+      }
       if(Math.random() < 0.5){
         spawnParticle(s.x + (Math.random() - 0.5) * 4, s.y + 1, s.z + (Math.random() - 0.5) * 6,
           0, 2 + Math.random() * 2, 0, 1.2, 0.7, 0.9, 1, 1.5);
       }
       if(f >= 1){
         s.group.visible = false;
+        if(s.breakParts){ s.breakParts.bow.visible = false; s.breakParts.stern.visible = false; }
         s.foam.visible = false;
         burst(s.x, 1, s.z, 30, [0.9, 0.95, 1], 5, 3);
         for(let i = 0; i < 3; i++){
@@ -2352,8 +2540,8 @@ function fleetFits(tx, ty, tz, lx, ly, lz, tanH, tanV){
 function updateCamera(dt){
   const flag = flagship() || fleet[0];
   const aspect = window.innerWidth / window.innerHeight;
-  const camZ0 = aspect < 0.75 ? 75 : aspect < 1.1 ? 65 : 56;
-  const camY0 = aspect < 0.75 ? 31 : aspect < 1.1 ? 26 : 22;
+  const camZ0 = aspect < 0.75 ? 80 : aspect < 1.1 ? 70 : 60;
+  const camY0 = aspect < 0.75 ? 26 : aspect < 1.1 ? 22 : 19; // v10.0: lower, more at-sea-level view
   const speedN = Math.min(1, state.speed / 14);
   const camZ = camZ0 * state.camZoom;
   const camY = camY0 * (0.85 + 0.3 * state.camZoom);
