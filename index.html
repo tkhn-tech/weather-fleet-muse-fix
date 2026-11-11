@@ -141,7 +141,7 @@
         <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v8.7</div>
+    <div class="ver">v8.8</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -545,6 +545,9 @@ const M = {
   window: new THREE.MeshStandardMaterial({color: 0xffe9a8, emissive: 0x664411, roughness: 0.4}),
   vls: new THREE.MeshStandardMaterial({map: vlsTex, roughness: 0.7, metalness: 0.2}),
 };
+// ships stay visible in any weather: their materials ignore the scene fog,
+// so the lead ship is never swallowed by it as the fleet moves (v8.8)
+Object.values(M).forEach(m => { m.fog = false; });
 function box(w, h, d, mat, x, y, z){
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
   m.position.set(x, y, z);
@@ -673,9 +676,17 @@ function makeShip(type){
     sps48.rotation.x = -0.15;
     g.add(sps48);
     const num = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.9),
-      new THREE.MeshBasicMaterial({map: numTex, transparent: true}));
+      new THREE.MeshBasicMaterial({map: numTex, transparent: true, fog: false}));
     num.position.set(5.9, 3.2, 5.56);
     g.add(num);
+    // hull number 79 on both bow sides (ref: Kennedy's bow numbers)
+    [-1, 1].forEach(sgn => {
+      const bow79 = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.75),
+        new THREE.MeshBasicMaterial({map: numTex, transparent: true, fog: false}));
+      bow79.position.set(sgn * (W / 2 + 0.42), 0.8, -L * 0.32);
+      bow79.rotation.y = sgn * Math.PI / 2;
+      g.add(bow79);
+    });
     // nav lights on the island: red port, green starboard
     const navR = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshStandardMaterial({color: 0xff4444, emissive: 0xaa1111}));
     navR.position.set(4.5, 5.9, 4.6); g.add(navR);
@@ -695,6 +706,16 @@ function makeShip(type){
     rotor.rotation.x = -Math.PI / 2; rotor.position.y = 0.7; heli.add(rotor);
     heli.position.set(4.2, 2.0, 7.8);
     g.add(heli);
+    // bulbous bow (ref: Kennedy's rounded bow protrusion at the waterline)
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(1.0, 12, 8), M.hull);
+    bulb.scale.set(1.1, 0.7, 1.6); bulb.position.set(0, -0.2, -10.6); g.add(bulb);
+    // E-2 Hawkeye (ref: Kennedy's radar-dome early-warning aircraft) — a
+    // parked jet with the big round radar dome on top, on the bow parking spot
+    const hawkeye = makeJet();
+    hawkeye.scale.set(1.25, 1.25, 1.25);
+    const hawkeyeDome = new THREE.Mesh(new THREE.SphereGeometry(0.55, 10, 8), M.white);
+    hawkeyeDome.position.set(0, 0.75, 0.2); hawkeye.add(hawkeyeDome);
+    hawkeye.position.set(-4.5, 1.95, -3); hawkeye.rotation.y = -0.3; g.add(hawkeye);
     // Phalanx on sponsons, bow radar dome
     const p1 = makePhalanx(); p1.position.set(-6.5, 1.9, -8); g.add(p1);
     const p2 = makePhalanx(); p2.position.set(6.5, 1.9, 8); g.add(p2);
@@ -746,12 +767,21 @@ function makeShip(type){
     [[-1.6, -0.2], [1.6, -0.2], [-1.6, 4.6], [1.6, 4.6]].forEach(p => {
       const ph = makePhalanx(); ph.position.set(p[0], 1.6, p[1]); g.add(ph);
     });
-    // secondary 5-in twin turrets amidships
-    [[-1.9, 0.8], [1.9, 0.8]].forEach(p => {
+    // secondary 5-in twin turrets — the Iowa carries ten mounts (five per
+    // side); add two more per side along the superstructure (v8.8)
+    [[-1.9, -0.6], [1.9, -0.6], [-1.9, 0.8], [1.9, 0.8], [-1.9, 2.2], [1.9, 2.2]].forEach(p => {
       const t = makeTurret(2);
       t.scale.set(0.55, 0.55, 0.55);
       t.position.set(p[0], 1.6, p[1]);
       g.add(t);
+    });
+    // hull number 62 on both bow sides (ref: New Jersey's bow numbers)
+    [-1, 1].forEach(sgn => {
+      const bow62 = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.6),
+        new THREE.MeshBasicMaterial({map: numTex62, transparent: true, fog: false}));
+      bow62.position.set(sgn * (W / 2 + 0.42), 0.8, -L * 0.32);
+      bow62.rotation.y = sgn * Math.PI / 2;
+      g.add(bow62);
     });
     // stern helipad (1980s: flight deck aft, no hangar)
     const pad = new THREE.Mesh(new THREE.CircleGeometry(1.6, 20), new THREE.MeshStandardMaterial({color: 0x2c3a48, roughness: 0.9}));
@@ -762,7 +792,7 @@ function makeShip(type){
     g.add(ring);
     // hull number 62 (ref: USS New Jersey BB-62) on the bridge tower aft face
     const num62 = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.9),
-      new THREE.MeshBasicMaterial({map: numTex62, transparent: true}));
+      new THREE.MeshBasicMaterial({map: numTex62, transparent: true, fog: false}));
     num62.position.set(0, 3.0, 0.38);
     g.add(num62);
     // helicopter parked on the stern helipad — light hull and a clearer rotor
@@ -821,13 +851,21 @@ function makeShip(type){
     g.add(box(2.2, 1.2, 0.1, M.black, 0, 2.0, 5.06));
     // hull number 125 (ref: USS Jack H. Lucas DDG-125) on the hangar door
     const num125 = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.6),
-      new THREE.MeshBasicMaterial({map: numTex125, transparent: true}));
+      new THREE.MeshBasicMaterial({map: numTex125, transparent: true, fog: false}));
     num125.position.set(0, 2.0, 5.13);
     g.add(num125);
     const pad = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4),
       new THREE.MeshBasicMaterial({map: hTex, transparent: true}));
     pad.rotation.x = -Math.PI / 2; pad.position.set(0, 1.42, 4.6);
     g.add(pad);
+    // hull number 125 on both bow sides (ref: Jack H. Lucas's bow numbers)
+    [-1, 1].forEach(sgn => {
+      const bow125 = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.45),
+        new THREE.MeshBasicMaterial({map: numTex125, transparent: true, fog: false}));
+      bow125.position.set(sgn * (W / 2 + 0.42), 0.7, -L * 0.32);
+      bow125.rotation.y = sgn * Math.PI / 2;
+      g.add(bow125);
+    });
     // Phalanx: one on the forward deckhouse, one over the hangar
     const p1 = makePhalanx(); p1.position.set(0, 3.5, -1.5); p1.scale.set(0.8, 0.8, 0.8); g.add(p1);
     const p2 = makePhalanx(); p2.position.set(0, 3.0, 4.0); p2.scale.set(0.8, 0.8, 0.8); g.add(p2);
