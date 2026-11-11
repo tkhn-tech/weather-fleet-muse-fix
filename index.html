@@ -114,7 +114,7 @@
 <div id="miniMap"><canvas id="miniCv" width="128" height="128"></canvas></div>
 
 <div id="stageToast"><h2 id="stageName">Calm Seas</h2><p id="stageDesc">The fleet sails out. Hold formation.</p></div>
-<div id="hint">Joystick: steer + throttle<br>← → steer · ↑ ↓ throttle · BOOST to push</div>
+<div id="hint">Hold ↑ / push the stick up to sail — release and the fleet coasts to idle<br>← → steer · BOOST to push</div>
 <button id="boostBtn">BOOST</button>
 <div id="joy"><div id="joyKnob"></div></div>
 
@@ -124,7 +124,7 @@
     <div class="fleetLine">🚢 🛳️ 🚢 🛳️ 🚢</div>
     <p class="sub">The same fleet, one run, no cuts — now in full 3D. Steer the flagship with
       the joystick from behind the whole fleet as the carrier leads the battleships and destroyers through a
-      an open ocean — steer anywhere, and the world sails with you. Waves pitch and roll every hull. Dodge rogue
+      an open ocean — steer anywhere, and the world sails with you. The fleet starts at idle, floating on the swell — hold the throttle to get under way, and release it to coast back to idle. Waves pitch and roll every hull. Dodge rogue
       waves, whirlpools and islands, grab supply crates to repair, and keep the fleet alive. A minimap tracks the fleet, hazards and islands — sail to the gold waypoint beacon for bonus score, and mind the wind and current, which push you off course.
       A wrecked ship lists, floods and sinks beneath the waves, and the next one
       takes command. Lose all five and the round ends.</p>
@@ -141,12 +141,12 @@
         <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v7.2</div>
+    <div class="ver">v8.0</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
     </div>
-    <p class="keys">Steer: joystick, drag, or ← → / A D &nbsp;·&nbsp; Throttle: joystick ↑ ↓ or W / S &nbsp;·&nbsp; Boost: hold BOOST or Shift &nbsp;·&nbsp; Pause: P<br>
+    <p class="keys">Steer: joystick, drag, or ← → / A D &nbsp;·&nbsp; Throttle: hold joystick ↑ or W / S — release to drift to idle &nbsp;·&nbsp; Boost: hold BOOST or Shift &nbsp;·&nbsp; Pause: P<br>
       Wheel: zoom &nbsp;·&nbsp; Right-drag: free look<br>
       Rogue wave −12 &nbsp;·&nbsp; Whirlpool −8 &nbsp;·&nbsp; Debris −6 &nbsp;·&nbsp; Supply crate +10</p>
   </div>
@@ -331,15 +331,19 @@ function gerstner(x, z, t){
     oz += Q * A * w.dz * Math.cos(th);
     y += A * Math.sin(th);
   }
-  // rogue-wave bump: a temporary localised extra Gerstner component
+  // rogue-wave bump: a temporary localised extra Gerstner component — the wave
+  // IS the ocean, not a mesh standing in it. It grows in over ~4 s so the sea
+  // visibly rises ahead of you, then travels with the swell (research rule:
+  // A_rogue ~ 1.0-1.2 x Hs, total crest ~ 2x Hs, telegraphed by the crest itself)
   for(let i = 0; i < state.hazards.length; i++){
     const h = state.hazards[i];
     if(h.kind !== 'wave' || !h.bumpA) continue;
+    const grow = Math.min(1, (t - (h.born || 0)) / 4);
     const dx = x - h.x, dz = z - h.z;
     const d2 = dx * dx + dz * dz, sig = h.span * 0.45;
     if(d2 < sig * sig * 4){
       const along = dx * (h.dirx || 0) + dz * (h.dirz === undefined ? 1 : h.dirz);
-      y += h.bumpA * Math.exp(-d2 / (2 * sig * sig)) * Math.sin(0.35 * along - t * 1.2 + h.ph);
+      y += h.bumpA * grow * Math.exp(-d2 / (2 * sig * sig)) * Math.sin(0.35 * along - t * 1.2 + h.ph);
     }
   }
   return {x: x + ox, y, z: z + oz};
@@ -357,24 +361,64 @@ function waveSlope(x, z, t){
 const OCEAN_STEP = 8;
 const oceanGeo = new THREE.PlaneGeometry(480, 720, 60, 90);
 oceanGeo.rotateX(-Math.PI / 2);
-const oceanMat = new THREE.MeshPhongMaterial({color: STAGES[settings.startStage].sea, shininess: 110, specular: 0x99ccee});
+const oceanMat = new THREE.MeshPhongMaterial({color: 0xffffff, vertexColors: true, shininess: 110, specular: 0x99ccee});
 const ocean = new THREE.Mesh(oceanGeo, oceanMat);
 ocean.position.set(0, 0, 0);
 scene.add(ocean);
 const oceanPos = oceanGeo.attributes.position;
 const oceanBase = oceanPos.array.slice();
+const oceanCol = new Float32Array(oceanPos.count * 3);
+oceanGeo.setAttribute('color', new THREE.BufferAttribute(oceanCol, 3));
+// per-vertex foam noise, fixed to the mesh grid so the whitecaps are lacy
+// rather than a solid band (research: foam thresholded through noise, and
+// whitecap coverage stays a few percent even in a hurricane — Monahan)
+const oceanNoise = new Float32Array(oceanPos.count);
+for(let i = 0; i < oceanPos.count; i++){
+  const s = Math.sin(oceanBase[i * 3] * 12.9898 + oceanBase[i * 3 + 2] * 78.233) * 43758.5453;
+  oceanNoise[i] = s - Math.floor(s);
+}
+// sea colours, set per stage: troughs dark, crests pale, foam a grey-white
+// (fresh foam reflects ~40-55%, never pure white)
+let seaDeep = [0, 0, 0], seaBase = [0, 0, 0], seaCrest = [0, 0, 0];
+function setSeaColors(hex){
+  const c = new THREE.Color(hex), cr = new THREE.Color(0x9fd4e8);
+  seaBase = [c.r, c.g, c.b];
+  seaDeep = [c.r * 0.5, c.g * 0.5, c.b * 0.5];
+  seaCrest = [c.r + (cr.r - c.r) * 0.55, c.g + (cr.g - c.g) * 0.55, c.b + (cr.b - c.b) * 0.55];
+}
+setSeaColors(STAGES[settings.startStage].sea);
 function updateOcean(t){
   const f = fleet[0];
   ocean.position.set(Math.round(f.x / OCEAN_STEP) * OCEAN_STEP, 0, Math.round(f.z / OCEAN_STEP) * OCEAN_STEP);
   const ox = ocean.position.x, oz = ocean.position.z;
+  const range = 2.07 * ampCur + 1.5;
+  // foam starts higher in calm seas and lower as the sea roughens, so
+  // whitecaps are rare in the calm and frequent in the storm, never a sheet
+  const foamThresh = 1.02 - 0.12 * Math.min(1.3, ampCur);
   for(let i = 0; i < oceanPos.count; i++){
     const bx = oceanBase[i * 3], bz = oceanBase[i * 3 + 2];
     const g = gerstner(bx + ox, bz + oz, t);
     oceanPos.array[i * 3] = g.x - ox;
     oceanPos.array[i * 3 + 1] = g.y;
     oceanPos.array[i * 3 + 2] = g.z - oz;
+    let hn = (g.y + range) / (2 * range);
+    if(hn < 0) hn = 0; else if(hn > 1) hn = 1;
+    let r, gg, b;
+    if(hn > foamThresh + 0.10 * oceanNoise[i]){
+      r = 0.87; gg = 0.91; b = 0.94;
+    } else {
+      const t1 = hn < 0.5 ? hn * 2 : 1;
+      let t2 = hn > 0.5 ? (hn - 0.5) / 0.36 : 0;
+      if(t2 > 1) t2 = 1;
+      r = seaDeep[0] + (seaBase[0] - seaDeep[0]) * t1;
+      gg = seaDeep[1] + (seaBase[1] - seaDeep[1]) * t1;
+      b = seaDeep[2] + (seaBase[2] - seaDeep[2]) * t1;
+      r += (seaCrest[0] - r) * t2; gg += (seaCrest[1] - gg) * t2; b += (seaCrest[2] - b) * t2;
+    }
+    oceanCol[i * 3] = r; oceanCol[i * 3 + 1] = gg; oceanCol[i * 3 + 2] = b;
   }
   oceanPos.needsUpdate = true;
+  oceanGeo.attributes.color.needsUpdate = true;
   if((frameCount & 1) === 0) oceanGeo.computeVertexNormals();
 }
 
@@ -925,6 +969,7 @@ const state = {
   speedLoss: 1, kickT: 99, prevRudder: 0,
   rogueDone: false, rogueTimer: -1, rogueWarned: false,
   camZoom: 1, freeLook: 0, freeLookActive: false,
+  camHeading: 0, camBank: 0,
   windDir: 0, curX: 0, curZ: 0, cog: 0, islandT: 0,
 };
 let frameCount = 0;
@@ -951,7 +996,7 @@ function applyStage(i){
   scene.background.setHex(st.sky);
   scene.fog.color.setHex(st.sky);
   scene.fog.far = st.fogFar;
-  oceanMat.color.setHex(st.sea);
+  setSeaColors(st.sea);
   sun.intensity = st.sunI;
   ampTarget = st.amp * settings.wave;
   rainVisible = Math.round(st.rain * settings.rain);
@@ -1079,23 +1124,13 @@ function spawnHazard(forceKind){
   const g = new THREE.Group();
   let h;
   if(kind === 'wave'){
+    // no mesh at all: the rogue wave is a localised Gerstner bump in the shared
+    // wave field, so the sea itself rises into a crest with a foam cap and the
+    // ships ride up its face — there is no wall standing in the ocean
     const span = (state.stage >= 3 ? 60 : 45) + Math.random() * 25;
-    const geo = new THREE.PlaneGeometry(span, 8, 24, 2);
-    const pos = geo.attributes.position;
-    for(let i = 0; i < pos.count; i++){
-      const x = pos.array[i * 3], y = pos.array[i * 3 + 1];
-      const u = (x / span) + 0.5;
-      pos.array[i * 3 + 2] = Math.sin(u * Math.PI) * 5;
-      pos.array[i * 3 + 1] = y + Math.sin(u * Math.PI) * 2.5;
-    }
-    geo.computeVertexNormals();
-    const m = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({color: 0x9fd4e8, transparent: true, opacity: 0.7, side: THREE.DoubleSide, shininess: 120, specular: 0xffffff}));
-    m.position.y = 3;
-    g.add(m);
     const wp = aheadOfFleet(170 + Math.random() * 60, 50);
     h = {kind, group: g, x: wp.x, z: wp.z, span, r: span / 2, hitShips: new Set(),
-         bumpA: state.stage >= 3 ? 1.4 : 0.8, ph: Math.random() * 6.28, dirx: wp.hx, dirz: wp.hz};
-    g.rotation.y = -wp.heading;
+         bumpA: state.stage >= 3 ? 2.4 : 1.6, ph: Math.random() * 6.28, dirx: wp.hx, dirz: wp.hz, born: state.t};
   } else if(kind === 'whirl'){
     const disc = new THREE.Mesh(new THREE.CircleGeometry(8, 24), new THREE.MeshBasicMaterial({color: 0x0a1826}));
     disc.rotation.x = -Math.PI / 2; disc.position.y = 0.25;
@@ -1149,6 +1184,7 @@ function reset(){
   state.shake = 0; state.over = false; state.paused = false;
   state.spawnT = 0; state.pickupT = 0; state.boltT = 0; state.flashT = 0;
   state.rudder = 0; state.dragSteer = false; state.speedLoss = 1; state.kickT = 99; state.prevRudder = 0;
+  state.camHeading = 0; state.camBank = 0;
   state.rogueDone = false; state.rogueTimer = -1; state.rogueWarned = false;
   clearWorld();
   fleet.forEach(s => {
@@ -1368,19 +1404,24 @@ function sampleBuoyancy(s){
 function update(dt){
   const st = STAGES[state.stage];
   state.t += dt;
-  // throttle: joystick Y (push up = faster) or W/S keys; cruise = 1x, boost = 1.5x
-  let throttle = 1;
-  if(state.keys['ArrowUp'] || state.keys['w']) throttle = 1.35;
-  else if(state.keys['ArrowDown'] || state.keys['s']) throttle = 0.55;
-  else if(Math.abs(state.joyY) > 0.08) throttle = 1 - state.joyY * 0.5;
-  throttle = Math.max(0.4, Math.min(1.6, throttle));
+  // throttle is an input, not a cruise: the fleet starts at idle and only moves
+  // while you hold the throttle — release it and the ships coast to a stop and
+  // float on the sea. ArrowDown / stick-down brakes harder than a plain release.
+  let throttleInput = 0, braking = false;
+  if(state.keys['ArrowUp'] || state.keys['w']) throttleInput = 1;
+  else if(state.keys['ArrowDown'] || state.keys['s']){ throttleInput = 0; braking = true; }
+  else if(state.joyActive && state.joyY < -0.08) throttleInput = Math.min(1, -state.joyY);
+  else if(state.joyActive && state.joyY > 0.08){ throttleInput = 0; braking = true; }
   // speed loss in turns: ~1/4 after 90°, ~1/3 after 180° at full wheel
   const lossTarget = 1 - 0.33 * state.rudder * state.rudder;
   state.speedLoss += (lossTarget - state.speedLoss) * Math.min(1, dt * 0.5);
   const flag0 = flagship();
   const floodFactor = flag0 ? flag0.speedFactor : 1;
-  const speed = st.speed * throttle * (state.boost ? 1.5 : 1) * state.speedLoss * floodFactor;
-  state.speed = speed;
+  const speedTarget = Math.max(0, st.speed * throttleInput * (state.boost ? 1.5 : 1) * state.speedLoss * floodFactor);
+  // a heavy fleet takes its time: ~2 s to work up to speed, ~3 s to coast down
+  const easeRate = speedTarget > state.speed ? 1.0 : (braking ? 2.0 : 0.55);
+  state.speed += (speedTarget - state.speed) * (1 - Math.exp(-dt * easeRate));
+  const speed = state.speed;
   // wind + current: the sea pushes the fleet sideways, so heading and
   // course-over-ground differ — steer for the COG, not just the compass
   state.windDir = Math.PI + 0.6 * Math.sin(state.t * 0.012) + 0.4 * Math.sin(state.t * 0.005 + 1.7);
@@ -1411,7 +1452,7 @@ function update(dt){
     state.rogueTimer -= dt;
     if(state.rogueTimer < 10 && !state.rogueWarned){
       state.rogueWarned = true;
-      toast('⚠️ ROGUE WAVE', 'A 28 m wall is forming ahead — brace for it');
+      toast('⚠️ ROGUE WAVE', 'A rogue wave is building ahead — brace for it');
       thunder();
     }
     if(state.rogueTimer <= 0){
@@ -1420,10 +1461,8 @@ function update(dt){
       const h = state.hazards[state.hazards.length - 1];
       if(h){
         const p = aheadOfFleet(150, 30);
-        h.group.scale.x = 75 / h.span;
-        h.span = 75; h.bumpA = 1.6; h.x = p.x; h.z = p.z; h.dirx = p.hx; h.dirz = p.hz;
+        h.span = 75; h.bumpA = 2.8; h.x = p.x; h.z = p.z; h.dirx = p.hx; h.dirz = p.hz;
         h.group.position.set(h.x, 0, h.z);
-        h.group.rotation.y = -p.heading;
       }
     }
   }
@@ -1448,7 +1487,8 @@ function update(dt){
   state.kickT += dt;
   state.prevRudder = state.rudder;
   const whirlSlow = fleet.some(s => s.alive && state.hazards.some(h => h.kind === 'whirl' && Math.hypot(s.x - h.x, s.z - h.z) < 20));
-  const turnRate = 0.5 * (0.55 + 0.45 * (speed / 14)) * (whirlSlow ? 0.5 : 1);
+  // steerage needs way on: a ship with no speed barely answers the helm
+  const turnRate = 0.5 * (0.12 + 0.88 * Math.min(1, speed / 12)) * (whirlSlow ? 0.5 : 1);
   // open world: the heading is free (full 360°) and the flagship truly travels
   // along it — x and z both change, so steering changes the course for real
   flag.heading += state.rudder * turnRate * dt;
@@ -1660,8 +1700,8 @@ function update(dt){
   // crest foam: whitecaps where the sea is actually steepening, drifting downwind
   const foamChance = 0.25 + state.stage * 0.35;
   if(Math.random() < foamChance){
-    const fx = (Math.random() - 0.5) * 120;
-    const fz = -120 + Math.random() * 150;
+    const fx = flag.x + (Math.random() - 0.5) * 120;
+    const fz = flag.z - 120 + Math.random() * 150;
     if(waveHeight(fx, fz, state.t) > ampCur * 1.15){
       const f = spawnSprite(fx, waveHeight(fx, fz, state.t) + 0.1, fz, 5 + Math.random() * 3, 4 + Math.random() * 4, 2, 0.3, 0xffffff, 0.3);
       f.vx = 0.4; f.vz = 1.0;
@@ -1716,7 +1756,7 @@ function update(dt){
     }
     if(h.kind === 'wave'){
       if(Math.random() < 0.4){
-        spawnParticle(h.x + (Math.random() - 0.5) * h.span * 0.8, 5 + Math.random() * 2, h.z,
+        spawnParticle(h.x + (Math.random() - 0.5) * h.span * 0.8, waveHeight(h.x, h.z, state.t) + 1.5 + Math.random() * 2, h.z,
           (Math.random() - 0.5) * 2, 1 + Math.random(), 2, 0.8, 0.9, 0.95, 1, -2);
       }
     }
@@ -1759,7 +1799,7 @@ function update(dt){
         h.hitShips.add(s);
         damageShip(s, h.kind === 'wave' ? 12 : h.kind === 'whirl' ? 8 : 6, h.x, h.z);
         if(h.kind === 'wave'){
-          // the wall shoves the ship sideways and heels it over
+          // the crest shoves the ship sideways and heels it over
           const dirx = h.dirx || 0, dirz = h.dirz === undefined ? 1 : h.dirz;
           s.shoveX = dirx * 12; s.shoveZ = dirz * 12;
           s.heelKick = (Math.random() < 0.5 ? -1 : 1) * 0.3;
@@ -1828,7 +1868,8 @@ function updateCamera(dt){
   const aspect = window.innerWidth / window.innerHeight;
   const camZ0 = aspect < 0.75 ? 78 : aspect < 1.1 ? 70 : 62;
   const camY0 = aspect < 0.75 ? 32 : aspect < 1.1 ? 28 : 24;
-  const camZ = camZ0 * state.camZoom;
+  const speedN = Math.min(1, state.speed / 14);
+  const camZ = camZ0 * state.camZoom * (1 + speedN * 0.12);
   const camY = camY0 * (0.85 + 0.3 * state.camZoom);
   if(!state.freeLookActive) state.freeLook *= Math.max(0, 1 - dt * 1.2);
   // frame the whole fleet, not just the flagship: the formation spreads in a
@@ -1844,13 +1885,19 @@ function updateCamera(dt){
   const need = (spread + 8) / Math.max(0.2, fitTan);
   const camZf = Math.max(camZ, Math.min(camZ * 2.2, need));
   const camYf = camY * (camZf / camZ);
-  // camera sits behind the fleet relative to its heading; free-look orbits it
+  // Asphalt-style chase: the camera has its own heading that trails the fleet's
+  // heading, so when you steer the fleet turns inside the frame and the camera
+  // swings in behind it — the fleet moves, the world does not scroll past it
+  let dh = flag.heading - state.camHeading;
+  dh = ((dh + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+  state.camHeading += dh * (1 - Math.exp(-dt * 1.6));
   const fx = Math.sin(flag.heading), fz = -Math.cos(flag.heading);
-  const rx = Math.cos(flag.heading), rz = Math.sin(flag.heading);
+  const chx = Math.sin(state.camHeading), chz = -Math.cos(state.camHeading);
+  const crx = Math.cos(state.camHeading), crz = Math.sin(state.camHeading);
   const a = state.freeLook;
-  const tx = cx - fx * camZf * Math.cos(a) + rx * camZf * Math.sin(a) * 0.55;
+  const tx = cx - chx * camZf * Math.cos(a) + crx * camZf * Math.sin(a) * 0.55;
   const ty = camYf + Math.sin(state.t * 0.5) * 0.4;
-  const tz = cz - fz * camZf * Math.cos(a) + rz * camZf * Math.sin(a) * 0.55;
+  const tz = cz - chz * camZf * Math.cos(a) + crz * camZf * Math.sin(a) * 0.55;
   const k = 1 - Math.exp(-dt * 3);
   camera.position.x += (tx - camera.position.x) * k;
   camera.position.y += (ty - camera.position.y) * k;
@@ -1859,7 +1906,13 @@ function updateCamera(dt){
     camera.position.x += (Math.random() - 0.5) * state.shake * 0.12;
     camera.position.y += (Math.random() - 0.5) * state.shake * 0.12;
   }
-  camera.lookAt(cx + fx * 8, 2, cz + fz * 8);
+  // look ahead of the fleet along its course, so the fleet sits low in frame
+  // and you see where you are going; the camera banks gently into the turn
+  const lookAhead = 10 + speedN * 14;
+  camera.lookAt(cx + fx * lookAhead, 2, cz + fz * lookAhead);
+  const bankTarget = -state.rudder * 0.07 * speedN;
+  state.camBank += (bankTarget - state.camBank) * Math.min(1, dt * 3);
+  camera.rotateZ(state.camBank);
   // the sky travels with the fleet: the sun glow stays ahead, clouds wrap around it
   sunGlow.position.set(flag.x + 90, 65, flag.z - 280);
   clouds.forEach(c => {
@@ -1867,7 +1920,7 @@ function updateCamera(dt){
       c.position.set(flag.x + (Math.random() - 0.5) * 300, 55 + Math.random() * 30, flag.z - 220 + Math.random() * 180);
     }
   });
-  const targetFov = 62 + (state.boost ? 7 : 0);
+  const targetFov = 62 + speedN * 5 + (state.boost ? 7 : 0);
   if(Math.abs(camera.fov - targetFov) > 0.1){
     camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 4);
     camera.updateProjectionMatrix();
