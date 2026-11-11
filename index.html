@@ -141,7 +141,7 @@
         <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v9.5</div>
+    <div class="ver">v9.7</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -726,9 +726,58 @@ function makePhalanx(){
   g.add(dome);
   return g;
 }
+
+// ---------- extras on the real models (v9.7): the GLBs carry the hull and
+// superstructure, but no legible hull numbers and no parked aircraft, so
+// the readable numbers and the carrier air wing go on top ----------
+function addRealExtras(g, type){
+  const L = g.userData.len, W = g.userData.wid;
+  const numPlane = (tex, w, h) => new THREE.Mesh(
+    new THREE.PlaneGeometry(w, h),
+    new THREE.MeshBasicMaterial({map: tex, transparent: true, fog: false}));
+  if(type === 'carrier'){
+    // "79" on the island, both sides (island ~29% from the stern, starboard)
+    [-1, 1].forEach(sgn => {
+      const n = numPlane(numTex, 2.6, 1.3);
+      n.position.set(sgn * 2.6, 4.6, 5.2);
+      n.rotation.y = sgn * Math.PI / 2;
+      g.add(n);
+    });
+    // air wing on the flight deck (deck top ~y 1.5 after the 1.4x scale)
+    const jets = [[-4.5, -9], [4.5, -9], [-4.5, -4], [4.5, 2]];
+    jets.forEach(([x, z], i) => {
+      const j = makeJet(); j.position.set(x, 1.7, z); j.rotation.y = (i % 2 ? -0.15 : 0.12); g.add(j);
+    });
+    const hw = makeHawkeye(); hw.position.set(-4.5, 1.9, -3); hw.rotation.y = -0.3; g.add(hw);
+  } else if(type === 'battleship'){
+    // "62" on both bow sides, readable from the chase camera's stern view
+    // via the aft face too
+    [-1, 1].forEach(sgn => {
+      const n = numPlane(numTex62, 2.0, 1.0);
+      n.position.set(sgn * (W / 2 + 0.06), 1.3, -L * 0.32);
+      n.rotation.y = sgn * Math.PI / 2;
+      g.add(n);
+    });
+    const aft = numPlane(numTex62, 1.6, 0.8);
+    aft.position.set(0, 2.4, L / 2 + 0.06);
+    g.add(aft);
+  } else {
+    // "125" on both bow sides + the stern transom
+    [-1, 1].forEach(sgn => {
+      const n = numPlane(numTex125, 1.5, 0.75);
+      n.position.set(sgn * (W / 2 + 0.06), 1.0, -L * 0.32);
+      n.rotation.y = sgn * Math.PI / 2;
+      g.add(n);
+    });
+    const stern = numPlane(numTex125, 1.3, 0.65);
+    stern.position.set(0, 1.1, L / 2 + 0.06);
+    g.add(stern);
+  }
+}
+
 function makeShip(type){
   const fitted = fitModel(type);
-  if (fitted) return fitted;
+  if (fitted){ addRealExtras(fitted, type); return fitted; }
   const g = new THREE.Group();
   let L, W, Hh;
   if(type === 'carrier'){ L = 22; W = 7.5; Hh = 2.2; }
@@ -1108,7 +1157,9 @@ class ShipMotion {
     const hPort = mean([0, 3, 6, 9]), hStbd = mean([2, 5, 8, 11]);
     this.bowMean = hBow;
     this.y = sum / 12;
-    this.pitch = Math.atan((hBow - hStern) / L) * 0.7;
+    this.hMax = Math.max(...this.sampleHeights);
+    this.hMin = Math.min(...this.sampleHeights);
+    this.pitch = Math.atan((hBow - hStern) / L);
     this.roll = Math.atan((hPort - hStbd) / W);
   }
   update(dt, input = {}) {
@@ -1159,9 +1210,9 @@ class ShipMotion {
 // centres it horizontally and drops the waterline onto y = 0.
 const MODEL_CACHE = {};
 const MODEL_SPEC = {
-  carrier:    {uri: KENNEDY_GLB, len: 22,   wid: 7.5, waterline: 3.25, rot: null},
-  battleship: {uri: NJ_GLB,      len: 18,   wid: 5.2, waterline: 7.4,  rot: [1,0,0, 0,0,1, 0,-1,0]},
-  destroyer:  {uri: DDG_GLB,     len: 10.5, wid: 3.4, waterline: 627,  rot: [0,1,0, 0,0,1, 1,0,0]},
+  carrier:    {uri: KENNEDY_GLB, len: 30.8, wid: 10.5, waterline: 3.25, rot: null},
+  battleship: {uri: NJ_GLB,      len: 25.2, wid: 7.3,  waterline: 7.4,  rot: [1,0,0, 0,0,1, 0,-1,0]},
+  destroyer:  {uri: DDG_GLB,     len: 14.7, wid: 4.8,  waterline: 627,  rot: [0,1,0, 0,0,1, 1,0,0]},
 };
 let GLTFLoader = null, MeshoptDecoder = null;
 try {
@@ -1216,11 +1267,11 @@ function fitModel(type){
 }
 
 const fleet = [
-  {type:'carrier',    label:'Carrier',    dx:0,   dz:0,  hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4},
-  {type:'battleship', label:'Battleship', dx:-13, dz:17, hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1},
-  {type:'battleship', label:'Battleship', dx:13,  dz:17, hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1},
-  {type:'destroyer',  label:'Destroyer',  dx:-22, dz:32, hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7},
-  {type:'destroyer',  label:'Destroyer',  dx:22,  dz:32, hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7},
+  {type:'carrier',    label:'Carrier',    dx:0,     dz:0,    hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4, freeboard:1.0},
+  {type:'battleship', label:'Battleship', dx:-18.2, dz:23.8, hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:0.9},
+  {type:'battleship', label:'Battleship', dx:18.2,  dz:23.8, hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:0.9},
+  {type:'destroyer',  label:'Destroyer',  dx:-30.8, dz:44.8, hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:0.8},
+  {type:'destroyer',  label:'Destroyer',  dx:30.8,  dz:44.8, hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:0.8},
 ];
 fleet.forEach(s => {
   s.group = makeShip(s.type);
@@ -2156,7 +2207,30 @@ function update(dt){
       s.x += s.shoveX * dt; s.z += s.shoveZ * dt;
       s.shoveX *= Math.max(0, 1 - dt * 1.2); s.shoveZ *= Math.max(0, 1 - dt * 1.5);
       s.heelKick *= Math.max(0, 1 - dt * 1.5);
-      s.y = mo.y * 0.75 - s.draft;
+      const lift = Math.min(2.5, Math.max(0, mo.hMax - (s.freeboard || 1) - mo.y));
+      s.y = mo.y + lift - s.draft;
+      // swamped: the water is over the deck (a rogue crest is too tall for
+      // the lift to clear) — take on water fast, list toward the crest,
+      // and throw white water across the deck
+      if(mo.hMax > s.y + (s.freeboard || 1)){
+        const over = mo.hMax - (s.y + (s.freeboard || 1));
+        s.floodTotal = Math.min(1, s.floodTotal + dt * 0.22);
+        s.floodSide = Math.max(-1, Math.min(1, s.floodSide + (mo.roll >= 0 ? 1 : -1) * dt * 0.3));
+        s.swampCool = Math.max(0, (s.swampCool || 0) - dt);
+        if(s.swampCool <= 0){
+          s.swampCool = 0.8;
+          toast('🌊 SWAMPED', s.label + ' taking on water over the deck!');
+          for(let i = 0; i < 6; i++){
+            spawnSprite(s.x + (Math.random() - 0.5) * s.group.userData.len * 0.7, s.y + 1.2, s.z + (Math.random() - 0.5) * s.group.userData.wid,
+              1.0, 4 + Math.random() * 3, 3, 0.7, 0xffffff, 0.55);
+          }
+          for(let i = 0; i < 10; i++){
+            spawnParticle(s.x + (Math.random() - 0.5) * s.group.userData.len * 0.7, s.y + 1, s.z + (Math.random() - 0.5) * s.group.userData.wid,
+              (Math.random() - 0.5) * 2, 2 + Math.random() * 3, (Math.random() - 0.5) * 2,
+              1.0, 0.95, 0.98, 1, 2.5);
+          }
+        }
+      }
       // bow plunge: the 12-point bow mean dropping fast means the bow just
       // buried into a crest — throw up a spray burst at the bow (v9.0)
       const prevBow = s.prevBowMean ?? mo.bowMean;
@@ -2486,7 +2560,7 @@ function fleetFits(tx, ty, tz, lx, ly, lz, tanH, tanV){
 function updateCamera(dt){
   const flag = flagship() || fleet[0];
   const aspect = window.innerWidth / window.innerHeight;
-  const camZ0 = aspect < 0.75 ? 64 : aspect < 1.1 ? 56 : 48;
+  const camZ0 = aspect < 0.75 ? 58 : aspect < 1.1 ? 50 : 43;
   const camY0 = aspect < 0.75 ? 24 : aspect < 1.1 ? 20 : 17;
   const speedN = Math.min(1, state.speed / 14);
   const camZ = camZ0 * state.camZoom;
