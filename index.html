@@ -141,7 +141,7 @@
         <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v7.1</div>
+    <div class="ver">v7.2</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -1831,13 +1831,26 @@ function updateCamera(dt){
   const camZ = camZ0 * state.camZoom;
   const camY = camY0 * (0.85 + 0.3 * state.camZoom);
   if(!state.freeLookActive) state.freeLook *= Math.max(0, 1 - dt * 1.2);
+  // frame the whole fleet, not just the flagship: the formation spreads in a
+  // turn, so the camera tracks the fleet centroid and pulls back to fit it
+  const alive = fleet.filter(s => s.alive);
+  let cx = 0, cz = 0;
+  alive.forEach(s => { cx += s.x; cz += s.z; });
+  cx /= alive.length; cz /= alive.length;
+  let spread = 0;
+  alive.forEach(s => { spread = Math.max(spread, Math.hypot(s.x - cx, s.z - cz)); });
+  const hHalf = Math.atan(Math.tan(camera.fov * Math.PI / 360) * aspect);
+  const fitTan = Math.min(Math.tan(camera.fov * Math.PI / 360), Math.tan(hHalf));
+  const need = (spread + 8) / Math.max(0.2, fitTan);
+  const camZf = Math.max(camZ, Math.min(camZ * 2.2, need));
+  const camYf = camY * (camZf / camZ);
   // camera sits behind the fleet relative to its heading; free-look orbits it
   const fx = Math.sin(flag.heading), fz = -Math.cos(flag.heading);
   const rx = Math.cos(flag.heading), rz = Math.sin(flag.heading);
   const a = state.freeLook;
-  const tx = flag.x - fx * camZ * Math.cos(a) + rx * camZ * Math.sin(a) * 0.55;
-  const ty = camY + Math.sin(state.t * 0.5) * 0.4;
-  const tz = flag.z - fz * camZ * Math.cos(a) + rz * camZ * Math.sin(a) * 0.55;
+  const tx = cx - fx * camZf * Math.cos(a) + rx * camZf * Math.sin(a) * 0.55;
+  const ty = camYf + Math.sin(state.t * 0.5) * 0.4;
+  const tz = cz - fz * camZf * Math.cos(a) + rz * camZf * Math.sin(a) * 0.55;
   const k = 1 - Math.exp(-dt * 3);
   camera.position.x += (tx - camera.position.x) * k;
   camera.position.y += (ty - camera.position.y) * k;
@@ -1846,7 +1859,7 @@ function updateCamera(dt){
     camera.position.x += (Math.random() - 0.5) * state.shake * 0.12;
     camera.position.y += (Math.random() - 0.5) * state.shake * 0.12;
   }
-  camera.lookAt(flag.x + fx * 8, 2, flag.z + fz * 8);
+  camera.lookAt(cx + fx * 8, 2, cz + fz * 8);
   // the sky travels with the fleet: the sun glow stays ahead, clouds wrap around it
   sunGlow.position.set(flag.x + 90, 65, flag.z - 280);
   clouds.forEach(c => {
