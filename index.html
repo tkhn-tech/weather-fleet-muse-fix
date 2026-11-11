@@ -141,7 +141,7 @@
         <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v8.5</div>
+    <div class="ver">v8.6</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -836,6 +836,137 @@ function makeShip(type){
   return g;
 }
 
+// ---------- ShipMotion: modular ship physics (v8.6) ----------
+// One class for realistic 3D ship motion, steering and ocean buoyancy
+// (Three.js, Y-up), adapted to this project:
+//  - the wave field is the game's Gerstner ocean, injected as getWaveHeight
+//    (not plain sine waves — the Gerstner field is what the sea actually is)
+//  - the heading is the game's compass: 0 = -Z (North), clockwise, and
+//    forward = (sin h, -cos h); the mesh yaw is -heading so the bow points
+//    along the course of travel. (v8.6 fix: the old code set rotation.y =
+//    +heading, which made the bow swing the wrong way — left helm read as
+//    a right turn, and the formation slots were mirrored the same way.)
+//  - the flagship is player-driven (throttle + rudder); the escorts steer
+//    with Arrive toward their formation slot plus whisker obstacle avoidance.
+// Tunable parameters (constructor opts): mass, maxSpeed, thrustForce,
+// rudderTurnSpeed, lateralDrag, forwardDrag, waveIntensity, length, beam.
+// Frame-rate independent: every update takes dt.
+class ShipMotion {
+  constructor(opts = {}) {
+    this.mass = opts.mass ?? 1;
+    this.maxSpeed = opts.maxSpeed ?? 14;
+    this.thrustForce = opts.thrustForce ?? 14;
+    this.rudderTurnSpeed = opts.rudderTurnSpeed ?? 0.65;
+    this.lateralDrag = opts.lateralDrag ?? 5.0;
+    this.forwardDrag = opts.forwardDrag ?? 0.55;
+    this.waveIntensity = opts.waveIntensity ?? 1.0;
+    this.length = opts.length ?? 20;
+    this.beam = opts.beam ?? 5;
+    this.getWaveHeight = opts.getWaveHeight ?? (() => 0);
+    this.x = opts.x ?? 0; this.z = opts.z ?? 0;
+    this.heading = opts.heading ?? 0;
+    this.vx = 0; this.vz = 0;
+    this.rudder = 0; this.headingRate = 0;
+    this.y = 0; this.pitch = 0; this.roll = 0; this.heel = 0;
+    this.forwardSpeed = 0; this.lateralSpeed = 0;
+    this.kickT = 99; this.prevRudder = 0;
+    this.draft = opts.draft ?? 0;
+  }
+  forward() { return { x: Math.sin(this.heading), z: -Math.cos(this.heading) }; }
+  right() { return { x: Math.cos(this.heading), z: Math.sin(this.heading) }; }
+  speed() { return Math.hypot(this.vx, this.vz); }
+  arrive(target, slowingRadius = 30, maxSpeed = this.maxSpeed) {
+    const dx = target.x - this.x, dz = target.z - this.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 0.01) return { x: 0, z: 0 };
+    const sp = maxSpeed * Math.min(1, d / slowingRadius);
+    return { x: dx / d * sp, z: dz / d * sp };
+  }
+  avoid(obstacles, lookAhead = 26) {
+    const f = this.forward();
+    const hit = [false, false, false];
+    for (let i = 0; i < 3; i++) {
+      const a = [-0.52, 0, 0.52][i];
+      const ca = Math.cos(a), sa = Math.sin(a);
+      const wx = f.x * ca + f.z * sa, wz = -f.x * sa + f.z * ca;
+      for (let d = 4; d <= lookAhead; d += 4) {
+        const px = this.x + wx * d, pz = this.z + wz * d;
+        let h = false;
+        for (const o of obstacles) { if (Math.hypot(px - o.x, pz - o.z) < o.r) { h = true; break; } }
+        if (h) { hit[i] = true; break; }
+      }
+    }
+    let bias = 0, blocked = false;
+    if (hit[1]) {
+      blocked = true;
+      if (!hit[2] && hit[0]) bias = -0.8;
+      else if (!hit[0] && hit[2]) bias = 0.8;
+      else bias = -0.8;
+    } else if (hit[0] && !hit[2]) bias = -0.5;
+    else if (hit[2] && !hit[0]) bias = 0.5;
+    return { bias, blocked };
+  }
+  sampleWaves(t) {
+    const L = this.length, W = this.beam;
+    const c = Math.cos(this.heading), sn = Math.sin(this.heading);
+    const pts = [
+      { lx: 0, lz: -L * 0.45 }, { lx: 0, lz: L * 0.45 },
+      { lx: -W * 0.5, lz: 0 }, { lx: W * 0.5, lz: 0 },
+    ];
+    if (L > 20) { pts.push({ lx: 0, lz: -L * 0.22 }, { lx: 0, lz: L * 0.22 }); }
+    let sum = 0, hBow = 0, hStern = 0, hPort = 0, hStbd = 0;
+    for (const p of pts) {
+      const wx = this.x + p.lx * c + p.lz * sn;
+      const wz = this.z + (-p.lx * sn + p.lz * c);
+      const h = this.getWaveHeight(wx, wz, t) * this.waveIntensity;
+      sum += h;
+      if (p.lz < -L * 0.3) hBow = h;
+      if (p.lz > L * 0.3) hStern = h;
+      if (p.lx < 0) hPort = h;
+      if (p.lx > 0) hStbd = h;
+    }
+    this.y = sum / pts.length;
+    this.pitch = Math.atan((hBow - hStern) / L) * 0.7;
+    this.roll = Math.atan((hPort - hStbd) / W);
+  }
+  update(dt, input = {}) {
+    const thrust = input.thrust ?? 0;
+    const rudderIn = input.rudder ?? 0;
+    const rudderK = rudderIn === 0 ? 12 : 5;
+    this.rudder += (rudderIn - this.rudder) * (1 - Math.exp(-dt * rudderK));
+    const speedFactor = 0.12 + 0.88 * Math.min(1, Math.abs(this.forwardSpeed) / 12);
+    const turnRate = this.rudderTurnSpeed * speedFactor * (input.turnSlow ?? 1);
+    const targetRate = this.rudder * turnRate;
+    const rateK = Math.abs(this.rudder) < 0.05 ? 10 : 4;
+    this.headingRate += (targetRate - this.headingRate) * (1 - Math.exp(-dt * rateK));
+    this.heading += this.headingRate * dt;
+    const f = this.forward(), r = this.right();
+    const accel = (thrust * this.thrustForce) / this.mass;
+    this.vx += f.x * accel * dt;
+    this.vz += f.z * accel * dt;
+    let vF = this.vx * f.x + this.vz * f.z;
+    let vL = this.vx * r.x + this.vz * r.z;
+    vF *= Math.exp(-dt * this.forwardDrag);
+    vL *= Math.exp(-dt * this.lateralDrag);
+    vF = Math.max(-this.maxSpeed * 0.4, Math.min(this.maxSpeed, vF));
+    this.vx = f.x * vF + r.x * vL;
+    this.vz = f.z * vF + r.z * vL;
+    this.forwardSpeed = vF; this.lateralSpeed = vL;
+    this.x += (this.vx + (input.currentX ?? 0)) * dt;
+    this.z += (this.vz + (input.currentZ ?? 0)) * dt;
+    this.sampleWaves(input.time ?? 0);
+    if ((this.prevRudder === 0 && this.rudder !== 0) || Math.sign(this.rudder) !== Math.sign(this.prevRudder)) this.kickT = 0;
+    this.kickT += dt;
+    this.prevRudder = this.rudder;
+    const heelTarget = -this.headingRate * Math.min(1, Math.abs(vF) / 12) * 0.9;
+    this.heel += (heelTarget - this.heel) * (1 - Math.exp(-dt * 2));
+  }
+  applyToMesh(group, extraRoll = 0, extraPitch = 0) {
+    group.position.set(this.x, this.y - this.draft, this.z);
+    group.rotation.set(this.pitch + extraPitch, -this.heading, this.roll + this.heel + extraRoll);
+  }
+}
+
 // ---------- fleet (scale anchor: carrier 333 m : Iowa 270 m : Burke 155 m ≈ 2.15 : 1.74 : 1.0) ----------
 const fleet = [
   {type:'carrier',    label:'Carrier',    dx:0,   dz:0,  hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4},
@@ -848,6 +979,14 @@ fleet.forEach(s => {
   s.group = makeShip(s.type);
   s.group.position.set(s.dx, 0, s.dz);
   s.x = s.dx; s.z = s.dz; s.heading = 0; s.y = 0;
+  const mSpec = s.type === 'carrier' ? { mass: 2.0, thrustForce: 28, rudderTurnSpeed: 0.6 }
+    : s.type === 'battleship' ? { mass: 1.5, thrustForce: 21, rudderTurnSpeed: 0.65 }
+    : { mass: 1.0, thrustForce: 14, rudderTurnSpeed: 0.7 };
+  s.motion = new ShipMotion({
+    ...mSpec, maxSpeed: 14, lateralDrag: 5.0, forwardDrag: 0.55,
+    length: s.group.userData.len, beam: s.group.userData.wid,
+    getWaveHeight: waveHeight, x: s.dx, z: s.dz, heading: 0,
+  });
   s.smokeT = 0; s.fireT = 0; s.wakeT = 0; s.kelvinT = 0; s.shoveX = 0; s.shoveZ = 0; s.heelKick = 0;
   s.pitchSm = 0; s.rollSm = 0; s.groundT = 0;
   // compartment flooding (War Thunder grammar, simplified to two axes)
@@ -1348,6 +1487,10 @@ function reset(){
   fleet.forEach(s => {
     s.hp = s.maxHp; s.alive = true; s.sinkT = 0;
     s.x = s.dx; s.z = s.dz; s.heading = 0; s.y = 0;
+    const mo = s.motion;
+    mo.x = s.dx; mo.z = s.dz; mo.heading = 0;
+    mo.vx = 0; mo.vz = 0; mo.rudder = 0; mo.headingRate = 0;
+    mo.forwardSpeed = 0; mo.lateralSpeed = 0; mo.heel = 0; mo.kickT = 99;
     s.pitchSm = 0; s.rollSm = 0; s.groundT = 0; s.shoveX = 0; s.shoveZ = 0; s.heelKick = 0;
     s.floodSide = 0; s.floodEnd = 0; s.floodTotal = 0; s.floodDestroyed = false;
     s.list = 0; s.trim = 0; s.draft = 0; s.speedFactor = 1; s.capsize = false;
@@ -1539,32 +1682,6 @@ function damageShip(ship, dmg, hx, hz){
 }
 
 // ---------- buoyancy sampling (4-6 points per hull; long hulls average out swell) ----------
-function sampleBuoyancy(s){
-  const L = s.group.userData.len, W = s.group.userData.wid;
-  const c = Math.cos(s.heading), sn = Math.sin(s.heading);
-  const pts = [
-    {lx: 0, lz: -L * 0.45}, {lx: 0, lz: L * 0.45},
-    {lx: -W * 0.5, lz: 0}, {lx: W * 0.5, lz: 0},
-  ];
-  if(s.type === 'carrier'){ pts.push({lx: 0, lz: -L * 0.22}, {lx: 0, lz: L * 0.22}); }
-  let sum = 0, hBow = 0, hStern = 0, hPort = 0, hStbd = 0;
-  pts.forEach(p => {
-    const wx = s.x + p.lx * c + p.lz * sn;
-    const wz = s.z + (-p.lx * sn + p.lz * c);
-    const h = waveHeight(wx, wz, state.t);
-    sum += h;
-    if(p.lz < -L * 0.3) hBow = h;
-    if(p.lz > L * 0.3) hStern = h;
-    if(p.lx < 0) hPort = h;
-    if(p.lx > 0) hStbd = h;
-  });
-  return {
-    h: sum / pts.length,
-    pitch: Math.atan((hBow - hStern) / L) * 0.7, // pitch is smaller than roll
-    roll: Math.atan((hPort - hStbd) / W),
-  };
-}
-
 // ---------- update ----------
 function update(dt){
   const st = STAGES[state.stage];
@@ -1635,9 +1752,10 @@ function update(dt){
   const flag = flagship();
   if(!flag){ gameOver(); return; }
 
-  // steering: keys give a hard rudder; joystick X is the rudder; drag steers too.
-  // The rudder is a first-order system driven by the input: it answers
-  // promptly while you steer and centres FAST (τ ~ 0.12 s) when you let go.
+  // steering via ShipMotion: keys give a hard rudder; joystick X is the
+  // rudder; drag steers too. The class owns the rudder, the speed-scaled
+  // turn rate, the velocity (split forward/lateral, so the ship drifts
+  // slightly in a wide turn), the waves and the heel.
   let keyRudder = 0;
   if(state.keys['ArrowLeft'] || state.keys['a']) keyRudder -= 1;
   if(state.keys['ArrowRight'] || state.keys['d']) keyRudder += 1;
@@ -1645,35 +1763,20 @@ function update(dt){
   if(keyRudder !== 0) inputRudder = keyRudder;
   else if(Math.abs(state.joyX) > 0.08) inputRudder = state.joyX;
   else if(state.dragSteer) inputRudder = state.rudder;
-  const rudderK = inputRudder === 0 ? 12 : 5;
-  state.rudder += (inputRudder - state.rudder) * (1 - Math.exp(-dt * rudderK));
-  // heel in a turn: brief inward kick, then sustained outward heel growing with V^2
-  if((state.prevRudder === 0 && state.rudder !== 0) || Math.sign(state.rudder) !== Math.sign(state.prevRudder)) state.kickT = 0;
-  state.kickT += dt;
-  state.prevRudder = state.rudder;
   const whirlSlow = fleet.some(s => s.alive && state.hazards.some(h => h.kind === 'whirl' && Math.hypot(s.x - h.x, s.z - h.z) < 20));
-  // steerage needs way on: a ship with no speed barely answers the helm.
-  // Turn rate raised (v8.3) so the helm feels decisive — the ship clearly
-  // swings onto a new course instead of just sliding sideways.
-  const turnRate = 0.65 * (0.12 + 0.88 * Math.min(1, speed / 12)) * (whirlSlow ? 0.5 : 1);
-  // heading-rate damping: the turn rate is a state with inertia. It follows
-  // the rudder while you steer, and dies away fast (τ ~ 0.15 s) the moment
-  // the rudder centres — the heading stops swinging instead of overshooting
-  // ~75° after release like a spinning top (v8.1)
-  const targetRate = state.rudder * turnRate;
-  const rateK = Math.abs(state.rudder) < 0.05 ? 10 : 4;
-  state.headingRate += (targetRate - state.headingRate) * (1 - Math.exp(-dt * rateK));
-  // open world: the heading is free (full 360°) and the flagship truly travels
-  // along it — x and z both change, so steering changes the course for real
-  flag.heading += state.headingRate * dt;
-  flag.x += Math.sin(flag.heading) * speed * dt;
-  flag.z -= Math.cos(flag.heading) * speed * dt;
-  // the current carries the whole fleet sideways
-  flag.x += state.curX * dt;
-  flag.z += state.curZ * dt;
-  // course-over-ground: where the ship is actually going, current included
-  const vx = Math.sin(flag.heading) * speed + state.curX;
-  const vz = -Math.cos(flag.heading) * speed + state.curZ;
+  const fm = flag.motion;
+  fm.maxSpeed = Math.max(0, st.speed * (state.boost ? 1.5 : 1) * state.speedLoss * floodFactor);
+  fm.update(dt, {
+    thrust: braking ? -0.5 : throttleInput, rudder: inputRudder,
+    currentX: state.curX, currentZ: state.curZ,
+    time: state.t, turnSlow: whirlSlow ? 0.5 : 1,
+  });
+  flag.x = fm.x; flag.z = fm.z; flag.heading = fm.heading;
+  state.rudder = fm.rudder; state.headingRate = fm.headingRate;
+  state.speed = Math.max(0, fm.forwardSpeed);
+  // course-over-ground: where the ship is actually going — heading plus the
+  // lateral drift in a turn and the current, so HDG and COG differ in a turn
+  const vx = fm.vx + state.curX, vz = fm.vz + state.curZ;
   state.cog = (Math.atan2(vx, -vz) * 180 / Math.PI + 360) % 360;
   // waypoint beacon: bob, spin, and pay out when the fleet reaches it
   if(beacon){
@@ -1689,17 +1792,30 @@ function update(dt){
     }
   }
 
-  // escorts hold formation in the flagship's frame, with spring physics
+  // escorts hold formation with Reynolds Arrive + whisker obstacle avoidance.
+  // The slot is rotated by -flag.heading (the corrected frame, so the slot
+  // stays on the flagship's quarter as it turns instead of mirroring).
   fleet.forEach(s => {
     if(!s.alive || s === flag) return;
+    const m = s.motion;
     const c = Math.cos(flag.heading), sn = Math.sin(flag.heading);
-    const tx = flag.x + s.dx * c + s.dz * sn;
-    const tz = flag.z + (-s.dx * sn + s.dz * c);
-    const k = 1 - Math.exp(-dt * s.lag);
-    s.x += (tx - s.x) * k;
-    s.z += (tz - s.z) * k;
-    let dh = flag.heading - s.heading;
-    s.heading += dh * (1 - Math.exp(-dt * (s.turnLag || 2.5)));
+    const tx = flag.x + s.dx * c - s.dz * sn;
+    const tz = flag.z + s.dx * sn + s.dz * c;
+    const desired = m.arrive({ x: tx, z: tz }, 30, Math.max(6, state.speed + 4));
+    const desSpeed = Math.hypot(desired.x, desired.z);
+    const desHeading = desSpeed > 0.5 ? Math.atan2(desired.x, -desired.z) : s.heading;
+    let dh = desHeading - m.heading;
+    dh = ((dh + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+    let rudderIn = Math.max(-1, Math.min(1, dh * 1.5));
+    const obstacles = [];
+    islands.forEach(isl => obstacles.push({ x: isl.x, z: isl.z, r: isl.r + 4 }));
+    fleet.forEach(o => { if(o !== s && o.alive) obstacles.push({ x: o.x, z: o.z, r: o.group.userData.len * 0.6 }); });
+    const av = m.avoid(obstacles, 26);
+    rudderIn = Math.max(-1, Math.min(1, rudderIn + av.bias));
+    const thrustIn = Math.max(0, Math.min(1, (desSpeed - m.forwardSpeed) / 5));
+    m.maxSpeed = Math.max(6, state.speed + 5);
+    m.update(dt, { thrust: thrustIn, rudder: rudderIn, currentX: state.curX, currentZ: state.curZ, time: state.t });
+    s.x = m.x; s.z = m.z; s.heading = m.heading;
   });
   // ship-to-ship separation: no bounce, gentle push-apart, carrier mass wins
   for(let i = 0; i < fleet.length; i++){
@@ -1771,28 +1887,27 @@ function update(dt){
         sinkShip(s, true);
         return;
       }
-      const b = sampleBuoyancy(s);
+      const mo = s.motion; // waves, heel and yaw all come from ShipMotion now
       const k = 1 - Math.exp(-dt / s.tau); // heavy ships lag the wave — that lag is the mass
-      s.pitchSm += (b.pitch - s.pitchSm) * k;
-      s.rollSm += (b.roll - s.rollSm) * k;
-      const heelOut = -state.rudder * 0.05 * Math.pow(state.speed / 14, 2);
-      const kick = state.rudder * 0.03 * Math.exp(-state.kickT * 2.5);
+      s.pitchSm += (mo.pitch - s.pitchSm) * k;
+      s.rollSm += (mo.roll - s.rollSm) * k;
+      const kick = mo.rudder * 0.03 * Math.exp(-mo.kickT * 2.5);
       // rogue-wave shove: a decaying sideways velocity + a heel kick
       s.x += s.shoveX * dt; s.z += s.shoveZ * dt;
-      s.shoveX *= Math.max(0, 1 - dt * 1.2); s.shoveZ *= Math.max(0, 1 - dt * 1.2);
+      s.shoveX *= Math.max(0, 1 - dt * 1.2); s.shoveZ *= Math.max(0, 1 - dt * 1.5);
       s.heelKick *= Math.max(0, 1 - dt * 1.5);
-      s.y = b.h * 0.75 - s.draft;
+      s.y = mo.y * 0.75 - s.draft;
       s.group.position.set(s.x, s.y, s.z);
-      s.group.rotation.set(s.pitchSm + s.trim, s.heading, s.rollSm + s.list + heelOut + kick + s.heelKick);
+      s.group.rotation.set(s.pitchSm + s.trim, -s.heading, s.rollSm + s.list + mo.heel + kick + s.heelKick);
     } else {
       // sinking: list grows, trim by the bow/stern, deck edge dips, roll accelerates
       s.sinkT += dt / 6;
       const f = Math.min(1, s.sinkT);
-      const b = sampleBuoyancy(s);
-      s.y = b.h * 0.75 - f * f * 9;
+      s.motion.sampleWaves(state.t);
+      s.y = s.motion.y * 0.75 - f * f * 9;
       s.group.position.set(s.x, s.y, s.z);
       const rollTarget = s.capsize ? 1.5 * (s.floodSide !== 0 ? Math.sign(s.floodSide) : s.listDir) : 0.95 * s.listDir;
-      s.group.rotation.set(s.pitchSm + f * 0.22 * (s.floodEnd !== 0 ? Math.sign(s.floodEnd) : 1), s.heading, s.rollSm + f * rollTarget);
+      s.group.rotation.set(s.pitchSm + f * 0.22 * (s.floodEnd !== 0 ? Math.sign(s.floodEnd) : 1), -s.heading, s.rollSm + f * rollTarget);
       if(Math.random() < 0.5){
         spawnParticle(s.x + (Math.random() - 0.5) * 4, s.y + 1, s.z + (Math.random() - 0.5) * 6,
           0, 2 + Math.random() * 2, 0, 1.2, 0.7, 0.9, 1, 1.5);
@@ -1809,7 +1924,7 @@ function update(dt){
     }
     // foam ring rides the water surface at the hull
     s.foam.position.set(s.x, waveHeight(s.x, s.z, state.t) + 0.15, s.z);
-    s.foam.rotation.z = s.heading;
+    s.foam.rotation.z = -s.heading;
     const spd = Math.min(1, state.speed / 14);
     s.foam.material.opacity = s.alive ? 0.14 + 0.22 * spd : Math.max(0, 0.22 * (1 - s.sinkT));
     s.foam.scale.setScalar(1 + 0.45 * spd);
@@ -2095,15 +2210,15 @@ function updateCamera(dt){
   const camZ = camZ0 * state.camZoom * (1 + speedN * 0.12);
   const camY = camY0 * (0.85 + 0.3 * state.camZoom);
   if(!state.freeLookActive) state.freeLook *= Math.max(0, 1 - dt * 1.2);
-  // chase cam: the camera's own heading trails the fleet's heading. While
-  // turning it trails deliberately (v8.3, ~1.4/s) so the bow visibly swings
-  // onto the new course instead of the ship always pointing "up" the screen;
-  // once the turn is over it converges fast (τ ~ 0.15 s) so the camera ends
-  // up dead behind the flagship's stern instead of sitting side-on (v8.1)
+  // chase cam, locked behind the fleet (v8.6): the camera heading chases the
+  // flagship's heading at the fast settled rate even in a turn, so it stays
+  // dead behind the stern with no orbit/swing. The turn still reads through
+  // the bow (now pointing along the course), the compass/COG and the world
+  // turning around the fleet.
   const turning = Math.abs(state.headingRate) > 0.06 || Math.abs(state.rudder) > 0.1;
   let dh = flag.heading - state.camHeading;
   dh = ((dh + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
-  state.camHeading += dh * (1 - Math.exp(-dt * (turning ? 1.4 : 7.0)));
+  state.camHeading += dh * (1 - Math.exp(-dt * 7.0));
   const fx = Math.sin(flag.heading), fz = -Math.cos(flag.heading);
   const chx = Math.sin(state.camHeading), chz = -Math.cos(state.camHeading);
   const crx = Math.cos(state.camHeading), crz = Math.sin(state.camHeading);
@@ -2196,16 +2311,19 @@ function idleUpdate(dt){
   fleet.forEach(s => {
     if(!s.alive) return;
     const c = Math.cos(flag.heading), sn = Math.sin(flag.heading);
-    s.x = flag.x + s.dx * c + s.dz * sn;
-    s.z = flag.z + (-s.dx * sn + s.dz * c);
+    s.x = flag.x + s.dx * c - s.dz * sn;
+    s.z = flag.z + s.dx * sn + s.dz * c;
     s.heading = flag.heading;
-    const b = sampleBuoyancy(s);
+    const mo = s.motion;
+    mo.x = s.x; mo.z = s.z; mo.heading = s.heading;
+    mo.vx = 0; mo.vz = 0; mo.forwardSpeed = 0; mo.lateralSpeed = 0;
+    mo.sampleWaves(state.t);
     const k = 1 - Math.exp(-dt / s.tau);
-    s.pitchSm += (b.pitch - s.pitchSm) * k;
-    s.rollSm += (b.roll - s.rollSm) * k;
-    s.y = b.h * 0.75;
+    s.pitchSm += (mo.pitch - s.pitchSm) * k;
+    s.rollSm += (mo.roll - s.rollSm) * k;
+    s.y = mo.y * 0.75;
     s.group.position.set(s.x, s.y, s.z);
-    s.group.rotation.set(s.pitchSm, s.heading, s.rollSm);
+    s.group.rotation.set(s.pitchSm, -s.heading, s.rollSm);
     s.foam.position.set(s.x, b.h + 0.15, s.z);
   });
   updateParticles(dt);
