@@ -45,6 +45,9 @@
     background:rgba(6,18,30,.6);border:1px solid rgba(140,190,230,.2);border-radius:99px;padding:4px 12px;pointer-events:none}
   #navText{font-size:12px;color:#cfe3f2;white-space:nowrap}
   @media (max-width:560px){ #navStrip{top:100px} #compassCv{width:150px} }
+  #miniMap{position:fixed;right:12px;bottom:100px;z-index:5;border:1px solid rgba(140,190,230,.35);border-radius:12px;overflow:hidden;background:rgba(6,18,30,.6);pointer-events:none}
+  #miniCv{display:block}
+  @media (max-width:560px){ #miniMap{right:8px;bottom:96px} #miniCv{width:100px;height:100px} }
   #joy{position:fixed;left:18px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:6;width:124px;height:124px;border-radius:50%;
     background:rgba(6,18,30,.45);border:1px solid rgba(140,190,230,.35);backdrop-filter:blur(4px);touch-action:none}
   #joyKnob{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;
@@ -108,6 +111,7 @@
 </div>
 
 <div id="navStrip"><canvas id="compassCv" width="240" height="26"></canvas><span id="navText"></span></div>
+<div id="miniMap"><canvas id="miniCv" width="128" height="128"></canvas></div>
 
 <div id="stageToast"><h2 id="stageName">Calm Seas</h2><p id="stageDesc">The fleet sails out. Hold formation.</p></div>
 <div id="hint">Joystick: steer + throttle<br>← → steer · ↑ ↓ throttle · BOOST to push</div>
@@ -121,7 +125,7 @@
     <p class="sub">The same fleet, one run, no cuts — now in full 3D. Steer the flagship with
       the joystick from behind the whole fleet as the carrier leads the battleships and destroyers through a
       an open ocean — steer anywhere, and the world sails with you. Waves pitch and roll every hull. Dodge rogue
-      waves, whirlpools and islands, grab supply crates to repair, and keep the fleet alive.
+      waves, whirlpools and islands, grab supply crates to repair, and keep the fleet alive. A minimap tracks the fleet, hazards and islands — sail to the gold waypoint beacon for bonus score, and mind the wind and current, which push you off course.
       A wrecked ship lists, floods and sinks beneath the waves, and the next one
       takes command. Lose all five and the round ends.</p>
     <div id="loadErr"></div>
@@ -137,7 +141,7 @@
         <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v7.0</div>
+    <div class="ver">v7.1</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -313,7 +317,7 @@ const WAVES = [
   {lam: 7,   amp: 0.15, q: 0.70, dx: -0.60, dz: 0.80,  ph: 5.2},
   {lam: 3.5, amp: 0.07, q: 0.80, dx: 0.80,  dz: 0.60,  ph: 2.3},
 ];
-WAVES.forEach(w => { w.k = 2 * Math.PI / w.lam; w.w = Math.sqrt(G_GAME * w.k); });
+WAVES.forEach(w => { w.k = 2 * Math.PI / w.lam; w.w = Math.sqrt(G_GAME * w.k); w.bdx = w.dx; w.bdz = w.dz; });
 let ampCur = STAGES[settings.startStage].amp * settings.wave;
 let ampTarget = ampCur;
 function gerstner(x, z, t){
@@ -657,17 +661,17 @@ function makeShip(type){
 
 // ---------- fleet (scale anchor: carrier 333 m : Iowa 270 m : Burke 155 m ≈ 2.15 : 1.74 : 1.0) ----------
 const fleet = [
-  {type:'carrier',    label:'Carrier',    dx:0,   dz:0,  hp:100, maxHp:100, lag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4},
-  {type:'battleship', label:'Battleship', dx:-13, dz:17, hp:70,  maxHp:70,  lag:2.0, alive:true, sinkT:0, listDir:-1, tau:1.1},
-  {type:'battleship', label:'Battleship', dx:13,  dz:17, hp:70,  maxHp:70,  lag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.1},
-  {type:'destroyer',  label:'Destroyer',  dx:-22, dz:32, hp:50,  maxHp:50,  lag:2.2, alive:true, sinkT:0, listDir:-1, tau:0.7},
-  {type:'destroyer',  label:'Destroyer',  dx:22,  dz:32, hp:50,  maxHp:50,  lag:2.2, alive:true, sinkT:0, listDir:1,  tau:0.7},
+  {type:'carrier',    label:'Carrier',    dx:0,   dz:0,  hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4},
+  {type:'battleship', label:'Battleship', dx:-13, dz:17, hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1},
+  {type:'battleship', label:'Battleship', dx:13,  dz:17, hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1},
+  {type:'destroyer',  label:'Destroyer',  dx:-22, dz:32, hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7},
+  {type:'destroyer',  label:'Destroyer',  dx:22,  dz:32, hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7},
 ];
 fleet.forEach(s => {
   s.group = makeShip(s.type);
   s.group.position.set(s.dx, 0, s.dz);
   s.x = s.dx; s.z = s.dz; s.heading = 0; s.y = 0;
-  s.smokeT = 0; s.fireT = 0; s.wakeT = 0; s.kelvinT = 0;
+  s.smokeT = 0; s.fireT = 0; s.wakeT = 0; s.kelvinT = 0; s.shoveX = 0; s.shoveZ = 0; s.heelKick = 0;
   s.pitchSm = 0; s.rollSm = 0; s.groundT = 0;
   // compartment flooding (War Thunder grammar, simplified to two axes)
   s.floodSide = 0; s.floodEnd = 0; s.floodTotal = 0; s.floodDestroyed = false;
@@ -825,15 +829,25 @@ sunGlow.scale.set(90, 90, 1);
 scene.add(sunGlow);
 
 // ---------- islands (open-world landmarks; grounding scrapes the hull) ----------
-const ISLANDS = [
-  {x: 120, z: -260, r: 26},
-  {x: -180, z: -420, r: 30},
-  {x: 300, z: -600, r: 22},
-  {x: -350, z: -150, r: 24},
-  {x: 80, z: -800, r: 34},
-  {x: -260, z: -750, r: 20},
-];
+// procedural islands: the world is divided into 320-unit cells; each cell's
+// island (or lack of one) is a pure function of its coordinates, so the same
+// island is always there when you sail back — and there are always more ahead
+const ISLAND_CELL = 320;
 const islands = [];
+const islandCells = new Map();
+function cellHash(cx, cz){
+  const s = Math.sin(cx * 127.1 + cz * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+function islandForCell(cx, cz){
+  // one guaranteed island just ahead of the start, the rest procedural
+  if(cx === 0 && cz === -1) return {x: 120, z: -260, r: 26};
+  if(cellHash(cx, cz) > 0.16) return null;
+  const ox = (cellHash(cx + 0.37, cz + 0.11) - 0.5) * 180;
+  const oz = (cellHash(cx + 0.13, cz + 0.53) - 0.5) * 180;
+  const r = 18 + cellHash(cx + 0.71, cz + 0.29) * 16;
+  return {x: cx * ISLAND_CELL + ox, z: cz * ISLAND_CELL + oz, r};
+}
 function makeIsland(x, z, r){
   const g = new THREE.Group();
   const sand = new THREE.Mesh(new THREE.CircleGeometry(r, 24), new THREE.MeshStandardMaterial({color: 0xc2a878, roughness: 1}));
@@ -850,7 +864,55 @@ function makeIsland(x, z, r){
   scene.add(g);
   return {x, z, r, group: g};
 }
-ISLANDS.forEach(d => islands.push(makeIsland(d.x, d.z, d.r)));
+function loadIslands(){
+  const f = flagship() || fleet[0];
+  const ccx = Math.floor(f.x / ISLAND_CELL), ccz = Math.floor(f.z / ISLAND_CELL);
+  for(let dx = -1; dx <= 1; dx++){
+    for(let dz = -1; dz <= 1; dz++){
+      const cx = ccx + dx, cz = ccz + dz, key = cx + ',' + cz;
+      if(islandCells.has(key)) continue;
+      const def = islandForCell(cx, cz);
+      if(!def){ islandCells.set(key, null); continue; }
+      const isl = makeIsland(def.x, def.z, def.r);
+      isl.cell = key;
+      islandCells.set(key, isl);
+      islands.push(isl);
+    }
+  }
+  for(let i = islands.length - 1; i >= 0; i--){
+    const isl = islands[i];
+    if(Math.abs(isl.x - f.x) > ISLAND_CELL * 2 || Math.abs(isl.z - f.z) > ISLAND_CELL * 2){
+      scene.remove(isl.group);
+      islands.splice(i, 1);
+      islandCells.set(isl.cell, null);
+    }
+  }
+}
+loadIslands();
+
+// ---------- waypoint beacon (procedural: sail to it for bonus score) ----------
+let beacon = null;
+function makeBeacon(x, z){
+  const g = new THREE.Group();
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 2.2, 60, 8, 1, true),
+    new THREE.MeshBasicMaterial({color: 0xffd166, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending}));
+  beam.position.y = 30; g.add(beam);
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(2.2),
+    new THREE.MeshStandardMaterial({color: 0xffd166, emissive: 0xaa7700, roughness: 0.3, metalness: 0.6}));
+  gem.position.y = 4; g.add(gem);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({map: softTex, color: 0xffd166, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending}));
+  glow.scale.set(16, 16, 1); glow.position.y = 4; g.add(glow);
+  g.position.set(x, 0, z);
+  scene.add(g);
+  return {x, z, group: g, gem, ph: Math.random() * 6.28};
+}
+function placeBeacon(){
+  if(beacon){ scene.remove(beacon.group); beacon = null; }
+  const f = flagship() || fleet[0];
+  const dist = 260 + Math.random() * 160;
+  const bearing = f.heading + (Math.random() - 0.5) * 1.6;
+  beacon = makeBeacon(f.x + Math.sin(bearing) * dist, f.z - Math.cos(bearing) * dist);
+}
 
 // ---------- game state ----------
 const state = {
@@ -863,6 +925,7 @@ const state = {
   speedLoss: 1, kickT: 99, prevRudder: 0,
   rogueDone: false, rogueTimer: -1, rogueWarned: false,
   camZoom: 1, freeLook: 0, freeLookActive: false,
+  windDir: 0, curX: 0, curZ: 0, cog: 0, islandT: 0,
 };
 let frameCount = 0;
 let clock = new THREE.Clock();
@@ -1071,6 +1134,8 @@ function clearWorld(){
   state.hazards.forEach(h => scene.remove(h.group));
   state.pickups.forEach(p => scene.remove(p.group));
   state.hazards = []; state.pickups = [];
+  islands.forEach(isl => scene.remove(isl.group));
+  islands.length = 0; islandCells.clear();
   if(bolt){ scene.remove(bolt); bolt = null; }
   parts.forEach(p => { p.life = 0; });
   spritePool.forEach(s => { s.life = 0; s.sp.visible = false; });
@@ -1089,7 +1154,7 @@ function reset(){
   fleet.forEach(s => {
     s.hp = s.maxHp; s.alive = true; s.sinkT = 0;
     s.x = s.dx; s.z = s.dz; s.heading = 0; s.y = 0;
-    s.pitchSm = 0; s.rollSm = 0; s.groundT = 0;
+    s.pitchSm = 0; s.rollSm = 0; s.groundT = 0; s.shoveX = 0; s.shoveZ = 0; s.heelKick = 0;
     s.floodSide = 0; s.floodEnd = 0; s.floodTotal = 0; s.floodDestroyed = false;
     s.list = 0; s.trim = 0; s.draft = 0; s.speedFactor = 1; s.capsize = false;
     s.group.visible = true;
@@ -1099,6 +1164,7 @@ function reset(){
   });
   ampCur = STAGES[state.stage].amp * settings.wave;
   applyStage(state.stage);
+  placeBeacon();
   updateHud();
   $('hint').classList.remove('fade');
   clearTimeout(reset._hintT);
@@ -1132,7 +1198,7 @@ function gameOver(){
 }
 // compass strip: a 120° arc of the heading rose, centred on the current course
 const compassCv = $('compassCv'), compassCtx = compassCv.getContext('2d');
-function drawCompass(course){
+function drawCompass(course, cog){
   const ctx = compassCtx, W = compassCv.width, H = compassCv.height;
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = '#cfe3f2'; ctx.strokeStyle = '#cfe3f2'; ctx.lineWidth = 1;
@@ -1148,8 +1214,59 @@ function drawCompass(course){
     const da = ((d[0] - course + 540) % 360) - 180;
     if(Math.abs(da) <= 58) ctx.fillText(d[1], W / 2 + da * pxPerDeg, 25);
   });
+  // COG tick (cyan): where the ship is actually going, current included
+  const daCog = ((cog - course + 540) % 360) - 180;
+  if(Math.abs(daCog) <= 58){
+    ctx.fillStyle = '#7fd4ff';
+    const x = W / 2 + daCog * pxPerDeg;
+    ctx.beginPath(); ctx.moveTo(x - 4, 7); ctx.lineTo(x + 4, 7); ctx.lineTo(x, 12); ctx.closePath(); ctx.fill();
+  }
   ctx.fillStyle = '#ffd166';
   ctx.beginPath(); ctx.moveTo(W / 2 - 5, 0); ctx.lineTo(W / 2 + 5, 0); ctx.lineTo(W / 2, 6); ctx.closePath(); ctx.fill();
+}
+
+// minimap: north-up, centred on the fleet, 400-unit range
+const miniCv = $('miniCv'), miniCtx = miniCv.getContext('2d');
+function drawMinimap(){
+  const ctx = miniCtx, W = miniCv.width, H = miniCv.height, C = W / 2;
+  const range = 400, sc = C / range;
+  const f = flagship() || fleet[0];
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(10,30,48,0.9)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(140,190,230,0.25)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(C, C, C * 0.5, 0, 6.29); ctx.stroke();
+  ctx.beginPath(); ctx.arc(C, C, C * 0.95, 0, 6.29); ctx.stroke();
+  const px = (x, z) => [C + (x - f.x) * sc, C + (z - f.z) * sc];
+  const dot = (x, z, r, col) => {
+    const pp = px(x, z);
+    if(pp[0] < -4 || pp[0] > W + 4 || pp[1] < -4 || pp[1] > H + 4) return;
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(pp[0], pp[1], r, 0, 6.29); ctx.fill();
+  };
+  islands.forEach(isl => dot(isl.x, isl.z, Math.max(3, isl.r * sc), '#c2a878'));
+  state.hazards.forEach(h => {
+    dot(h.x, h.z, h.kind === 'wave' ? 4 : h.kind === 'whirl' ? 4 : 2.5,
+      h.kind === 'wave' ? '#7fb8e8' : h.kind === 'whirl' ? '#ff6b6b' : '#a08050');
+  });
+  state.pickups.forEach(pp => dot(pp.x, pp.z, 2.5, '#7dffb0'));
+  if(beacon){
+    const pp = px(beacon.x, beacon.z);
+    if(pp[0] > -6 && pp[0] < W + 6 && pp[1] > -6 && pp[1] < H + 6){
+      ctx.fillStyle = '#ffd166';
+      const r = 4 + Math.sin(state.t * 4) * 1.2;
+      ctx.beginPath();
+      ctx.moveTo(pp[0], pp[1] - r); ctx.lineTo(pp[0] + r * 0.7, pp[1]);
+      ctx.lineTo(pp[0], pp[1] + r); ctx.lineTo(pp[0] - r * 0.7, pp[1]);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+  // the fleet: white dot + gold heading tick, centre
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(C, C, 3.5, 0, 6.29); ctx.fill();
+  ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(C, C);
+  ctx.lineTo(C + Math.sin(f.heading) * 10, C - Math.cos(f.heading) * 10); ctx.stroke();
 }
 
 function updateHud(){
@@ -1167,9 +1284,10 @@ function updateHud(){
   // compass + position (open world: heading and nm from the start point)
   const f = flagship() || fleet[0];
   const course = ((f.heading * 180 / Math.PI) % 360 + 360) % 360;
-  drawCompass(course);
+  drawCompass(course, state.cog);
+  drawMinimap();
   const nmE = f.x / 111.6, nmN = -f.z / 111.6;
-  $('navText').textContent = 'HDG ' + String(Math.round(course)).padStart(3, '0') + '° · ' + Math.abs(nmN).toFixed(1) + (nmN >= 0 ? 'N' : 'S') + ' ' + Math.abs(nmE).toFixed(1) + (nmE >= 0 ? 'E' : 'W');
+  $('navText').textContent = 'HDG ' + String(Math.round(course)).padStart(3, '0') + '° · COG ' + String(Math.round(state.cog)).padStart(3, '0') + '° · ' + Math.abs(nmN).toFixed(1) + (nmN >= 0 ? 'N' : 'S') + ' ' + Math.abs(nmE).toFixed(1) + (nmE >= 0 ? 'E' : 'W');
 }
 
 // ---------- damage / flooding / sinking ----------
@@ -1263,6 +1381,16 @@ function update(dt){
   const floodFactor = flag0 ? flag0.speedFactor : 1;
   const speed = st.speed * throttle * (state.boost ? 1.5 : 1) * state.speedLoss * floodFactor;
   state.speed = speed;
+  // wind + current: the sea pushes the fleet sideways, so heading and
+  // course-over-ground differ — steer for the COG, not just the compass
+  state.windDir = Math.PI + 0.6 * Math.sin(state.t * 0.012) + 0.4 * Math.sin(state.t * 0.005 + 1.7);
+  const curSpeed = st.wind * 0.12;
+  state.curX = Math.sin(state.windDir) * curSpeed;
+  state.curZ = -Math.cos(state.windDir) * curSpeed;
+  // the wave field follows the wind, so beam/following/quartering seas change
+  // as the wind shifts and the fleet turns
+  const wa = state.windDir - Math.PI, wc = Math.cos(wa), ws = Math.sin(wa);
+  WAVES.forEach(w => { const dx = w.bdx * wc - w.bdz * ws, dz = w.bdx * ws + w.bdz * wc; w.dx = dx; w.dz = dz; });
   state.dist += speed * dt * 0.75;
   state.score += Math.round(speed * dt * 10);
   ampCur += (ampTarget - ampCur) * Math.min(1, dt * 0.5);
@@ -1326,7 +1454,26 @@ function update(dt){
   flag.heading += state.rudder * turnRate * dt;
   flag.x += Math.sin(flag.heading) * speed * dt;
   flag.z -= Math.cos(flag.heading) * speed * dt;
-  if(Math.abs(flag.heading) < 0.02 && keyRudder === 0) flag.heading *= (1 - dt * 1.5);
+  // the current carries the whole fleet sideways
+  flag.x += state.curX * dt;
+  flag.z += state.curZ * dt;
+  // course-over-ground: where the ship is actually going, current included
+  const vx = Math.sin(flag.heading) * speed + state.curX;
+  const vz = -Math.cos(flag.heading) * speed + state.curZ;
+  state.cog = (Math.atan2(vx, -vz) * 180 / Math.PI + 360) % 360;
+  // waypoint beacon: bob, spin, and pay out when the fleet reaches it
+  if(beacon){
+    beacon.gem.position.y = 4 + Math.sin(state.t * 2 + beacon.ph) * 0.8;
+    beacon.gem.rotation.y = state.t * 1.2;
+    beacon.group.position.y = waveHeight(beacon.x, beacon.z, state.t) * 0.5;
+    if(Math.hypot(flag.x - beacon.x, flag.z - beacon.z) < 25){
+      state.score += 500;
+      blip(1320, 0.3, 'sine', 0.12); blip(1760, 0.4, 'sine', 0.1);
+      burst(beacon.x, 4, beacon.z, 30, [1, 0.85, 0.4], 6, 4);
+      toast('📍 WAYPOINT REACHED', '+500 — a new beacon is charted ahead');
+      placeBeacon();
+    }
+  }
 
   // escorts hold formation in the flagship's frame, with spring physics
   fleet.forEach(s => {
@@ -1338,7 +1485,7 @@ function update(dt){
     s.x += (tx - s.x) * k;
     s.z += (tz - s.z) * k;
     let dh = flag.heading - s.heading;
-    s.heading += dh * (1 - Math.exp(-dt * 2.5));
+    s.heading += dh * (1 - Math.exp(-dt * (s.turnLag || 2.5)));
   });
   // ship-to-ship separation: no bounce, gentle push-apart, carrier mass wins
   for(let i = 0; i < fleet.length; i++){
@@ -1416,9 +1563,13 @@ function update(dt){
       s.rollSm += (b.roll - s.rollSm) * k;
       const heelOut = -state.rudder * 0.05 * Math.pow(state.speed / 14, 2);
       const kick = state.rudder * 0.03 * Math.exp(-state.kickT * 2.5);
+      // rogue-wave shove: a decaying sideways velocity + a heel kick
+      s.x += s.shoveX * dt; s.z += s.shoveZ * dt;
+      s.shoveX *= Math.max(0, 1 - dt * 1.2); s.shoveZ *= Math.max(0, 1 - dt * 1.2);
+      s.heelKick *= Math.max(0, 1 - dt * 1.5);
       s.y = b.h * 0.75 - s.draft;
       s.group.position.set(s.x, s.y, s.z);
-      s.group.rotation.set(s.pitchSm + s.trim, s.heading, s.rollSm + s.list + heelOut + kick);
+      s.group.rotation.set(s.pitchSm + s.trim, s.heading, s.rollSm + s.list + heelOut + kick + s.heelKick);
     } else {
       // sinking: list grows, trim by the bow/stern, deck edge dips, roll accelerates
       s.sinkT += dt / 6;
@@ -1445,17 +1596,21 @@ function update(dt){
     // foam ring rides the water surface at the hull
     s.foam.position.set(s.x, waveHeight(s.x, s.z, state.t) + 0.15, s.z);
     s.foam.rotation.z = s.heading;
-    s.foam.material.opacity = s.alive ? 0.22 : Math.max(0, 0.22 * (1 - s.sinkT));
+    const spd = Math.min(1, state.speed / 14);
+    s.foam.material.opacity = s.alive ? 0.14 + 0.22 * spd : Math.max(0, 0.22 * (1 - s.sinkT));
+    s.foam.scale.setScalar(1 + 0.45 * spd);
     if(s.alive){
       // stern wash + Kelvin wake: V-arms at 19.5 deg, widening and fading astern
       s.wakeT += dt;
-      if(s.wakeT > 0.12){
+      if(s.wakeT > 0.16 - 0.09 * spd){
         s.wakeT = 0;
-        const w = spawnSprite(s.x, waveHeight(s.x, s.z + s.group.userData.len / 2, state.t) + 0.2, s.z + s.group.userData.len / 2 + 1, 2.5, 5, 2.5, 0.5, 0xffffff, 0.3);
+        const stX = s.x - Math.sin(s.heading) * s.group.userData.len / 2;
+        const stZ = s.z + Math.cos(s.heading) * s.group.userData.len / 2;
+        const w = spawnSprite(stX, waveHeight(stX, stZ, state.t) + 0.2, stZ, 2.5, 5 * (0.7 + 0.6 * spd), 2.5, 0.5, 0xffffff, 0.3);
         w.vz = 0;
       }
       s.kelvinT += dt;
-      if(s.kelvinT > 0.16){
+      if(s.kelvinT > 0.2 - 0.1 * spd){
         s.kelvinT = 0;
         [-1, 1].forEach(arm => {
           const d = 6 + Math.random() * 18;
@@ -1465,7 +1620,7 @@ function update(dt){
           const ax = (Math.sin(s.heading) * Math.cos(a) + Math.cos(s.heading) * Math.sin(a) * arm) * d;
           const az = (Math.cos(s.heading) * Math.cos(a) - Math.sin(s.heading) * Math.sin(a) * arm) * d;
           const kx = s.x + ax, kz = s.z + az;
-          const sp = spawnSprite(kx, waveHeight(kx, kz, state.t) + 0.15, kz, 3, 3.5, 1.8, 0.4, 0xffffff, 0.16);
+          const sp = spawnSprite(kx, waveHeight(kx, kz, state.t) + 0.15, kz, 3 * (0.7 + 0.6 * spd), 3.5 * (0.7 + 0.6 * spd), 1.8, 0.4, 0xffffff, 0.16);
           sp.vz = 0;
         });
       }
@@ -1525,6 +1680,8 @@ function update(dt){
     state.pickupT = 0;
     spawnPickup();
   }
+  state.islandT += dt;
+  if(state.islandT > 0.5){ state.islandT = 0; loadIslands(); }
 
   // hazards are fixed in the world; the fleet sails into them
   state.hazards.forEach(h => {
@@ -1545,10 +1702,14 @@ function update(dt){
           s.z += (dx / d) * vTan * dt * 0.7;
           s.x -= (dx / d) * 1.0 * dt;
           s.z -= (dz / d) * 1.0 * dt;
+          // the swirl grabs the helm: the flagship's bow is dragged around it
+          if(s === flag) s.heading += 0.22 * (1 - d / 20) * dt;
         }
       });
     }
     if(h.kind === 'debris'){
+      h.x += state.curX * dt; h.z += state.curZ * dt;
+      h.group.position.x = h.x; h.group.position.z = h.z;
       h.group.position.y = waveHeight(h.x, h.z, state.t) + 0.2;
       h.group.rotation.y = h.ph + state.t * 0.2;
       h.group.rotation.z = Math.sin(state.t + h.ph) * 0.15;
@@ -1565,6 +1726,8 @@ function update(dt){
     return true;
   });
   state.pickups.forEach(p => {
+    p.x += state.curX * dt; p.z += state.curZ * dt;
+    p.group.position.x = p.x; p.group.position.z = p.z;
     p.group.position.y = waveHeight(p.x, p.z, state.t) + 0.4;
     p.group.rotation.y = state.t * 0.8;
   });
@@ -1595,6 +1758,12 @@ function update(dt){
       if(hit){
         h.hitShips.add(s);
         damageShip(s, h.kind === 'wave' ? 12 : h.kind === 'whirl' ? 8 : 6, h.x, h.z);
+        if(h.kind === 'wave'){
+          // the wall shoves the ship sideways and heels it over
+          const dirx = h.dirx || 0, dirz = h.dirz === undefined ? 1 : h.dirz;
+          s.shoveX = dirx * 12; s.shoveZ = dirz * 12;
+          s.heelKick = (Math.random() < 0.5 ? -1 : 1) * 0.3;
+        }
       }
     });
     state.pickups.forEach(p => {
