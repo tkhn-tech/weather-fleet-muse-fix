@@ -141,7 +141,7 @@
         <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v8.0</div>
+    <div class="ver">v8.1</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -205,7 +205,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9fc3d8);
 scene.fog = new THREE.Fog(0x9fc3d8, 60, 380);
-const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 900);
+const camera = new THREE.PerspectiveCamera(66, window.innerWidth / window.innerHeight, 0.1, 900);
 camera.position.set(0, 24, 62);
 
 const hemi = new THREE.HemisphereLight(0xbfd9e8, 0x0a1a26, 0.9);
@@ -361,22 +361,119 @@ function waveSlope(x, z, t){
 const OCEAN_STEP = 8;
 const oceanGeo = new THREE.PlaneGeometry(480, 720, 60, 90);
 oceanGeo.rotateX(-Math.PI / 2);
-const oceanMat = new THREE.MeshPhongMaterial({color: 0xffffff, vertexColors: true, shininess: 110, specular: 0x99ccee});
+const oceanPos = oceanGeo.attributes.position;
+const oceanBase = oceanPos.array.slice();
+// per-vertex Gerstner steepness + normalised height, fed to the ocean shader:
+// the same wave list drives the picture, the buoyancy and the foam
+const oceanSteep = new Float32Array(oceanPos.count);
+const oceanH = new Float32Array(oceanPos.count);
+oceanGeo.setAttribute('aSteep', new THREE.BufferAttribute(oceanSteep, 1));
+oceanGeo.setAttribute('aH', new THREE.BufferAttribute(oceanH, 1));
+// Ocean shader — per-pixel shading from the same Gerstner field the buoyancy
+// uses. The vertices are still displaced in JS (updateOcean) so the picture
+// and the physics can never disagree; the shader shades each pixel from the
+// interpolated Gerstner normal + steepness: Schlick Fresnel sky reflection,
+// subsurface scatter through crests toward the sun, a tight HDR sun glint,
+// and steepness-gated lace foam that fades with distance (footprint fade)
+// so the far sea does not boil into moiré.
+const oceanUniforms = {
+  uDeep:  {value: new THREE.Color(0x0d2839)},
+  uBase:  {value: new THREE.Color(0x1a5a78)},
+  uCrest: {value: new THREE.Color(0x9fd4e8)},
+  uSky:   {value: new THREE.Color(0x9fc3d8)},
+  uSunDir:{value: new THREE.Vector3(60, 90, 40).normalize()},
+  uSunI:  {value: 1.15},
+  uTime:  {value: 0},
+  uFoam:  {value: new THREE.Color(0xdde8ee)},
+};
+Object.assign(oceanUniforms, THREE.UniformsUtils.clone(THREE.UniformsLib.fog));
+const oceanMat = new THREE.ShaderMaterial({
+  uniforms: oceanUniforms,
+  fog: true,
+  vertexShader: `
+    attribute float aSteep;
+    attribute float aH;
+    varying vec3 vNormal;
+    varying vec3 vWorldPos;
+    varying float vSteep;
+    varying float vH;
+    #include <fog_pars_vertex>
+    void main(){
+      vNormal = normalize(normalMatrix * normal);
+      vSteep = aSteep;
+      vH = aH;
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorldPos = wp.xyz;
+      vec4 mvPosition = viewMatrix * wp;
+      gl_Position = projectionMatrix * mvPosition;
+      #include <fog_vertex>
+    }`,
+  fragmentShader: `
+    uniform vec3 uDeep;
+    uniform vec3 uBase;
+    uniform vec3 uCrest;
+    uniform vec3 uSky;
+    uniform vec3 uSunDir;
+    uniform float uSunI;
+    uniform float uTime;
+    uniform vec3 uFoam;
+    varying vec3 vNormal;
+    varying vec3 vWorldPos;
+    varying float vSteep;
+    varying float vH;
+    #include <fog_pars_fragment>
+    float hash21(vec2 p){
+      p = fract(p * vec2(123.34, 456.21));
+      p += dot(p, p + 45.32);
+      return fract(p.x * p.y);
+    }
+    float vnoise(vec2 p){
+      vec2 i = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      float a = hash21(i), b = hash21(i + vec2(1.0, 0.0));
+      float c = hash21(i + vec2(0.0, 1.0)), d = hash21(i + vec2(1.0, 1.0));
+      return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+    }
+    void main(){
+      vec3 V = normalize(cameraPosition - vWorldPos);
+      float dist = length(cameraPosition - vWorldPos);
+      vec2 wp = vWorldPos.xz;
+      // fine ripple detail in the normal, fading out with distance so the
+      // far sea stays calm (footprint fade)
+      float detailFade = exp(-dist / 170.0);
+      vec3 N = normalize(vNormal);
+      N.xz += 0.07 * detailFade * vec2(
+        sin(wp.x * 0.9 + uTime * 1.3) * sin(wp.y * 0.7 - uTime * 0.9),
+        sin(wp.y * 1.1 + uTime * 1.1) * sin(wp.x * 0.6 - uTime * 1.4));
+      N = normalize(N);
+      float ndv = max(dot(N, V), 0.0);
+      // deep colour in the troughs, lighter toward the crests
+      vec3 water = mix(uDeep, uBase, smoothstep(-0.15, 0.45, vH));
+      water = mix(water, uCrest, smoothstep(0.55, 1.0, vH) * 0.65);
+      // subsurface scatter: crests glow when you look toward the sun
+      float sss = pow(max(dot(V, -uSunDir), 0.0), 3.0) * smoothstep(0.25, 1.0, vH);
+      water += uCrest * sss * 0.55;
+      // Schlick Fresnel: sky reflection takes over at grazing angles
+      float F = 0.03 + 0.97 * pow(1.0 - ndv, 5.0);
+      vec3 col = mix(water, uSky, F * 0.85);
+      // tight HDR sun glint + a broader sheen
+      vec3 H = normalize(V + uSunDir);
+      float ndh = max(dot(N, H), 0.0);
+      col += vec3(1.0, 0.95, 0.8) * (pow(ndh, 700.0) * 3.0 + pow(ndh, 80.0) * 0.22) * uSunI;
+      // crest foam: gated on Gerstner steepness + height, laced with
+      // per-pixel noise, faded with distance
+      float n = vnoise(wp * 0.35) * 0.6 + vnoise(wp * 1.3) * 0.4;
+      float foamGate = smoothstep(0.22, 0.62, vSteep) * smoothstep(0.05, 0.45, vH);
+      float foam = smoothstep(0.5, 0.85, foamGate + (n - 0.5) * 0.7);
+      foam *= exp(-dist / 260.0);
+      col = mix(col, uFoam, foam * 0.85);
+      gl_FragColor = vec4(col, 1.0);
+      #include <fog_fragment>
+    }`,
+});
 const ocean = new THREE.Mesh(oceanGeo, oceanMat);
 ocean.position.set(0, 0, 0);
 scene.add(ocean);
-const oceanPos = oceanGeo.attributes.position;
-const oceanBase = oceanPos.array.slice();
-const oceanCol = new Float32Array(oceanPos.count * 3);
-oceanGeo.setAttribute('color', new THREE.BufferAttribute(oceanCol, 3));
-// per-vertex foam noise, fixed to the mesh grid so the whitecaps are lacy
-// rather than a solid band (research: foam thresholded through noise, and
-// whitecap coverage stays a few percent even in a hurricane — Monahan)
-const oceanNoise = new Float32Array(oceanPos.count);
-for(let i = 0; i < oceanPos.count; i++){
-  const s = Math.sin(oceanBase[i * 3] * 12.9898 + oceanBase[i * 3 + 2] * 78.233) * 43758.5453;
-  oceanNoise[i] = s - Math.floor(s);
-}
 // sea colours, set per stage: troughs dark, crests pale, foam a grey-white
 // (fresh foam reflects ~40-55%, never pure white)
 let seaDeep = [0, 0, 0], seaBase = [0, 0, 0], seaCrest = [0, 0, 0];
@@ -385,6 +482,9 @@ function setSeaColors(hex){
   seaBase = [c.r, c.g, c.b];
   seaDeep = [c.r * 0.5, c.g * 0.5, c.b * 0.5];
   seaCrest = [c.r + (cr.r - c.r) * 0.55, c.g + (cr.g - c.g) * 0.55, c.b + (cr.b - c.b) * 0.55];
+  oceanUniforms.uDeep.value.setRGB(seaDeep[0], seaDeep[1], seaDeep[2]);
+  oceanUniforms.uBase.value.setRGB(seaBase[0], seaBase[1], seaBase[2]);
+  oceanUniforms.uCrest.value.setRGB(seaCrest[0], seaCrest[1], seaCrest[2]);
 }
 setSeaColors(STAGES[settings.startStage].sea);
 function updateOcean(t){
@@ -392,9 +492,6 @@ function updateOcean(t){
   ocean.position.set(Math.round(f.x / OCEAN_STEP) * OCEAN_STEP, 0, Math.round(f.z / OCEAN_STEP) * OCEAN_STEP);
   const ox = ocean.position.x, oz = ocean.position.z;
   const range = 2.07 * ampCur + 1.5;
-  // foam starts higher in calm seas and lower as the sea roughens, so
-  // whitecaps are rare in the calm and frequent in the storm, never a sheet
-  const foamThresh = 1.02 - 0.12 * Math.min(1.3, ampCur);
   for(let i = 0; i < oceanPos.count; i++){
     const bx = oceanBase[i * 3], bz = oceanBase[i * 3 + 2];
     const g = gerstner(bx + ox, bz + oz, t);
@@ -403,23 +500,20 @@ function updateOcean(t){
     oceanPos.array[i * 3 + 2] = g.z - oz;
     let hn = (g.y + range) / (2 * range);
     if(hn < 0) hn = 0; else if(hn > 1) hn = 1;
-    let r, gg, b;
-    if(hn > foamThresh + 0.10 * oceanNoise[i]){
-      r = 0.87; gg = 0.91; b = 0.94;
-    } else {
-      const t1 = hn < 0.5 ? hn * 2 : 1;
-      let t2 = hn > 0.5 ? (hn - 0.5) / 0.36 : 0;
-      if(t2 > 1) t2 = 1;
-      r = seaDeep[0] + (seaBase[0] - seaDeep[0]) * t1;
-      gg = seaDeep[1] + (seaBase[1] - seaDeep[1]) * t1;
-      b = seaDeep[2] + (seaBase[2] - seaDeep[2]) * t1;
-      r += (seaCrest[0] - r) * t2; gg += (seaCrest[1] - gg) * t2; b += (seaCrest[2] - b) * t2;
-    }
-    oceanCol[i * 3] = r; oceanCol[i * 3 + 1] = gg; oceanCol[i * 3 + 2] = b;
+    oceanH[i] = hn;
   }
   oceanPos.needsUpdate = true;
-  oceanGeo.attributes.color.needsUpdate = true;
   if((frameCount & 1) === 0) oceanGeo.computeVertexNormals();
+  // steepness from the Gerstner normal: 0 on a flat calm, 1 on a breaking face
+  const nrm = oceanGeo.attributes.normal.array;
+  for(let i = 0; i < oceanPos.count; i++){
+    const ny = nrm[i * 3 + 1];
+    let s = (1 - ny) * 3;
+    oceanSteep[i] = s < 0 ? 0 : s > 1 ? 1 : s;
+  }
+  oceanGeo.attributes.aSteep.needsUpdate = true;
+  oceanGeo.attributes.aH.needsUpdate = true;
+  oceanUniforms.uTime.value = t;
 }
 
 // ---------- materials (modern USN palette: haze gray verticals, deck gray horizontals, hull red + black boot-top) ----------
@@ -768,7 +862,7 @@ function updateParticles(dt){
     const p = parts[i];
     if(p.life <= 0){ pPos[i * 3 + 1] = -999; continue; }
     p.life -= dt;
-    p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt + state.speed * 0.9 * dt;
+    p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
     p.vy += p.grav * dt;
     const f = Math.max(0, p.life / p.max);
     pPos[i * 3] = p.x; pPos[i * 3 + 1] = p.y; pPos[i * 3 + 2] = p.z;
@@ -806,7 +900,7 @@ function updateSprites(dt){
     s.life -= dt;
     s.sp.position.x += s.vx * dt;
     s.sp.position.y += s.vy * dt;
-    s.sp.position.z += (s.vz + state.speed * 0.9) * dt;
+    s.sp.position.z += s.vz * dt;
     const f = Math.max(0, s.life / s.max);
     s.sp.material.opacity = s.fade * f;
     const g = 1 + s.grow * dt;
@@ -939,7 +1033,7 @@ let beacon = null;
 function makeBeacon(x, z){
   const g = new THREE.Group();
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 2.2, 60, 8, 1, true),
-    new THREE.MeshBasicMaterial({color: 0xffd166, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending}));
+    new THREE.MeshBasicMaterial({color: 0xffd166, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false}));
   beam.position.y = 30; g.add(beam);
   const gem = new THREE.Mesh(new THREE.OctahedronGeometry(2.2),
     new THREE.MeshStandardMaterial({color: 0xffd166, emissive: 0xaa7700, roughness: 0.3, metalness: 0.6}));
@@ -998,6 +1092,8 @@ function applyStage(i){
   scene.fog.far = st.fogFar;
   setSeaColors(st.sea);
   sun.intensity = st.sunI;
+  oceanUniforms.uSky.value.setHex(st.sky);
+  oceanUniforms.uSunI.value = st.sunI;
   ampTarget = st.amp * settings.wave;
   rainVisible = Math.round(st.rain * settings.rain);
   sunGlow.material.opacity = i === 0 ? 0.8 : i === 1 ? 0.5 : i === 2 ? 0.2 : 0.08;
@@ -1862,18 +1958,20 @@ function update(dt){
   if(aliveCount() === 0) gameOver();
 }
 
-// ---------- camera (behind the whole fleet; wheel zoom + RMB free-look, WoWS style) ----------
+// ---------- camera (Asphalt action-mode chase: rigidly behind the flagship's
+// stern in the fleet's frame; wheel zoom + RMB free-look, WoWS style) ----------
 function updateCamera(dt){
   const flag = flagship() || fleet[0];
   const aspect = window.innerWidth / window.innerHeight;
-  const camZ0 = aspect < 0.75 ? 78 : aspect < 1.1 ? 70 : 62;
-  const camY0 = aspect < 0.75 ? 32 : aspect < 1.1 ? 28 : 24;
+  const camZ0 = aspect < 0.75 ? 64 : aspect < 1.1 ? 56 : 48;
+  const camY0 = aspect < 0.75 ? 24 : aspect < 1.1 ? 20 : 17;
   const speedN = Math.min(1, state.speed / 14);
   const camZ = camZ0 * state.camZoom * (1 + speedN * 0.12);
   const camY = camY0 * (0.85 + 0.3 * state.camZoom);
   if(!state.freeLookActive) state.freeLook *= Math.max(0, 1 - dt * 1.2);
   // frame the whole fleet, not just the flagship: the formation spreads in a
-  // turn, so the camera tracks the fleet centroid and pulls back to fit it
+  // turn, so the camera pulls back to fit it (in portrait the narrow
+  // horizontal field of view is what sets the distance, not the base offset)
   const alive = fleet.filter(s => s.alive);
   let cx = 0, cz = 0;
   alive.forEach(s => { cx += s.x; cz += s.z; });
@@ -1885,31 +1983,39 @@ function updateCamera(dt){
   const need = (spread + 8) / Math.max(0.2, fitTan);
   const camZf = Math.max(camZ, Math.min(camZ * 2.2, need));
   const camYf = camY * (camZf / camZ);
-  // Asphalt-style chase: the camera has its own heading that trails the fleet's
-  // heading, so when you steer the fleet turns inside the frame and the camera
-  // swings in behind it — the fleet moves, the world does not scroll past it
+  // chase cam: the camera's own heading trails the fleet's heading stiffly,
+  // and the camera is anchored rigidly behind the flagship's stern — when
+  // you steer, the fleet turns inside the frame and the world swings around
+  // it. The follow is stiffer along the direction of travel so the camera
+  // keeps up at speed instead of lagging behind.
   let dh = flag.heading - state.camHeading;
   dh = ((dh + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
-  state.camHeading += dh * (1 - Math.exp(-dt * 1.6));
+  state.camHeading += dh * (1 - Math.exp(-dt * 2.6));
   const fx = Math.sin(flag.heading), fz = -Math.cos(flag.heading);
   const chx = Math.sin(state.camHeading), chz = -Math.cos(state.camHeading);
   const crx = Math.cos(state.camHeading), crz = Math.sin(state.camHeading);
   const a = state.freeLook;
-  const tx = cx - chx * camZf * Math.cos(a) + crx * camZf * Math.sin(a) * 0.55;
+  const tx = flag.x - chx * camZf * Math.cos(a) + crx * camZf * Math.sin(a) * 0.55;
   const ty = camYf + Math.sin(state.t * 0.5) * 0.4;
-  const tz = cz - chz * camZf * Math.cos(a) + crz * camZf * Math.sin(a) * 0.55;
-  const k = 1 - Math.exp(-dt * 3);
-  camera.position.x += (tx - camera.position.x) * k;
-  camera.position.y += (ty - camera.position.y) * k;
-  camera.position.z += (tz - camera.position.z) * k;
+  const tz = flag.z - chz * camZf * Math.cos(a) + crz * camZf * Math.sin(a) * 0.55;
+  // stiff follow: faster along the direction of travel, softer sideways,
+  // so the camera keeps up at speed without snapping in a turn
+  const ex = tx - camera.position.x, ez = tz - camera.position.z;
+  const along = ex * chx + ez * chz;
+  const perp = ex * (-chz) + ez * chx;
+  const kA = 1 - Math.exp(-dt * 5.5), kL = 1 - Math.exp(-dt * 3.0);
+  camera.position.x += chx * along * kA + (-chz) * perp * kL;
+  camera.position.z += chz * along * kA + chx * perp * kL;
+  camera.position.y += (ty - camera.position.y) * (1 - Math.exp(-dt * 4));
   if(state.shake > 0.3){
     camera.position.x += (Math.random() - 0.5) * state.shake * 0.12;
     camera.position.y += (Math.random() - 0.5) * state.shake * 0.12;
   }
-  // look ahead of the fleet along its course, so the fleet sits low in frame
-  // and you see where you are going; the camera banks gently into the turn
-  const lookAhead = 10 + speedN * 14;
-  camera.lookAt(cx + fx * lookAhead, 2, cz + fz * lookAhead);
+  // look well ahead of the flagship along its course, so the flagship sits
+  // low in frame and you see where you are going; the camera banks gently
+  // into the turn
+  const lookAhead = 16 + speedN * 20;
+  camera.lookAt(flag.x + fx * lookAhead, 2, flag.z + fz * lookAhead);
   const bankTarget = -state.rudder * 0.07 * speedN;
   state.camBank += (bankTarget - state.camBank) * Math.min(1, dt * 3);
   camera.rotateZ(state.camBank);
@@ -1920,7 +2026,7 @@ function updateCamera(dt){
       c.position.set(flag.x + (Math.random() - 0.5) * 300, 55 + Math.random() * 30, flag.z - 220 + Math.random() * 180);
     }
   });
-  const targetFov = 62 + speedN * 5 + (state.boost ? 7 : 0);
+  const targetFov = 66 + speedN * 5 + (state.boost ? 7 : 0);
   if(Math.abs(camera.fov - targetFov) > 0.1){
     camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 4);
     camera.updateProjectionMatrix();
