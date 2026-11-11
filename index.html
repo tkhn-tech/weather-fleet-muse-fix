@@ -141,7 +141,7 @@
         <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v9.1</div>
+    <div class="ver">v9.2</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -226,7 +226,7 @@ const skyDome = new THREE.Mesh(
       void main(){
         float h = normalize(vDir).y;
         vec3 col = mix(uHorizon, uZenith, smoothstep(0.0, 0.5, h));
-        col = mix(col, uHorizon * 0.8, smoothstep(0.0, -0.2, h));
+        col = mix(col, uHorizon, smoothstep(0.0, -0.2, h));
         col += uHorizon * exp(-abs(h) * 8.0) * 0.35;
         gl_FragColor = vec4(col, 1.0);
       }`,
@@ -381,6 +381,7 @@ const WAVES = [
   {lam: 3.5, amp: 0.07, q: 0.80, dx: 0.80,  dz: 0.60,  ph: 2.3},
 ];
 WAVES.forEach(w => { w.k = 2 * Math.PI / w.lam; w.w = Math.sqrt(G_GAME * w.k); w.bdx = w.dx; w.bdz = w.dz; });
+const WAVE_AMP_SUM = WAVES.reduce((a, w) => a + w.amp, 0);
 let ampCur = STAGES[settings.startStage].amp * settings.wave;
 let ampTarget = ampCur;
 function gerstner(x, z, t){
@@ -423,7 +424,7 @@ function waveSlope(x, z, t){
 // vertex grid so the wave field stays fixed in world space, not glued to the ship
 const OCEAN_STEP = 8;
 function makeRadialOcean(){
-  const RINGS = [12, 24, 48, 96, 144, 192, 288, 384, 512, 720];
+  const RINGS = [12, 24, 48, 96, 144, 192, 288, 384, 512, 850];
   const SPOKES = 64;
   const pos = [0, 0, 0];
   for(const R of RINGS){
@@ -572,7 +573,7 @@ const oceanMat = new THREE.ShaderMaterial({
       // large soft blown-out white/yellow blobs, v8.1)
       vec3 H = normalize(V + uSunDir);
       float ndh = max(dot(N, H), 0.0);
-      col += vec3(1.0, 0.95, 0.8) * (pow(ndh, 900.0) * 2.4 + pow(ndh, 120.0) * 0.08) * uSunI;
+      col += vec3(1.0, 0.95, 0.8) * (pow(ndh, 300.0) * 2.0 + pow(ndh, 60.0) * 0.25) * uSunI;
       // crest foam: gated on Gerstner steepness + height, laced with
       // per-pixel noise, faded with distance
       float n = vnoise(wp * 0.35) * 0.6 + vnoise(wp * 1.3) * 0.4;
@@ -608,7 +609,7 @@ function updateOcean(t){
   const f = fleet[0];
   ocean.position.set(Math.round(f.x / OCEAN_STEP) * OCEAN_STEP, 0, Math.round(f.z / OCEAN_STEP) * OCEAN_STEP);
   const ox = ocean.position.x, oz = ocean.position.z;
-  const range = 2.07 * ampCur + 1.5;
+  const range = WAVE_AMP_SUM * ampCur + 0.1;
   for(let i = 0; i < oceanPos.count; i++){
     const bx = oceanBase[i * 3], bz = oceanBase[i * 3 + 2];
     const g = gerstner(bx + ox, bz + oz, t);
@@ -696,6 +697,19 @@ function makeJet(){
   wR.rotation.z = -0.6;
   g.add(wL, wR);
   g.add(box(0.9, 0.1, 0.5, M.jet, 0, 0.1, 1.4));
+  return g;
+}
+function makeHawkeye(){
+  const g = new THREE.Group();
+  const fus = cyl(0.45, 0.45, 4.5, M.jet, 0, 0, 0); fus.rotation.x = Math.PI / 2; g.add(fus);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.45, 10, 8), M.jet);
+  nose.scale.set(1, 1, 1.4); nose.position.set(0, 0, -2.2); g.add(nose);
+  g.add(box(5.2, 0.12, 1.3, M.jet, 0, 0.15, 0.2));
+  g.add(box(2.0, 0.1, 0.9, M.jet, 0, 0.15, 2.0));
+  g.add(box(0.12, 1.0, 0.8, M.jet, 0, 0.5, 2.2));
+  const pylon = box(0.3, 0.5, 0.3, M.dark, 0, 0.6, 0.2); g.add(pylon);
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.75, 12, 8), M.white);
+  dome.position.set(0, 1.05, 0.2); g.add(dome);
   return g;
 }
 function makePhalanx(){
@@ -815,11 +829,8 @@ function makeShip(type){
     bulb.scale.set(1.4, 0.9, 2.0); bulb.position.set(0, -0.1, -10.6); g.add(bulb);
     // E-2 Hawkeye (ref: Kennedy's radar-dome early-warning aircraft) — a
     // parked jet with the big round radar dome on top, on the bow parking spot
-    const hawkeye = makeJet();
-    hawkeye.scale.set(1.5, 1.5, 1.5);
-    const hawkeyeDome = new THREE.Mesh(new THREE.SphereGeometry(0.8, 12, 8), M.white);
-    hawkeyeDome.position.set(0, 0.85, 0.2); hawkeye.add(hawkeyeDome);
-    hawkeye.position.set(-4.5, 1.95, -3); hawkeye.rotation.y = -0.3; g.add(hawkeye);
+    const hawkeye = makeHawkeye();
+    hawkeye.position.set(-4.5, 2.0, -3); hawkeye.rotation.y = -0.3; g.add(hawkeye);
     // Phalanx on sponsons, bow radar dome
     const p1 = makePhalanx(); p1.position.set(-6.5, 1.9, -8); g.add(p1);
     const p2 = makePhalanx(); p2.position.set(6.5, 1.9, 8); g.add(p2);
@@ -852,6 +863,12 @@ function makeShip(type){
     g.add(cyl(0.08, 0.08, 3.0, M.black, 0, 4.4, 3.2));
     // aft main-battery director + lifeboats on the tower sides
     g.add(box(1.6, 1.6, 1.6, M.dark, 0, 2.6, 5.4));
+    // hull number 62 on the director's aft face (v9.2) — the tower 62 is
+    // blocked by the funnels from the stern view, this one faces the camera
+    const num62aft = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.6),
+      new THREE.MeshBasicMaterial({map: numTex62, transparent: true, fog: false}));
+    num62aft.position.set(0, 2.6, 6.26);
+    g.add(num62aft);
     const dirDish = new THREE.Mesh(new THREE.SphereGeometry(0.6, 10, 8), M.white);
     dirDish.scale.set(1, 0.4, 1); dirDish.position.set(0, 3.6, 5.4); g.add(dirDish);
     g.add(box(0.7, 0.5, 2.4, M.white, -1.9, 3.2, -1.0));
@@ -2073,15 +2090,20 @@ function update(dt){
       const bowVel = (mo.bowMean - prevBow) / Math.max(dt, 0.001);
       s.prevBowMean = mo.bowMean;
       s.sprayCool = Math.max(0, (s.sprayCool || 0) - dt);
-      if(bowVel < -1.5 && state.speed > 3 && s.sprayCool <= 0){
+      if(bowVel < -0.8 && state.speed > 3 && s.sprayCool <= 0){
         s.sprayCool = 0.4;
         const bl = s.group.userData.len / 2;
         const bx = s.x + Math.sin(s.heading) * bl, bz = s.z - Math.cos(s.heading) * bl;
         const by = waveHeight(bx, bz, state.t) + 0.6;
+        for(let i = 0; i < 3; i++){
+          const sp = spawnSprite(bx + (Math.random() - 0.5) * 2, by + 0.5, bz + (Math.random() - 0.5) * 2,
+            1.2, 3.5, 3.5, 0.8, 0xffffff, 0.5);
+          sp.vy = 2; sp.vz = 0;
+        }
         for(let i = 0; i < 8; i++){
           spawnParticle(bx + (Math.random() - 0.5) * 2.5, by, bz + (Math.random() - 0.5) * 2.5,
             (Math.random() - 0.5) * 3.5, 2.5 + Math.random() * 3.5, (Math.random() - 0.5) * 3.5,
-            0.9 + Math.random() * 0.5, 1, 1, 1, 1.6);
+            1.2 + Math.random() * 0.6, 1, 1, 1, 2.2);
         }
       }
       s.group.position.set(s.x, s.y, s.z);
@@ -2120,15 +2142,15 @@ function update(dt){
       // Small, soft, frequent puffs — the old big discrete slabs read as
       // stepped white blocks (v8.1).
       s.wakeT += dt;
-      if(s.wakeT > 0.10 - 0.05 * spd){
+      if(spd > 0.15 && s.wakeT > 0.06 - 0.03 * spd){
         s.wakeT = 0;
         const stX = s.x - Math.sin(s.heading) * s.group.userData.len / 2;
         const stZ = s.z + Math.cos(s.heading) * s.group.userData.len / 2;
-        const w = spawnSprite(stX, waveHeight(stX, stZ, state.t) + 0.2, stZ, 3.5, 3.5 * (0.6 + 0.5 * spd), 2.0, 0.9, 0xffffff, 0.22);
+        const w = spawnSprite(stX, waveHeight(stX, stZ, state.t) + 0.2, stZ, 5, 5 * (0.6 + 0.5 * spd), 3, 0.9, 0xffffff, 0.15);
         w.vz = 0;
       }
       s.kelvinT += dt;
-      if(s.kelvinT > 0.16 - 0.08 * spd){
+      if(spd > 0.15 && s.kelvinT > 0.16 - 0.08 * spd){
         s.kelvinT = 0;
         [-1, 1].forEach(arm => {
           const d = 8 + Math.random() * 24;
@@ -2138,7 +2160,7 @@ function update(dt){
           const ax = (Math.sin(s.heading) * Math.cos(a) + Math.cos(s.heading) * Math.sin(a) * arm) * d;
           const az = (Math.cos(s.heading) * Math.cos(a) - Math.sin(s.heading) * Math.sin(a) * arm) * d;
           const kx = s.x + ax, kz = s.z + az;
-          const sp = spawnSprite(kx, waveHeight(kx, kz, state.t) + 0.15, kz, 3.5, 3.4 * (0.7 + 0.6 * spd), 1.6, 0.6, 0xffffff, 0.16);
+          const sp = spawnSprite(kx, waveHeight(kx, kz, state.t) + 0.15, kz, 5, 4.5 * (0.7 + 0.6 * spd), 1.6, 0.6, 0xffffff, 0.12);
           sp.vz = 0;
         });
       }
