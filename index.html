@@ -125,7 +125,7 @@
     <p class="sub">The same fleet, one run, no cuts — now in full 3D. Steer the flagship with
       the joystick from behind the whole fleet as the carrier leads the battleships and destroyers through a
       an open ocean — steer anywhere, and the world sails with you. The fleet starts at idle, floating on the swell — hold the throttle to get under way, and release it to coast back to idle. Waves pitch and roll every hull. Dodge rogue
-      waves, whirlpools and islands, grab supply crates to repair, and keep the fleet alive. A minimap tracks the fleet, hazards and islands — sail to the gold waypoint beacon for bonus score, and mind the wind and current, which push you off course.
+      waves, grab supply crates to repair, and keep the fleet alive. A minimap tracks the fleet and hazards — sail to the gold waypoint beacon for bonus score, and mind the wind and current, which push you off course.
       A wrecked ship lists, floods and sinks beneath the waves, and the next one
       takes command. Lose all five and the round ends.</p>
     <div id="loadErr"></div>
@@ -141,7 +141,7 @@
         <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v9.7</div>
+    <div class="ver">v9.8</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -727,57 +727,11 @@ function makePhalanx(){
   return g;
 }
 
-// ---------- extras on the real models (v9.7): the GLBs carry the hull and
-// superstructure, but no legible hull numbers and no parked aircraft, so
-// the readable numbers and the carrier air wing go on top ----------
-function addRealExtras(g, type){
-  const L = g.userData.len, W = g.userData.wid;
-  const numPlane = (tex, w, h) => new THREE.Mesh(
-    new THREE.PlaneGeometry(w, h),
-    new THREE.MeshBasicMaterial({map: tex, transparent: true, fog: false}));
-  if(type === 'carrier'){
-    // "79" on the island, both sides (island ~29% from the stern, starboard)
-    [-1, 1].forEach(sgn => {
-      const n = numPlane(numTex, 2.6, 1.3);
-      n.position.set(sgn * 2.6, 4.6, 5.2);
-      n.rotation.y = sgn * Math.PI / 2;
-      g.add(n);
-    });
-    // air wing on the flight deck (deck top ~y 1.5 after the 1.4x scale)
-    const jets = [[-4.5, -9], [4.5, -9], [-4.5, -4], [4.5, 2]];
-    jets.forEach(([x, z], i) => {
-      const j = makeJet(); j.position.set(x, 1.7, z); j.rotation.y = (i % 2 ? -0.15 : 0.12); g.add(j);
-    });
-    const hw = makeHawkeye(); hw.position.set(-4.5, 1.9, -3); hw.rotation.y = -0.3; g.add(hw);
-  } else if(type === 'battleship'){
-    // "62" on both bow sides, readable from the chase camera's stern view
-    // via the aft face too
-    [-1, 1].forEach(sgn => {
-      const n = numPlane(numTex62, 2.0, 1.0);
-      n.position.set(sgn * (W / 2 + 0.06), 1.3, -L * 0.32);
-      n.rotation.y = sgn * Math.PI / 2;
-      g.add(n);
-    });
-    const aft = numPlane(numTex62, 1.6, 0.8);
-    aft.position.set(0, 2.4, L / 2 + 0.06);
-    g.add(aft);
-  } else {
-    // "125" on both bow sides + the stern transom
-    [-1, 1].forEach(sgn => {
-      const n = numPlane(numTex125, 1.5, 0.75);
-      n.position.set(sgn * (W / 2 + 0.06), 1.0, -L * 0.32);
-      n.rotation.y = sgn * Math.PI / 2;
-      g.add(n);
-    });
-    const stern = numPlane(numTex125, 1.3, 0.65);
-    stern.position.set(0, 1.1, L / 2 + 0.06);
-    g.add(stern);
-  }
-}
+
 
 function makeShip(type){
   const fitted = fitModel(type);
-  if (fitted){ addRealExtras(fitted, type); return fitted; }
+  if (fitted) return fitted;
   const g = new THREE.Group();
   let L, W, Hh;
   if(type === 'carrier'){ L = 22; W = 7.5; Hh = 2.2; }
@@ -850,18 +804,6 @@ function makeShip(type){
     const sps48 = box(2.0, 1.4, 0.15, M.white, 5.9, 6.9, 4.6);
     sps48.rotation.x = -0.15;
     g.add(sps48);
-    const num = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.9),
-      new THREE.MeshBasicMaterial({map: numTex, transparent: true, fog: false}));
-    num.position.set(5.9, 3.2, 5.56);
-    g.add(num);
-    // hull number 79 on both bow sides (ref: Kennedy's bow numbers)
-    [-1, 1].forEach(sgn => {
-      const bow79 = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 1.0),
-        new THREE.MeshBasicMaterial({map: numTex, transparent: true, fog: false}));
-      bow79.position.set(sgn * (W / 2 + 0.42), 0.8, -L * 0.32);
-      bow79.rotation.y = sgn * Math.PI / 2;
-      g.add(bow79);
-    });
     // nav lights on the island: red port, green starboard
     const navR = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshStandardMaterial({color: 0xff4444, emissive: 0xaa1111}));
     navR.position.set(4.5, 5.9, 4.6); g.add(navR);
@@ -920,12 +862,6 @@ function makeShip(type){
     g.add(cyl(0.08, 0.08, 3.0, M.black, 0, 4.4, 3.2));
     // aft main-battery director + lifeboats on the tower sides
     g.add(box(1.6, 1.6, 1.6, M.dark, 0, 2.6, 5.4));
-    // hull number 62 on the director's aft face (v9.2) — the tower 62 is
-    // blocked by the funnels from the stern view, this one faces the camera
-    const num62aft = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.6),
-      new THREE.MeshBasicMaterial({map: numTex62, transparent: true, fog: false}));
-    num62aft.position.set(0, 2.6, 6.26);
-    g.add(num62aft);
     const dirDish = new THREE.Mesh(new THREE.SphereGeometry(0.6, 10, 8), M.white);
     dirDish.scale.set(1, 0.4, 1); dirDish.position.set(0, 3.6, 5.4); g.add(dirDish);
     g.add(box(0.7, 0.5, 2.4, M.white, -1.9, 3.2, -1.0));
@@ -953,14 +889,6 @@ function makeShip(type){
       t.position.set(p[0], 1.6, p[1]);
       g.add(t);
     });
-    // hull number 62 on both bow sides (ref: New Jersey's bow numbers)
-    [-1, 1].forEach(sgn => {
-      const bow62 = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8),
-        new THREE.MeshBasicMaterial({map: numTex62, transparent: true, fog: false}));
-      bow62.position.set(sgn * (W / 2 + 0.42), 0.8, -L * 0.32);
-      bow62.rotation.y = sgn * Math.PI / 2;
-      g.add(bow62);
-    });
     // stern helipad (1980s: flight deck aft, no hangar)
     const pad = new THREE.Mesh(new THREE.CircleGeometry(1.6, 20), new THREE.MeshStandardMaterial({color: 0x2c3a48, roughness: 0.9}));
     pad.rotation.x = -Math.PI / 2; pad.position.set(0, 1.6, 8.0);
@@ -968,11 +896,6 @@ function makeShip(type){
     const ring = new THREE.Mesh(new THREE.RingGeometry(1.4, 1.6, 20), new THREE.MeshBasicMaterial({color: 0xffffff, side: THREE.DoubleSide}));
     ring.rotation.x = -Math.PI / 2; ring.position.set(0, 1.61, 8.0);
     g.add(ring);
-    // hull number 62 (ref: USS New Jersey BB-62) on the bridge tower aft face
-    const num62 = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.9),
-      new THREE.MeshBasicMaterial({map: numTex62, transparent: true, fog: false}));
-    num62.position.set(0, 3.0, 0.38);
-    g.add(num62);
     // helicopter parked on the stern helipad — light hull and a clearer rotor
     // so it reads as a helicopter, not another turret (v8.4)
     const heliB = new THREE.Group();
@@ -1027,23 +950,10 @@ function makeShip(type){
     g.add(box(2.4, 1.8, 2.4, M.dark, 0, 2.1, 2.4));
     g.add(box(2.6, 1.6, 2.0, M.dark, 0, 2.1, 4.0));
     g.add(box(2.2, 1.2, 0.1, M.black, 0, 2.0, 5.06));
-    // hull number 125 (ref: USS Jack H. Lucas DDG-125) on the hangar door
-    const num125 = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.6),
-      new THREE.MeshBasicMaterial({map: numTex125, transparent: true, fog: false}));
-    num125.position.set(0, 2.0, 5.13);
-    g.add(num125);
     const pad = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4),
       new THREE.MeshBasicMaterial({map: hTex, transparent: true}));
     pad.rotation.x = -Math.PI / 2; pad.position.set(0, 1.42, 4.6);
     g.add(pad);
-    // hull number 125 on both bow sides (ref: Jack H. Lucas's bow numbers)
-    [-1, 1].forEach(sgn => {
-      const bow125 = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.6),
-        new THREE.MeshBasicMaterial({map: numTex125, transparent: true, fog: false}));
-      bow125.position.set(sgn * (W / 2 + 0.42), 0.7, -L * 0.32);
-      bow125.rotation.y = sgn * Math.PI / 2;
-      g.add(bow125);
-    });
     // Phalanx: one on the forward deckhouse, one over the hangar
     const p1 = makePhalanx(); p1.position.set(0, 3.5, -1.5); p1.scale.set(0.8, 0.8, 0.8); g.add(p1);
     const p2 = makePhalanx(); p2.position.set(0, 3.0, 4.0); p2.scale.set(0.8, 0.8, 0.8); g.add(p2);
@@ -1210,9 +1120,15 @@ class ShipMotion {
 // centres it horizontally and drops the waterline onto y = 0.
 const MODEL_CACHE = {};
 const MODEL_SPEC = {
-  carrier:    {uri: KENNEDY_GLB, len: 30.8, wid: 10.5, waterline: 3.25, rot: null},
-  battleship: {uri: NJ_GLB,      len: 25.2, wid: 7.3,  waterline: 7.4,  rot: [1,0,0, 0,0,1, 0,-1,0]},
-  destroyer:  {uri: DDG_GLB,     len: 14.7, wid: 4.8,  waterline: 627,  rot: [0,1,0, 0,0,1, 1,0,0]},
+  // v9.8: 2.0x the v9.5 lengths (carrier 44, battleship 36, destroyer 21) so
+  // the real models have room to show their detail. The formation offsets
+  // stay at the v9.7 values so the fleet stays compact and all five ships
+  // are readable in one frame.
+  // Battleship rot is rotateX +90 (was -90): the NJ model stands on its bow,
+  // so -90 put the bow astern; +90 puts it forward.
+  carrier:    {uri: KENNEDY_GLB, len: 44, wid: 10.5, waterline: 3.25, rot: null},
+  battleship: {uri: NJ_GLB,      len: 36, wid: 7.3,  waterline: 7.4,  rot: [1,0,0, 0,0,1, 0,1,0]},
+  destroyer:  {uri: DDG_GLB,     len: 21, wid: 4.8,  waterline: 627,  rot: [0,1,0, 0,0,1, 1,0,0]},
 };
 let GLTFLoader = null, MeshoptDecoder = null;
 try {
@@ -1267,11 +1183,11 @@ function fitModel(type){
 }
 
 const fleet = [
-  {type:'carrier',    label:'Carrier',    dx:0,     dz:0,    hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4, freeboard:1.0},
-  {type:'battleship', label:'Battleship', dx:-18.2, dz:23.8, hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:0.9},
-  {type:'battleship', label:'Battleship', dx:18.2,  dz:23.8, hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:0.9},
-  {type:'destroyer',  label:'Destroyer',  dx:-30.8, dz:44.8, hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:0.8},
-  {type:'destroyer',  label:'Destroyer',  dx:30.8,  dz:44.8, hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:0.8},
+  {type:'carrier',    label:'Carrier',    dx:0,     dz:0,    hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4, freeboard:2.0},
+  {type:'battleship', label:'Battleship', dx:-18.2, dz:23.8, hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:1.8},
+  {type:'battleship', label:'Battleship', dx:18.2,  dz:23.8, hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:1.8},
+  {type:'destroyer',  label:'Destroyer',  dx:-30.8, dz:44.8, hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.6},
+  {type:'destroyer',  label:'Destroyer',  dx:30.8,  dz:44.8, hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.6},
 ];
 fleet.forEach(s => {
   s.group = makeShip(s.type);
@@ -1442,67 +1358,7 @@ sunGlow.position.set(90, 65, -280);
 sunGlow.scale.set(90, 90, 1);
 scene.add(sunGlow);
 
-// ---------- islands (open-world landmarks; grounding scrapes the hull) ----------
-// procedural islands: the world is divided into 320-unit cells; each cell's
-// island (or lack of one) is a pure function of its coordinates, so the same
-// island is always there when you sail back — and there are always more ahead
-const ISLAND_CELL = 320;
-const islands = [];
-const islandCells = new Map();
-function cellHash(cx, cz){
-  const s = Math.sin(cx * 127.1 + cz * 311.7) * 43758.5453;
-  return s - Math.floor(s);
-}
-function islandForCell(cx, cz){
-  // one guaranteed island just ahead of the start, the rest procedural
-  if(cx === 0 && cz === -1) return {x: 120, z: -260, r: 26};
-  if(cellHash(cx, cz) > 0.16) return null;
-  const ox = (cellHash(cx + 0.37, cz + 0.11) - 0.5) * 180;
-  const oz = (cellHash(cx + 0.13, cz + 0.53) - 0.5) * 180;
-  const r = 18 + cellHash(cx + 0.71, cz + 0.29) * 16;
-  return {x: cx * ISLAND_CELL + ox, z: cz * ISLAND_CELL + oz, r};
-}
-function makeIsland(x, z, r){
-  const g = new THREE.Group();
-  const sand = new THREE.Mesh(new THREE.CircleGeometry(r, 24), new THREE.MeshStandardMaterial({color: 0xc2a878, roughness: 1}));
-  sand.rotation.x = -Math.PI / 2; sand.position.y = 0.15; g.add(sand);
-  const rock = new THREE.Mesh(new THREE.ConeGeometry(r * 0.55, r * 0.55, 8), new THREE.MeshStandardMaterial({color: 0x6b7a72, roughness: 0.95}));
-  rock.position.y = r * 0.22; g.add(rock);
-  [[r * 0.3, r * 0.2], [-r * 0.35, -r * 0.15]].forEach(pp => {
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 5, 6), new THREE.MeshStandardMaterial({color: 0x6b4a2f, roughness: 0.9}));
-    trunk.position.set(pp[0], 2.5, pp[1]); trunk.rotation.z = 0.15; g.add(trunk);
-    const top = new THREE.Mesh(new THREE.SphereGeometry(1.6, 8, 6), new THREE.MeshStandardMaterial({color: 0x2e7d4f, roughness: 0.8}));
-    top.scale.set(1.6, 0.6, 1.6); top.position.set(pp[0] + 0.7, 5.2, pp[1]); g.add(top);
-  });
-  g.position.set(x, 0, z);
-  scene.add(g);
-  return {x, z, r, group: g};
-}
-function loadIslands(){
-  const f = flagship() || fleet[0];
-  const ccx = Math.floor(f.x / ISLAND_CELL), ccz = Math.floor(f.z / ISLAND_CELL);
-  for(let dx = -1; dx <= 1; dx++){
-    for(let dz = -1; dz <= 1; dz++){
-      const cx = ccx + dx, cz = ccz + dz, key = cx + ',' + cz;
-      if(islandCells.has(key)) continue;
-      const def = islandForCell(cx, cz);
-      if(!def){ islandCells.set(key, null); continue; }
-      const isl = makeIsland(def.x, def.z, def.r);
-      isl.cell = key;
-      islandCells.set(key, isl);
-      islands.push(isl);
-    }
-  }
-  for(let i = islands.length - 1; i >= 0; i--){
-    const isl = islands[i];
-    if(Math.abs(isl.x - f.x) > ISLAND_CELL * 2 || Math.abs(isl.z - f.z) > ISLAND_CELL * 2){
-      scene.remove(isl.group);
-      islands.splice(i, 1);
-      islandCells.set(isl.cell, null);
-    }
-  }
-}
-loadIslands();
+
 
 // ---------- waypoint beacon (procedural: sail to it for bonus score) ----------
 let beacon = null;
@@ -1547,7 +1403,7 @@ const state = {
   camZoom: 1, freeLook: 0, freeLookActive: false,
   camHeading: 0, camBank: 0, headingRate: 0, camZfSm: 0,
   lastWaveToast: -99,
-  windDir: 0, curX: 0, curZ: 0, cog: 0, islandT: 0,
+  windDir: 0, curX: 0, curZ: 0, cog: 0,
 };
 let frameCount = 0;
 let clock = new THREE.Clock();
@@ -1706,7 +1562,6 @@ function spawnHazard(forceKind){
   // rogue crests are rarer and bigger in the storm; the hurricane gets one scripted monster
   if(forceKind) kind = forceKind;
   else if(state.stage >= 2 && r < 0.45) kind = 'wave';
-  else if(r < 0.72) kind = 'whirl';
   else kind = 'debris';
   const g = new THREE.Group();
   let h;
@@ -1725,15 +1580,6 @@ function spawnHazard(forceKind){
       state.lastWaveToast = state.t;
       toast('⚠️ ROGUE WAVE', 'A crest is building ahead — brace for it');
     }
-  } else if(kind === 'whirl'){
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(8, 24), new THREE.MeshBasicMaterial({color: 0x0a1826}));
-    disc.rotation.x = -Math.PI / 2; disc.position.y = 0.25;
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(7, 5, 24, 1, true),
-      new THREE.MeshPhongMaterial({color: 0x14324a, transparent: true, opacity: 0.85, side: THREE.DoubleSide}));
-    cone.rotation.x = Math.PI; cone.position.y = -1.5;
-    g.add(disc, cone);
-    const wp = aheadOfFleet(170 + Math.random() * 60, 90);
-    h = {kind, group: g, x: wp.x, z: wp.z, r: 8, spin: 0, drift: (Math.random() - 0.5) * 3, hitShips: new Set()};
   } else {
     const b1 = box(2.6, 1.1, 1.8, new THREE.MeshStandardMaterial({color: 0x6b4a2f, roughness: 0.9}), 0, 0.6, 0);
     const b2 = box(1.2, 0.9, 1.2, new THREE.MeshStandardMaterial({color: 0x4a3a28, roughness: 0.9}), 0.8, 1.4, 0.4);
@@ -1763,8 +1609,6 @@ function clearWorld(){
   state.hazards.forEach(h => scene.remove(h.group));
   state.pickups.forEach(p => scene.remove(p.group));
   state.hazards = []; state.pickups = [];
-  islands.forEach(isl => scene.remove(isl.group));
-  islands.length = 0; islandCells.clear();
   if(bolt){ scene.remove(bolt); bolt = null; }
   parts.forEach(p => { p.life = 0; });
   spritePool.forEach(s => { s.life = 0; s.sp.visible = false; });
@@ -1885,10 +1729,9 @@ function drawMinimap(){
     ctx.fillStyle = col;
     ctx.beginPath(); ctx.arc(pp[0], pp[1], r, 0, 6.29); ctx.fill();
   };
-  islands.forEach(isl => dot(isl.x, isl.z, Math.max(3, isl.r * sc), '#c2a878'));
   state.hazards.forEach(h => {
-    dot(h.x, h.z, h.kind === 'wave' ? 4 : h.kind === 'whirl' ? 4 : 2.5,
-      h.kind === 'wave' ? '#7fb8e8' : h.kind === 'whirl' ? '#ff6b6b' : '#a08050');
+    dot(h.x, h.z, h.kind === 'wave' ? 4 : 2.5,
+      h.kind === 'wave' ? '#7fb8e8' : '#a08050');
   });
   state.pickups.forEach(pp => dot(pp.x, pp.z, 2.5, '#7dffb0'));
   if(beacon){
@@ -1987,14 +1830,33 @@ function damageShip(ship, dmg, hx, hz){
 function update(dt){
   const st = STAGES[state.stage];
   state.t += dt;
-  // throttle is an input, not a cruise: the fleet starts at idle and only moves
-  // while you hold the throttle — release it and the ships coast to a stop and
-  // float on the sea. ArrowDown / stick-down brakes harder than a plain release.
+  // v9.8: pull the stick back (or ArrowDown) and the fleet U-turns bow-first
+  // instead of reversing stern-first. The U-turn target is latched when the
+  // pull-back starts — holding it down does one turn, not a loop — and thrust
+  // only comes in as the bow swings onto the new course, so the ships never
+  // slide backwards. There is no reverse gear any more: release the throttle
+  // to coast to a stop.
+  const pullBack = (state.joyActive && state.joyY > 0.3) || state.keys['ArrowDown'] || state.keys['s'];
+  if(pullBack && !state.prevPullBack && !state.uturnActive){
+    const f0 = flagship();
+    const turnSign = (state.joyActive && state.joyX < -0.08) || state.keys['ArrowLeft'] || state.keys['a'] ? -1 : 1;
+    state.uturnTarget = (f0 ? f0.heading : 0) + turnSign * Math.PI;
+    state.uturnActive = true;
+  }
+  state.prevPullBack = pullBack;
   let throttleInput = 0, braking = false;
-  if(state.keys['ArrowUp'] || state.keys['w']) throttleInput = 1;
-  else if(state.keys['ArrowDown'] || state.keys['s']){ throttleInput = 0; braking = true; }
+  state.uturnErr = null;
+  if(state.uturnActive){
+    const f0 = flagship();
+    const f0h = f0 ? f0.heading : 0;
+    let err = state.uturnTarget - f0h;
+    err = ((err + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+    state.uturnErr = err;
+    const mag = state.joyActive ? Math.min(1, Math.hypot(state.joyX, state.joyY)) : 1;
+    throttleInput = mag * Math.max(0, Math.cos(err));
+    if(Math.abs(err) < 0.2 || !pullBack){ state.uturnActive = false; state.uturnTarget = null; }
+  } else if(state.keys['ArrowUp'] || state.keys['w']) throttleInput = 1;
   else if(state.joyActive && state.joyY < -0.08) throttleInput = Math.min(1, -state.joyY);
-  else if(state.joyActive && state.joyY > 0.08){ throttleInput = 0; braking = true; }
   // speed loss in turns: ~1/4 after 90°, ~1/3 after 180° at full wheel
   const lossTarget = 1 - 0.33 * state.rudder * state.rudder;
   state.speedLoss += (lossTarget - state.speedLoss) * Math.min(1, dt * 0.5);
@@ -2061,16 +1923,20 @@ function update(dt){
   if(state.keys['ArrowLeft'] || state.keys['a']) keyRudder -= 1;
   if(state.keys['ArrowRight'] || state.keys['d']) keyRudder += 1;
   let inputRudder = 0;
-  if(keyRudder !== 0) inputRudder = keyRudder;
+  if(state.uturnErr !== null && state.uturnErr !== undefined){
+    // mid U-turn: the rudder chases the latched target heading; the keys
+    // pick the turn side if the player steers while turning
+    inputRudder = Math.max(-1, Math.min(1, state.uturnErr * 1.5));
+    if(keyRudder !== 0) inputRudder = keyRudder;
+  } else if(keyRudder !== 0) inputRudder = keyRudder;
   else if(Math.abs(state.joyX) > 0.08) inputRudder = state.joyX;
   else if(state.dragSteer) inputRudder = state.rudder;
-  const whirlSlow = fleet.some(s => s.alive && state.hazards.some(h => h.kind === 'whirl' && Math.hypot(s.x - h.x, s.z - h.z) < 20));
   const fm = flag.motion;
   fm.maxSpeed = Math.max(0, st.speed * (state.boost ? 1.5 : 1) * state.speedLoss * floodFactor);
   fm.update(dt, {
-    thrust: braking ? -0.5 : throttleInput, rudder: inputRudder,
+    thrust: throttleInput, rudder: inputRudder,
     currentX: state.curX, currentZ: state.curZ,
-    time: state.t, turnSlow: whirlSlow ? 0.5 : 1,
+    time: state.t,
   });
   flag.x = fm.x; flag.z = fm.z; flag.heading = fm.heading;
   state.rudder = fm.rudder; state.headingRate = fm.headingRate;
@@ -2119,7 +1985,6 @@ function update(dt){
     dh = ((dh + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
     let rudderIn = Math.max(-1, Math.min(1, dh * 1.5));
     const obstacles = [];
-    islands.forEach(isl => obstacles.push({ x: isl.x, z: isl.z, r: isl.r + 4 }));
     fleet.forEach(o => { if(o !== s && o.alive) obstacles.push({ x: o.x, z: o.z, r: o.group.userData.len * 0.6 }); });
     const av = m.avoid(obstacles, 26);
     rudderIn = Math.max(-1, Math.min(1, rudderIn + av.bias));
@@ -2152,28 +2017,7 @@ function update(dt){
       }
     }
   }
-  // grounding: islands are solid — push the ship out and scrape the hull
-  fleet.forEach(s => {
-    if(!s.alive) return;
-    s.groundT = Math.max(0, (s.groundT || 0) - dt);
-    islands.forEach(isl => {
-      const dx = s.x - isl.x, dz = s.z - isl.z;
-      const d = Math.sqrt(dx * dx + dz * dz);
-      const minD = isl.r + 3;
-      if(d < minD && d > 0.01){
-        const nx = dx / d, nz = dz / d;
-        s.x = isl.x + nx * minD;
-        s.z = isl.z + nz * minD;
-        if(s.groundT <= 0){
-          s.groundT = 2;
-          damageShip(s, 4, s.x, s.z);
-          state.shake = Math.max(state.shake, 0.8);
-          blip(90, 0.3, 'sawtooth', 0.12);
-          toast('⚠️ GROUNDED', s.label + ' scraped an island — steer clear');
-        }
-      }
-    });
-  });
+
 
   // per-ship physics: buoyancy, flooding, list/trim, smoke, fire, wakes
   fleet.forEach(s => {
@@ -2207,12 +2051,12 @@ function update(dt){
       s.x += s.shoveX * dt; s.z += s.shoveZ * dt;
       s.shoveX *= Math.max(0, 1 - dt * 1.2); s.shoveZ *= Math.max(0, 1 - dt * 1.5);
       s.heelKick *= Math.max(0, 1 - dt * 1.5);
-      const lift = Math.min(2.5, Math.max(0, mo.hMax - (s.freeboard || 1) - mo.y));
+      const lift = Math.min(3.5, Math.max(0, mo.hMax - (s.freeboard || 1) - mo.y));
       s.y = mo.y + lift - s.draft;
       // swamped: the water is over the deck (a rogue crest is too tall for
       // the lift to clear) — take on water fast, list toward the crest,
       // and throw white water across the deck
-      if(mo.hMax > s.y + (s.freeboard || 1)){
+      if(mo.hMax > s.y + (s.freeboard || 1) + 0.5){
         const over = mo.hMax - (s.y + (s.freeboard || 1));
         s.floodTotal = Math.min(1, s.floodTotal + dt * 0.22);
         s.floodSide = Math.max(-1, Math.min(1, s.floodSide + (mo.roll >= 0 ? 1 : -1) * dt * 0.3));
@@ -2367,33 +2211,9 @@ function update(dt){
     state.pickupT = 0;
     spawnPickup();
   }
-  state.islandT += dt;
-  if(state.islandT > 0.5){ state.islandT = 0; loadIslands(); }
 
   // hazards are fixed in the world; the fleet sails into them
   state.hazards.forEach(h => {
-    if(h.kind === 'whirl'){
-      h.spin += dt * 2;
-      h.group.rotation.y = h.spin;
-      h.x += Math.sin(state.t * 0.4 + h.z * 0.05) * h.drift * dt;
-      h.group.position.x = h.x;
-      // free-vortex tangential current: v ~ 1/r outside the core; ships are
-      // dragged around the centre and pulled slowly inward — never swallowed
-      fleet.forEach(s => {
-        if(!s.alive) return;
-        const dx = s.x - h.x, dz = s.z - h.z;
-        const d = Math.sqrt(dx * dx + dz * dz);
-        if(d < 20 && d > 0.5){
-          const vTan = Math.min(9, 55 / (2 * Math.PI * Math.max(d, 3)));
-          s.x += (-dz / d) * vTan * dt * 0.7;
-          s.z += (dx / d) * vTan * dt * 0.7;
-          s.x -= (dx / d) * 1.0 * dt;
-          s.z -= (dz / d) * 1.0 * dt;
-          // the swirl grabs the helm: the flagship's bow is dragged around it
-          if(s === flag) s.heading += 0.22 * (1 - d / 20) * dt;
-        }
-      });
-    }
     if(h.kind === 'debris'){
       h.x += state.curX * dt; h.z += state.curZ * dt;
       h.group.position.x = h.x; h.group.position.z = h.z;
@@ -2447,16 +2267,13 @@ function update(dt){
         const along = dx * dirx + dz * dirz;
         const across = dx * (-dirz) + dz * dirx;
         hit = Math.abs(along) < 4 && Math.abs(across) < h.span / 2;
-      } else if(h.kind === 'whirl'){
-        const dx = s.x - h.x, dz = s.z - h.z;
-        hit = Math.sqrt(dx * dx + dz * dz) < 5.5;
       } else {
         const dx = s.x - h.x, dz = s.z - h.z;
         hit = Math.sqrt(dx * dx + dz * dz) < h.r + 2;
       }
       if(hit){
         h.hitShips.add(s);
-        damageShip(s, h.kind === 'wave' ? 12 : h.kind === 'whirl' ? 8 : 6, h.x, h.z);
+        damageShip(s, h.kind === 'wave' ? 12 : 6, h.x, h.z);
         if(h.kind === 'wave'){
           // the crest shoves the ship sideways and heels it over
           const dirx = h.dirx || 0, dirz = h.dirz === undefined ? 1 : h.dirz;
@@ -2534,15 +2351,28 @@ function fleetFits(tx, ty, tz, lx, ly, lz, tanH, tanV){
   const rl = Math.sqrt(rx * rx + rz * rz) || 1;
   rx /= rl; rz /= rl;
   const ux = -rz * fy, uy = rz * fx - rx * fz, uz = rx * fy;
+  // v9.8: fit the design formation (the slots), not the ships' transient
+  // positions — escorts lag and stretch at speed, and a fit measured from
+  // that stretch pulls the camera back as the fleet speeds up, so the ships
+  // shrink. The slots are fixed relative to the flagship, so the fit (and
+  // the ships' size on screen) holds at every speed.
+  const f = flagship() || fleet[0];
   for(let i = 0; i < fleet.length; i++){
     const s = fleet[i];
     if(!s.alive) continue;
     const L = s.group.userData.len, W = s.group.userData.wid;
-    const c = Math.cos(s.heading), sn = Math.sin(s.heading);
+    let px = s.x, pz = s.z, hd = s.heading;
+    if(s !== f){
+      const c0 = Math.cos(f.heading), sn0 = Math.sin(f.heading);
+      px = f.x + s.dx * c0 - s.dz * sn0;
+      pz = f.z + s.dx * sn0 + s.dz * c0;
+      hd = f.heading;
+    }
+    const c = Math.cos(hd), sn = Math.sin(hd);
     const corners = [[-W / 2, -L / 2], [W / 2, -L / 2], [-W / 2, L / 2], [W / 2, L / 2], [0, 0]];
     for(let j = 0; j < corners.length; j++){
-      const wx = s.x + corners[j][0] * c + corners[j][1] * sn;
-      const wz = s.z + (-corners[j][0] * sn + corners[j][1] * c);
+      const wx = px + corners[j][0] * c + corners[j][1] * sn;
+      const wz = pz + (-corners[j][0] * sn + corners[j][1] * c);
       const wy = j === 4 ? 6 : 0;
       const dx = wx - tx, dy = wy - ty, dz = wz - tz;
       const zc = dx * fx + dy * fy + dz * fz;
@@ -2560,8 +2390,8 @@ function fleetFits(tx, ty, tz, lx, ly, lz, tanH, tanV){
 function updateCamera(dt){
   const flag = flagship() || fleet[0];
   const aspect = window.innerWidth / window.innerHeight;
-  const camZ0 = aspect < 0.75 ? 58 : aspect < 1.1 ? 50 : 43;
-  const camY0 = aspect < 0.75 ? 24 : aspect < 1.1 ? 20 : 17;
+  const camZ0 = aspect < 0.75 ? 75 : aspect < 1.1 ? 65 : 56;
+  const camY0 = aspect < 0.75 ? 31 : aspect < 1.1 ? 26 : 22;
   const speedN = Math.min(1, state.speed / 14);
   const camZ = camZ0 * state.camZoom;
   const camY = camY0 * (0.85 + 0.3 * state.camZoom);
