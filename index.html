@@ -141,7 +141,7 @@
         <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v9.2</div>
+    <div class="ver">v9.3</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -1132,7 +1132,8 @@ class ShipMotion {
     if ((this.prevRudder === 0 && this.rudder !== 0) || Math.sign(this.rudder) !== Math.sign(this.prevRudder)) this.kickT = 0;
     this.kickT += dt;
     this.prevRudder = this.rudder;
-    const heelTarget = -this.headingRate * Math.min(1, Math.abs(vF) / 12) * 0.9;
+    let heelTarget = -this.headingRate * Math.min(1, Math.abs(vF) / 12) * 0.25;
+    heelTarget = Math.max(-0.18, Math.min(0.18, heelTarget));
     this.heel += (heelTarget - this.heel) * (1 - Math.exp(-dt * 2));
   }
   applyToMesh(group, extraRoll = 0, extraPitch = 0) {
@@ -2416,7 +2417,7 @@ function updateCamera(dt){
   const camZ0 = aspect < 0.75 ? 64 : aspect < 1.1 ? 56 : 48;
   const camY0 = aspect < 0.75 ? 24 : aspect < 1.1 ? 20 : 17;
   const speedN = Math.min(1, state.speed / 14);
-  const camZ = camZ0 * state.camZoom * (1 + speedN * 0.12);
+  const camZ = camZ0 * state.camZoom;
   const camY = camY0 * (0.85 + 0.3 * state.camZoom);
   if(!state.freeLookActive) state.freeLook *= Math.max(0, 1 - dt * 1.2);
   // chase cam, locked behind the fleet (v8.6): the camera heading chases the
@@ -2446,7 +2447,7 @@ function updateCamera(dt){
   const lagAllow = Math.min(0.35, Math.abs(state.headingRate || 0) / 2.0);
   const tanH = Math.tan(Math.max(0.05, hHalf * 0.88 - lagAllow));
   const tanV = Math.tan(Math.max(0.05, vHalf * 0.88));
-  const lookAhead = 16 + speedN * 20;
+  const lookAhead = 16 + speedN * 8;
   // look along the camera's own (trailing) heading, not the flagship's, so a
   // turn reads as a turn: the bow visibly swings away and the ship heads off
   // in a new direction instead of always pointing "up" the screen (v8.3)
@@ -2458,12 +2459,12 @@ function updateCamera(dt){
     const tZ = flag.z - chz * fitD * Math.cos(a) + crz * fitD * Math.sin(a) * 0.55;
     if(fleetFits(tX, tY, tZ, lx, 2, lz, tanH, tanV)) break;
     fitD *= 1.15;
-    if(fitD >= camZ * 3.4){ fitD = camZ * 3.4; break; }
+    if(fitD >= camZ * 1.8){ fitD = camZ * 1.8; break; }
   }
   // smooth the fit distance: snap out instantly when the fleet needs room,
   // ease back in slowly so the camera does not pulse in and out of turns
   if(fitD > state.camZfSm) state.camZfSm = fitD;
-  else state.camZfSm += (fitD - state.camZfSm) * (1 - Math.exp(-dt * 1.2));
+  else state.camZfSm += (fitD - state.camZfSm) * (1 - Math.exp(-dt * 2.5));
   const camZf = Math.max(camZ, state.camZfSm);
   const camYf = camY * (camZf / camZ);
   const tx = flag.x - chx * camZf * Math.cos(a) + crx * camZf * Math.sin(a) * 0.55;
@@ -2503,7 +2504,7 @@ function updateCamera(dt){
   // the framing distance, so a wider lens keeps the pull-back (and the
   // apparent ship size) reasonable on a phone
   const baseFov = aspect < 0.75 ? 76 : aspect < 1.1 ? 70 : 66;
-  const targetFov = baseFov + speedN * 3 + (state.boost ? 7 : 0);
+  const targetFov = baseFov;
   if(Math.abs(camera.fov - targetFov) > 0.1){
     camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 4);
     camera.updateProjectionMatrix();
