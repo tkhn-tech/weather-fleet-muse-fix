@@ -161,7 +161,7 @@
     </div>
     <button class="ghostBtn" id="camBtnStart">🎥 Camera</button><br>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v10.4</div>
+    <div class="ver">v10.5</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -536,18 +536,35 @@ function shipInteractions(dt){
       if(d > minD || d < 0.01) continue;
       const nx = dx / d, nz = dz / d;
       const prox = 1 - d / minD;
-      // bow-wave shove, away from the faster ship's bow
-      const spd = Math.max(a.motion.forwardSpeed, b.motion.forwardSpeed);
+      // v10.5: bow-wave shove only for a ship ahead of the faster ship's
+      // bow, pushed sideways (a bow wave pushes laterally, not radially) —
+      // the old radial shove pushed ships together from every direction,
+      // including astern, while the fleet coasted down.
+      const fast = a.motion.forwardSpeed >= b.motion.forwardSpeed ? a : b;
+      const other = fast === a ? b : a;
+      const spd = fast.motion.forwardSpeed;
       if(spd > 4){
-        const acc = 0.5 * (spd / 14) * prox;
-        b.motion.vx += nx * acc * dt; b.motion.vz += nz * acc * dt;
-        a.motion.vx -= nx * acc * dt * 0.5; a.motion.vz -= nz * acc * dt * 0.5;
+        const ffx = Math.sin(fast.heading), ffz = -Math.cos(fast.heading);
+        const rfx = Math.cos(fast.heading), rfz = Math.sin(fast.heading);
+        const ox = other.x - fast.x, oz = other.z - fast.z;
+        const along = ox * ffx + oz * ffz;
+        const across = ox * rfx + oz * rfz;
+        if(along > 0 && Math.abs(across) < 25){
+          const acc = 0.5 * (spd / 14) * prox;
+          const sgn = across >= 0 ? 1 : -1;
+          other.motion.vx += rfx * sgn * acc * dt;
+          other.motion.vz += rfz * sgn * acc * dt;
+          fast.motion.vx -= rfx * sgn * acc * dt * 0.5;
+          fast.motion.vz -= rfz * sgn * acc * dt * 0.5;
+        }
       }
-      // close-abeam suction: parallel hulls at speed draw together
+      // v10.5: close-abeam suction only inside 25 units at speed > 8 —
+      // the old ~64-unit reach dragged the fleet together while it was
+      // coasting to a stop, which fed the at-rest contacts in v10.4.
       let dh = a.heading - b.heading;
       dh = ((dh + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
-      if(Math.abs(dh) < 0.3 && a.motion.forwardSpeed > 5 && b.motion.forwardSpeed > 5){
-        const acc = 0.25 * prox;
+      if(d < 25 && Math.abs(dh) < 0.3 && a.motion.forwardSpeed > 8 && b.motion.forwardSpeed > 8){
+        const acc = 0.25 * (1 - d / 25);
         b.motion.vx -= nx * acc * dt; b.motion.vz -= nz * acc * dt;
         a.motion.vx += nx * acc * dt; a.motion.vz += nz * acc * dt;
       }
@@ -1341,20 +1358,6 @@ const fleet = [
 fleet.forEach(s => {
   s.group = makeShip(s.type);
   s.group.position.set(s.dx, 0, s.dz);
-  // v10.4: navigation lights — port red, starboard green, white masthead.
-  // Real ships carry them; they read at dusk and in the hurricane murk.
-  {
-    const L = s.group.userData.len, W = s.group.userData.wid;
-    const mastH = s.type === 'carrier' ? 9 : s.type === 'battleship' ? 7 : 5;
-    const mkLight = (color, x, y, z) => {
-      const m = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 8),
-        new THREE.MeshBasicMaterial({color, fog: false}));
-      m.position.set(x, y, z); s.group.add(m);
-    };
-    mkLight(0xff2a2a, -W / 2, 2.5, -L * 0.30);
-    mkLight(0x2aff5a, W / 2, 2.5, -L * 0.30);
-    mkLight(0xfff6d8, 0, mastH, 0);
-  }
   s.x = s.dx; s.z = s.dz; s.heading = 0; s.y = 0;
   const mSpec = s.type === 'carrier' ? { mass: 2.0, thrustForce: 28, rudderTurnSpeed: 0.6 }
     : s.type === 'battleship' ? { mass: 1.5, thrustForce: 21, rudderTurnSpeed: 0.65 }
@@ -2305,7 +2308,10 @@ function update(dt){
     // so it holds formation instead of pulling ahead while turning
     m.maxSpeed = state.uturnActive ? Math.max(2, state.speed) : Math.max(6, state.speed + 5 + catchUp);
     const ewp = wavePush(m.x, m.z, state.t);
-    m.update(dt, { thrust: thrustIn, rudder: rudderIn, currentX: state.curX + ewp.x, currentZ: state.curZ + ewp.z, time: state.t, turnSlow: 1 - s.floodTotal * 0.4 });
+    // v10.5: an escort far from its slot while the flagship is slow gets
+    // the U-turn turn-rate floor, so re-formation after a turn does not
+    // crawl at the low-speed turn rate
+    m.update(dt, { thrust: thrustIn, rudder: rudderIn, currentX: state.curX + ewp.x, currentZ: state.curZ + ewp.z, time: state.t, turnSlow: 1 - s.floodTotal * 0.4, uturn: state.uturnActive || (distToSlot > 25 && state.speed < 1) });
     s.x = m.x; s.z = m.z; s.heading = m.heading;
   });
   // ship-to-ship collisions (v10.0): hulls are three circles along the
@@ -2315,15 +2321,19 @@ function update(dt){
   // compartment breach. A per-pair cooldown keeps one impact from
   // machine-gunning damage while the hulls stay in contact.
   const shipMass = sh => sh.type === 'carrier' ? 10 : sh.type === 'battleship' ? 5 : 2;
+  // v10.5: the collision shape must match what the player sees. The old
+  // 3 fat circles (radius 0.70 * beam) stuck out ~40% past the hull sides,
+  // so the game called COLLISION — with damage — while the models were still
+  // visibly apart. Now 5 circles along the length, tapered at the bow and
+  // stern where the real hull narrows (0.40 * beam at the ends, 0.55 amidships).
   const hullCircles = sh => {
     const L = sh.group.userData.len, W = sh.group.userData.wid;
     const fx = Math.sin(sh.heading), fz = -Math.cos(sh.heading);
-    const r = Math.max(W * 0.7, 3.5);
-    return [
-      {x: sh.x + fx * L * 0.3, z: sh.z + fz * L * 0.3, r},
-      {x: sh.x, z: sh.z, r},
-      {x: sh.x - fx * L * 0.3, z: sh.z - fz * L * 0.3, r},
-    ];
+    const stops = [[-0.4, 0.40], [-0.2, 0.55], [0, 0.55], [0.2, 0.55], [0.4, 0.40]];
+    return stops.map(([al, rf]) => {
+      const r = Math.max(W * rf, 2.0);
+      return {x: sh.x + fx * L * al, z: sh.z + fz * L * al, r};
+    });
   };
   if(!state.collCool) state.collCool = {};
   for(let i = 0; i < fleet.length; i++){
@@ -2404,6 +2414,10 @@ function update(dt){
       // real ram, with a closing speed above 1.5, does damage. The impulse
       // and positional correction above still separate the hulls.
       if(closing < 1.5) continue;
+      // v10.5: a graze is not a collision — if the hulls barely overlap,
+      // they brush past with no damage and no banner, even at speed.
+      // (The banner and damage below only run for a real overlap.)
+      if(hit.depth < 0.5) continue;
       // kinetic energy at the contact point becomes the localized damage:
       // KE = 1/2 * reduced mass * closing speed^2, scaled to the game's HP.
       // v10.2: raised so the sinking modes are actually reachable — two or
