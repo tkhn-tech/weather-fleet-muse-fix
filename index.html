@@ -41,10 +41,6 @@
   #hint{position:fixed;left:158px;bottom:calc(26px + env(safe-area-inset-bottom));z-index:6;pointer-events:none;
     font-size:12.5px;color:#9db8cc;line-height:1.5;text-shadow:0 1px 6px rgba(0,0,0,.8);transition:opacity 1s ease}
   #hint.fade{opacity:0}
-  #navStrip{position:fixed;top:52px;left:50%;transform:translateX(-50%);z-index:5;display:flex;gap:10px;align-items:center;
-    background:rgba(6,18,30,.6);border:1px solid rgba(140,190,230,.2);border-radius:99px;padding:4px 12px;pointer-events:none}
-  #navText{font-size:12px;color:#cfe3f2;white-space:nowrap}
-  @media (max-width:560px){ #navStrip{top:100px} #compassCv{width:150px} }
   #miniMap{position:fixed;right:12px;bottom:100px;z-index:5;border:1px solid rgba(140,190,230,.35);border-radius:12px;overflow:hidden;background:rgba(6,18,30,.6);pointer-events:none}
   #miniCv{display:block}
   @media (max-width:560px){ #miniMap{right:8px;bottom:96px} #miniCv{width:100px;height:100px} }
@@ -101,7 +97,7 @@
 
 <div class="hud">
   <div class="pill">🌊 <b id="dist">0</b> nm · <b id="speed">0</b> kn</div>
-  <div id="integrityWrap"><div class="lbl">Fleet integrity <span id="intPct">100%</span> · <span id="aliveCount">🚢×5</span></div>
+  <div id="integrityWrap"><div class="lbl">Fleet integrity <span id="intPct">100%</span> · <span id="aliveCount">🚢×7</span></div>
     <div id="integrityBar"><div id="integrityFill"></div></div>
     <div id="stageBar"><div id="stageFill"></div></div></div>
   <div class="pill">⭐ <b id="score">0</b></div>
@@ -110,7 +106,6 @@
   <button class="iconBtn" id="pauseBtn" title="Pause">⏸</button>
 </div>
 
-<div id="navStrip"><canvas id="compassCv" width="240" height="26"></canvas><span id="navText"></span></div>
 <div id="miniMap"><canvas id="miniCv" width="128" height="128"></canvas></div>
 
 <div id="stageToast"><h2 id="stageName">Calm Seas</h2><p id="stageDesc">The fleet sails out. Hold formation.</p></div>
@@ -127,7 +122,7 @@
       an open ocean — steer anywhere, and the world sails with you. The fleet starts at idle, floating on the swell — hold the throttle to get under way, and release it to coast back to idle. Waves pitch and roll every hull. Dodge rogue
       waves, grab supply crates to repair, and keep the fleet alive. A minimap tracks the fleet and hazards — sail to the gold waypoint beacon for bonus score, and mind the wind and current, which push you off course.
       A wrecked ship lists, floods and sinks beneath the waves, and the next one
-      takes command. Lose all five and the round ends.</p>
+      takes command. Lose all seven and the round ends.</p>
     <div id="loadErr"></div>
     <div class="seaBox">
       <h3>⚙️ Customise the sea</h3>
@@ -141,7 +136,7 @@
         <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v9.8</div>
+    <div class="ver">v9.9</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -1122,12 +1117,15 @@ const MODEL_CACHE = {};
 const MODEL_SPEC = {
   // v9.8: 2.0x the v9.5 lengths (carrier 44, battleship 36, destroyer 21) so
   // the real models have room to show their detail. The formation offsets
-  // stay at the v9.7 values so the fleet stays compact and all five ships
+  // the formation offsets keep the fleet compact so all seven ships
   // are readable in one frame.
-  // Battleship rot is rotateX +90 (was -90): the NJ model stands on its bow,
-  // so -90 put the bow astern; +90 puts it forward.
+  // Battleship rot is the original rotateX(-90) composed with a 180-deg turn
+  // about the vertical (Y) axis: the NJ model stands on its bow, so -90 put
+  // the bow astern; this flips the bow forward while keeping the ship
+  // upright. (A plain rotateX(+90) is a reflection, det -1 — it mirrored the
+  // model and left the battleships floating in the sky in v9.8.)
   carrier:    {uri: KENNEDY_GLB, len: 44, wid: 10.5, waterline: 3.25, rot: null},
-  battleship: {uri: NJ_GLB,      len: 36, wid: 7.3,  waterline: 7.4,  rot: [1,0,0, 0,0,1, 0,1,0]},
+  battleship: {uri: NJ_GLB,      len: 36, wid: 7.3,  waterline: 7.4,  rot: [-1,0,0, 0,0,1, 0,1,0]},
   destroyer:  {uri: DDG_GLB,     len: 21, wid: 4.8,  waterline: 627,  rot: [0,1,0, 0,0,1, 1,0,0]},
 };
 let GLTFLoader = null, MeshoptDecoder = null;
@@ -1183,11 +1181,16 @@ function fitModel(type){
 }
 
 const fleet = [
+  // Carrier Strike Group screen (v9.9): carrier centre; the two battleships
+  // are the cruiser equivalents on the flanks, slightly ahead; four Burke
+  // destroyers screen it — two forward pickets, two on the aft quarters.
   {type:'carrier',    label:'Carrier',    dx:0,     dz:0,    hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4, freeboard:2.0},
-  {type:'battleship', label:'Battleship', dx:-18.2, dz:23.8, hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:1.8},
-  {type:'battleship', label:'Battleship', dx:18.2,  dz:23.8, hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:1.8},
-  {type:'destroyer',  label:'Destroyer',  dx:-30.8, dz:44.8, hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.6},
-  {type:'destroyer',  label:'Destroyer',  dx:30.8,  dz:44.8, hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.6},
+  {type:'battleship', label:'Battleship', dx:-22,   dz:-6,   hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:1.8},
+  {type:'battleship', label:'Battleship', dx:22,    dz:-6,   hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:1.8},
+  {type:'destroyer',  label:'Destroyer',  dx:-32,   dz:-36,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.6},
+  {type:'destroyer',  label:'Destroyer',  dx:32,    dz:-36,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.6},
+  {type:'destroyer',  label:'Destroyer',  dx:-30,   dz:22,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.6},
+  {type:'destroyer',  label:'Destroyer',  dx:30,    dz:22,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.6},
 ];
 fleet.forEach(s => {
   s.group = makeShip(s.type);
@@ -1678,37 +1681,6 @@ function gameOver(){
   $('bestScore').textContent = best.score;
   $('overScreen').classList.remove('hidden');
 }
-// compass strip: a 120° arc of the heading rose, centred on the current course
-const compassCv = $('compassCv'), compassCtx = compassCv.getContext('2d');
-function drawCompass(course, cog){
-  const ctx = compassCtx, W = compassCv.width, H = compassCv.height;
-  ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = '#cfe3f2'; ctx.strokeStyle = '#cfe3f2'; ctx.lineWidth = 1;
-  ctx.font = 'bold 11px system-ui, sans-serif'; ctx.textAlign = 'center';
-  const pxPerDeg = W / 120;
-  const start = Math.floor((course - 60) / 15) * 15;
-  for(let deg = start; deg <= course + 60; deg += 15){
-    const x = W / 2 + (deg - course) * pxPerDeg;
-    const isCard = ((deg % 45) + 45) % 45 === 0;
-    ctx.beginPath(); ctx.moveTo(x, isCard ? 4 : 10); ctx.lineTo(x, 16); ctx.stroke();
-  }
-  [[0, 'N'], [45, 'NE'], [90, 'E'], [135, 'SE'], [180, 'S'], [225, 'SW'], [270, 'W'], [315, 'NW']].forEach(d => {
-    const da = ((d[0] - course + 540) % 360) - 180;
-    if(Math.abs(da) <= 58) ctx.fillText(d[1], W / 2 + da * pxPerDeg, 25);
-  });
-  // COG tick (cyan): where the ship is actually going, current included.
-  // Hidden at idle (cog null — see updateHud) where COG is just wind drift.
-  if(cog !== null && cog !== undefined){
-    const daCog = ((cog - course + 540) % 360) - 180;
-    if(Math.abs(daCog) <= 58){
-      ctx.fillStyle = '#7fd4ff';
-      const x = W / 2 + daCog * pxPerDeg;
-      ctx.beginPath(); ctx.moveTo(x - 4, 7); ctx.lineTo(x + 4, 7); ctx.lineTo(x, 12); ctx.closePath(); ctx.fill();
-    }
-  }
-  ctx.fillStyle = '#ffd166';
-  ctx.beginPath(); ctx.moveTo(W / 2 - 5, 0); ctx.lineTo(W / 2 + 5, 0); ctx.lineTo(W / 2, 6); ctx.closePath(); ctx.fill();
-}
 
 // minimap: north-up, centred on the fleet, 400-unit range
 const miniCv = $('miniCv'), miniCtx = miniCv.getContext('2d');
@@ -1765,17 +1737,7 @@ function updateHud(){
   fill.classList.toggle('low', pct <= 30);
   const nextAt = STAGE_AT[state.stage + 1];
   $('stageFill').style.width = nextAt ? Math.min(100, (state.dist - STAGE_AT[state.stage]) / (nextAt - STAGE_AT[state.stage]) * 100) + '%' : '100%';
-  // compass + position (open world: heading and nm from the start point)
-  const f = flagship() || fleet[0];
-  const course = ((f.heading * 180 / Math.PI) % 360 + 360) % 360;
-  // COG is meaningless at idle: the fleet only drifts on wind/current, so a
-  // COG of ~200° against HDG 000° at 0 kn is noise, not a course (v8.1)
-  const kn = state.speed * 2.2;
-  drawCompass(course, kn < 1 ? null : state.cog);
   drawMinimap();
-  const nmE = f.x / 111.6, nmN = -f.z / 111.6;
-  const cogText = kn < 1 ? '—' : String(Math.round(state.cog)).padStart(3, '0') + '°';
-  $('navText').textContent = 'HDG ' + String(Math.round(course)).padStart(3, '0') + '° · COG ' + cogText + ' · ' + Math.abs(nmN).toFixed(1) + (nmN >= 0 ? 'N' : 'S') + ' ' + Math.abs(nmE).toFixed(1) + (nmE >= 0 ? 'E' : 'W');
 }
 
 // ---------- damage / flooding / sinking ----------
@@ -2435,7 +2397,7 @@ function updateCamera(dt){
     const tZ = flag.z - chz * fitD * Math.cos(a) + crz * fitD * Math.sin(a) * 0.55;
     if(fleetFits(tX, tY, tZ, lx, 2, lz, tanH, tanV)) break;
     fitD *= 1.15;
-    if(fitD >= camZ * 1.15){ fitD = camZ * 1.15; break; }
+    if(fitD >= camZ * 1.3){ fitD = camZ * 1.3; break; }
   }
   // smooth the fit distance: snap out instantly when the fleet needs room,
   // ease back in slowly so the camera does not pulse in and out of turns
