@@ -141,7 +141,7 @@
         <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v8.4</div>
+    <div class="ver">v8.5</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -836,67 +836,6 @@ function makeShip(type){
   return g;
 }
 
-// ---------- wake trail ribbon ----------
-// A fading foam path that follows each ship's stern through the water, so the
-// wake shows the real course — including a turn's curve — instead of a V that
-// just rotates with the ship's current heading (v8.4). The ribbon is fixed in
-// world space and records where the stern actually travelled, so it reflects
-// the course over ground (heading + current drift), not just the heading.
-const TRAIL_MAX = 48, TRAIL_MIN_DIST = 1.2, TRAIL_LIFE = 16;
-function makeWakeTrail(){
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_MAX * 2 * 3), 3));
-  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL_MAX * 2 * 3), 3));
-  const idx = new Uint16Array((TRAIL_MAX - 1) * 6);
-  for(let i = 0; i < TRAIL_MAX - 1; i++){
-    const a = i * 2;
-    idx.set([a, a + 1, a + 2, a + 1, a + 3, a + 2], i * 6);
-  }
-  g.setIndex(new THREE.BufferAttribute(idx, 1));
-  // additive + vertex colour: white near the stern fading to black at the
-  // tail, and black adds nothing, so the trail dissolves into the sea
-  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false}));
-  m.frustumCulled = false;
-  m.visible = false;
-  return m;
-}
-function updateWakeTrail(s){
-  const spd = Math.min(1, state.speed / 14);
-  const stX = s.x - Math.sin(s.heading) * s.group.userData.len / 2;
-  const stZ = s.z + Math.cos(s.heading) * s.group.userData.len / 2;
-  const pts = s.trailPts;
-  // sample the stern only once the ship has actually travelled
-  if(s.alive && state.speed > 0.5){
-    const last = pts[pts.length - 1];
-    if(!last || Math.hypot(stX - last.x, stZ - last.z) > TRAIL_MIN_DIST) pts.push({x: stX, z: stZ, t: state.t});
-  }
-  while(pts.length && state.t - pts[0].t > TRAIL_LIFE) pts.shift();
-  while(pts.length > TRAIL_MAX) pts.shift();
-  const n = pts.length;
-  const mesh = s.trail;
-  if(n < 2 || !s.alive){ mesh.visible = false; return; }
-  mesh.visible = true;
-  const pos = mesh.geometry.attributes.position.array;
-  const col = mesh.geometry.attributes.color.array;
-  const beam = s.group.userData.wid;
-  for(let i = 0; i < n; i++){
-    const p = pts[i];
-    const pa = pts[Math.max(0, i - 1)], pb = pts[Math.min(n - 1, i + 1)];
-    let dx = pb.x - pa.x, dz = pb.z - pa.z;
-    const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
-    const f = i / (n - 1); // 0 = oldest (tail), 1 = newest (at the stern)
-    const w = (beam * 0.45 + (1 - f) * 2.8) * (0.7 + 0.5 * spd);
-    const y = waveHeight(p.x, p.z, state.t) + 0.12;
-    const b = f * (0.2 + 0.6 * spd);
-    const px = -dz * w / 2, pz = dx * w / 2;
-    pos.set([p.x + px, y, p.z + pz, p.x - px, y, p.z - pz], i * 6);
-    col.set([b, b, b, b, b, b], i * 6);
-  }
-  mesh.geometry.setDrawRange(0, (n - 1) * 6);
-  mesh.geometry.attributes.position.needsUpdate = true;
-  mesh.geometry.attributes.color.needsUpdate = true;
-}
-
 // ---------- fleet (scale anchor: carrier 333 m : Iowa 270 m : Burke 155 m ≈ 2.15 : 1.74 : 1.0) ----------
 const fleet = [
   {type:'carrier',    label:'Carrier',    dx:0,   dz:0,  hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4},
@@ -921,9 +860,6 @@ fleet.forEach(s => {
   ring.scale.set(s.group.userData.wid * 0.75, s.group.userData.len * 0.62, 1);
   scene.add(ring);
   s.foam = ring;
-  s.trail = makeWakeTrail();
-  scene.add(s.trail);
-  s.trailPts = [];
 });
 function flagship(){ return fleet.find(s => s.alive) || null; }
 function fleetHp(){ return fleet.reduce((a, s) => a + Math.max(0, s.hp), 0); }
@@ -1877,7 +1813,6 @@ function update(dt){
     const spd = Math.min(1, state.speed / 14);
     s.foam.material.opacity = s.alive ? 0.14 + 0.22 * spd : Math.max(0, 0.22 * (1 - s.sinkT));
     s.foam.scale.setScalar(1 + 0.45 * spd);
-    updateWakeTrail(s);
     if(s.alive){
       // stern wash + Kelvin wake: V-arms at 19.5 deg, widening and fading astern.
       // Small, soft, frequent puffs — the old big discrete slabs read as
