@@ -33,21 +33,54 @@
   #stageToast.show{opacity:1}
   #stageToast h2{font-size:30px;letter-spacing:.14em;text-transform:uppercase;text-shadow:0 2px 18px rgba(0,0,0,.7)}
   #stageToast p{font-size:14px;color:#bcd6e6;margin-top:4px;text-shadow:0 1px 8px rgba(0,0,0,.7)}
-  #boostBtn{position:fixed;right:16px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:6;
-    width:64px;height:64px;border-radius:50%;border:2px solid rgba(255,209,102,.6);
-    background:rgba(20,40,60,.75);color:#ffd166;font-weight:800;font-size:12px;letter-spacing:.06em;
-    cursor:pointer;backdrop-filter:blur(6px)}
-  #boostBtn:active{transform:scale(.93);background:rgba(60,50,10,.8)}
+  /* v11.0: Engine Order Telegraph panel — right side, above the minimap */
+  #telegraphPanel{position:fixed;right:12px;bottom:236px;z-index:6;width:158px;
+    background:rgba(6,18,30,.78);border:1px solid rgba(140,190,230,.35);border-radius:16px;
+    padding:10px 10px 12px;backdrop-filter:blur(8px)}
+  #telegraphPanel .teleHead{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#ffd166;
+    font-weight:800;text-align:center;margin-bottom:8px}
+  #telegraphPanel .teleHead span{color:#e8f1f8}
+  .teleBtns{display:flex;flex-direction:column;gap:4px}
+  .teleBtn{background:rgba(255,255,255,.06);border:1px solid rgba(140,190,230,.25);color:#cfe2ef;
+    border-radius:8px;padding:6px 4px;font-size:11.5px;font-weight:700;letter-spacing:.04em;cursor:pointer}
+  .teleBtn.astern{color:#9db8cc}
+  .teleBtn.on{background:#ffd166;color:#1a2a1a;border-color:#ffd166}
+  .teleBtn:disabled{opacity:.38;cursor:default}
+  .teleStep{display:flex;gap:6px;margin-top:6px}
+  .teleStep button{flex:1;background:rgba(255,255,255,.08);border:1px solid rgba(140,190,230,.35);
+    color:#e8f1f8;border-radius:8px;padding:6px 0;font-size:14px;font-weight:800;cursor:pointer}
+  .teleStep button:active{transform:scale(.95)}
+  #teleReadout{margin-top:8px;font-size:11.5px;color:#9db8cc;text-align:center;line-height:1.5}
+  #teleReadout b{color:#ffd166}
+  /* v11.0: fleet command panel — left, under the top HUD */
+  #fleetPanel{position:fixed;left:12px;top:calc(64px + env(safe-area-inset-top));z-index:6;width:132px;
+    background:rgba(6,18,30,.72);border:1px solid rgba(140,190,230,.3);border-radius:14px;
+    padding:8px;backdrop-filter:blur(6px)}
+  #fleetPanel .fleetHead{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#9db8cc;
+    font-weight:800;text-align:center;margin-bottom:6px}
+  .fleetRow{display:flex;align-items:center;gap:6px;width:100%;background:transparent;border:1px solid transparent;
+    color:#cfe2ef;border-radius:8px;padding:5px 6px;font-size:11.5px;font-weight:700;cursor:pointer;text-align:left}
+  .fleetRow .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fleetRow .hp{color:#9db8cc;font-weight:800}
+  .fleetRow.on{background:rgba(255,209,102,.16);border-color:rgba(255,209,102,.6);color:#ffd166}
+  .fleetRow.sunk{opacity:.35;cursor:default}
+  @media (max-width:560px){ #telegraphPanel{bottom:212px;width:138px} #fleetPanel{width:112px} }
   #hint{position:fixed;left:158px;bottom:calc(26px + env(safe-area-inset-bottom));z-index:6;pointer-events:none;
     font-size:12.5px;color:#9db8cc;line-height:1.5;text-shadow:0 1px 6px rgba(0,0,0,.8);transition:opacity 1s ease}
   #hint.fade{opacity:0}
   #miniMap{position:fixed;right:12px;bottom:100px;z-index:5;border:1px solid rgba(140,190,230,.35);border-radius:12px;overflow:hidden;background:rgba(6,18,30,.6);pointer-events:none}
   #miniCv{display:block}
   @media (max-width:560px){ #miniMap{right:8px;bottom:96px} #miniCv{width:100px;height:100px} }
-  #joy{position:fixed;left:18px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:6;width:124px;height:124px;border-radius:50%;
+  /* v11.0: the helm is a horizontal rudder track — the stick only swings left/right */
+  #joy{position:fixed;left:18px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:6;width:216px;height:62px;border-radius:32px;
     background:rgba(6,18,30,.45);border:1px solid rgba(140,190,230,.35);backdrop-filter:blur(4px);touch-action:none}
-  #joyKnob{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;
+  #joyKnob{position:absolute;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;
     background:radial-gradient(circle at 35% 30%, #ffe9a8, #d9a93b 60%, #8a6d1f);box-shadow:0 4px 14px rgba(0,0,0,.5);pointer-events:none}
+  .joyTick{position:absolute;top:8px;bottom:8px;width:2px;background:rgba(140,190,230,.4);pointer-events:none}
+  .joyLab{position:absolute;top:50%;transform:translateY(-50%);font-size:10px;letter-spacing:.1em;
+    color:#9db8cc;font-weight:800;pointer-events:none}
+  #rudderReadout{position:fixed;left:18px;bottom:calc(88px + env(safe-area-inset-bottom));z-index:6;
+    font-size:12px;font-weight:800;letter-spacing:.08em;color:#ffd166;text-shadow:0 1px 6px rgba(0,0,0,.8);pointer-events:none}
   .overlay{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;
     background:rgba(4,10,18,.78);backdrop-filter:blur(4px);padding:20px;overflow-y:auto}
   #startScreen{background:linear-gradient(rgba(4,10,18,.55),rgba(4,10,18,.88)),
@@ -111,18 +144,33 @@
 <canvas id="game"></canvas>
 
 <div class="hud">
-  <div class="pill">🌊 <b id="dist">0</b> nm · <b id="speed">0</b> kn</div>
+  <div class="pill">🚢 <b id="shipName">Carrier</b> · 🌊 <b id="dist">0</b> nm · <b id="speed">0</b> kn</div>
   <div id="integrityWrap"><div class="lbl">Fleet integrity <span id="intPct">100%</span> · <span id="aliveCount">🚢×7</span></div>
     <div id="integrityBar"><div id="integrityFill"></div></div>
     <div id="stageBar"><div id="stageFill"></div></div></div>
   <div class="pill">⭐ <b id="score">0</b></div>
-  <div class="pill hidden" id="turnBadge">⟲ TURNING</div>
   <button class="iconBtn" id="soundBtn" title="Sound on/off">🔊</button>
   <button class="iconBtn" id="restartBtn" title="Restart round">↻</button>
   <button class="iconBtn" id="pauseBtn" title="Pause">⏸</button>
   <button class="iconBtn" id="camBtn" title="Camera controls">🎥</button>
-  <button class="iconBtn" id="uturnBtn" title="U-turn (or hold the stick back)">⟲</button>
 </div>
+
+<div id="telegraphPanel">
+  <div class="teleHead">⚙️ Engine Order · <span id="teleShip">Carrier</span></div>
+  <div class="teleBtns">
+    <button class="teleBtn" data-i="0">FLANK AHEAD</button>
+    <button class="teleBtn" data-i="1">FULL AHEAD</button>
+    <button class="teleBtn" data-i="2">STANDARD AHEAD</button>
+    <button class="teleBtn" data-i="3">HALF AHEAD</button>
+    <button class="teleBtn" data-i="4">SLOW AHEAD</button>
+    <button class="teleBtn on" data-i="5">ALL STOP</button>
+    <button class="teleBtn astern" data-i="6">HALF ASTERN</button>
+    <button class="teleBtn astern" data-i="7">FULL ASTERN</button>
+  </div>
+  <div class="teleStep"><button id="teleUp" title="Faster (W / ↑)">▲</button><button id="teleDown" title="Slower (S / ↓)">▼</button></div>
+  <div id="teleReadout"><b id="teleOrder">ALL STOP</b><br>target <b id="teleTarget">0</b> kn · actual <b id="teleActual">0</b> kn</div>
+</div>
+<div id="fleetPanel"></div>
 
 <div id="camPanel" class="hidden">
   <div class="camHead"><h3>🎥 Camera</h3><button id="camCloseBtn" title="Close camera panel">✕</button></div>
@@ -140,18 +188,20 @@
 <div id="miniMap"><canvas id="miniCv" width="128" height="128"></canvas></div>
 
 <div id="stageToast"><h2 id="stageName">Calm Seas</h2><p id="stageDesc">The fleet sails out. Hold formation.</p></div>
-<div id="hint">Hold ↑ / push the stick up to sail — release and the fleet coasts to idle<br>← → steer · BOOST to push · ⟲ button or hold the stick back to U-turn</div>
-<button id="boostBtn">BOOST</button>
-<div id="joy"><div id="joyKnob"></div></div>
+<div id="hint">Telegraph (W/S or ↑ ↓) sets speed — the ship spools up to the order<br>Joystick / ← → / A D is the rudder — release and it returns to midships · Tab switches ship</div>
+<div id="rudderReadout">RUDDER 0° · MIDSHIPS</div>
+<div id="joy"><span class="joyLab" style="left:10px">PORT</span><span class="joyLab" style="right:10px">STBD</span><div class="joyTick" style="left:12%"></div><div class="joyTick" style="left:50%"></div><div class="joyTick" style="left:88%"></div><div id="joyKnob"></div></div>
 
 <div class="overlay" id="startScreen">
   <div class="card">
     <h1>Hurricane <span>Fleet</span></h1>
     <div class="fleetLine">🚢 🛳️ 🚢 🛳️ 🚢</div>
-    <p class="sub">The same fleet, one run, no cuts — now in full 3D. Steer the flagship with
-      the joystick from behind the whole fleet as the carrier leads the battleships and destroyers through a
-      an open ocean — steer anywhere, and the world sails with you. The fleet starts at idle, floating on the swell — hold the throttle to get under way, and release it to coast back to idle. Waves pitch and roll every hull. Dodge rogue
-      waves and keep the fleet alive. A minimap tracks the fleet and hazards — sail to the gold waypoint beacon for bonus score, and mind the wind and current, which push you off course.
+    <p class="sub">The same fleet, one run, no cuts — now in full 3D. You have the helm of
+      the flagship as the carrier leads the battleships and destroyers through an
+      open ocean — steer anywhere, and the world sails with you. The Engine Order
+      Telegraph sets the speed and the ship spools up to it; the joystick is the
+      rudder, port to starboard. Take command of any ship with Tab or the fleet
+      panel, and the rest follow as escorts. Waves pitch and roll every hull.
       A wrecked ship lists, floods and sinks beneath the waves, and the next one
       takes command. Lose all seven and the round ends.</p>
     <div id="loadErr"></div>
@@ -161,19 +211,16 @@
         <button data-v="0">Calm</button><button data-v="1">Rough</button><button data-v="2">Storm</button><button data-v="3">Hurricane</button></div></div>
       <div class="seaRow"><span class="lab">Wave height</span><div class="seg" id="segWave">
         <button data-v="0.7">Low</button><button data-v="1">Normal</button><button data-v="1.6">Huge</button></div></div>
-      <div class="seaRow"><span class="lab">Hazards</span><div class="seg" id="segHazard">
-        <button data-v="0.6">Few</button><button data-v="1">Normal</button><button data-v="1.7">Many</button></div></div>
     </div>
     <button class="ghostBtn" id="camBtnStart">🎥 Camera</button><br>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v10.11</div>
+    <div class="ver">v11.0</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
     </div>
-    <p class="keys">Steer: joystick, drag, or ← → / A D &nbsp;·&nbsp; Throttle: hold joystick ↑ or W / S — release to drift to idle &nbsp;·&nbsp; Boost: hold BOOST or Shift &nbsp;·&nbsp; Pause: P<br>
-      Wheel: zoom &nbsp;·&nbsp; Right-drag: free look &nbsp;·&nbsp; 🎥 Camera panel: zoom &amp; look in any direction, R resets the camera, ✕ closes it<br>
-      Rogue wave −12 &nbsp;·&nbsp; Debris −6</p>
+    <p class="keys">Rudder: joystick (left/right), drag, or ← → / A D — release to return to midships &nbsp;·&nbsp; Telegraph: W / S or ↑ ↓, click the panel, or keys 1–8 &nbsp;·&nbsp; Command: Tab or the fleet panel &nbsp;·&nbsp; Pause: P<br>
+      Wheel: zoom &nbsp;·&nbsp; Right-drag: free look &nbsp;·&nbsp; 🎥 Camera panel: zoom &amp; look in any direction, R resets the camera, ✕ closes it</p>
   </div>
 </div>
 
@@ -366,10 +413,10 @@ const numTex125 = hullNumTex('125');
 // One sea-state parameter drives everything: wind -> wave height/length/period,
 // fog, sky, foam and camera shake all follow it (War Thunder preset style).
 const STAGES = [
-  {name:'Calm Seas', desc:'The fleet sails out. Hold formation.', speed:8,  amp:0.25, hazard:0.25, wind:5,  sky:0x9fc3d8, sea:0x1a5a78, fogFar:380, sunI:1.15},
-  {name:'Rough Seas', desc:'Swell building. Watch the crests.',      speed:10, amp:0.50, hazard:0.40, wind:10, sky:0x7e9db4, sea:0x174a64, fogFar:300, sunI:1.0},
-  {name:'Storm', desc:'Lightning, rogue waves.',                     speed:12, amp:0.75, hazard:0.60, wind:15, sky:0x5a7286, sea:0x12394e, fogFar:220, sunI:0.85},
-  {name:'Hurricane', desc:'Everything the sea has. Hold on.',        speed:14, amp:1.00, hazard:0.85, wind:20, sky:0x39434e, sea:0x0d2839, fogFar:150, sunI:0.6},
+  {name:'Calm Seas', desc:'The fleet sails out. Hold formation.', speed:8,  amp:0.25, wind:5,  sky:0x9fc3d8, sea:0x1a5a78, fogFar:380, sunI:1.15},
+  {name:'Rough Seas', desc:'Swell building. Watch the crests.',      speed:10, amp:0.50, wind:10, sky:0x7e9db4, sea:0x174a64, fogFar:300, sunI:1.0},
+  {name:'Storm', desc:'Lightning, heavy seas.',                     speed:12, amp:0.75, wind:15, sky:0x5a7286, sea:0x12394e, fogFar:220, sunI:0.85},
+  {name:'Hurricane', desc:'Everything the sea has. Hold on.',        speed:14, amp:1.00, wind:20, sky:0x39434e, sea:0x0d2839, fogFar:150, sunI:0.6},
 ];
 const STAGE_AT = [0, 400, 1100, 2100];
 
@@ -380,7 +427,6 @@ const settings = {
   camZoom: Math.max(0.35, Math.min(2.5, savedSettings.camZoom ?? 1)),
   camPanX: Math.max(-30, Math.min(30, savedSettings.camPanX ?? 0)),
   camPanY: Math.max(-12, Math.min(18, savedSettings.camPanY ?? 0)),
-  hazard: savedSettings.hazard ?? 1,
 };
 function wireSeg(id, key, parse){
   const el = $(id);
@@ -395,7 +441,6 @@ function wireSeg(id, key, parse){
 }
 wireSeg('segStart', 'startStage', v => parseInt(v, 10));
 wireSeg('segWave', 'wave', v => parseFloat(v));
-wireSeg('segHazard', 'hazard', v => parseFloat(v));
 
 const store = JSON.parse(localStorage.getItem('hurricane_fleet_v1') || '{}');
 let best = {dist: store.bestDist || 0, score: store.bestScore || 0};
@@ -426,7 +471,6 @@ const WAVES = [];
 let WAVE_AMP_SUM = 0;
 let HS_CUR = 0.25;   // significant wave height in game units, current stage
 let STOKES_U = 0;    // Stokes drift at the surface, game units/s, down-wave
-let seaFocus = null; // dispersive-focusing rogue event {x0, z0, t0}
 // v10.6: the wave field is sampled from a real JONSWAP spectrum (Hasselmann
 // et al. 1973, gamma = 3.3, fetch 300 km — the South China Sea gives fetches
 // of hundreds of km, and this sea is still building, not fully developed).
@@ -503,61 +547,18 @@ buildSpectrum(STAGES[settings.startStage].wind);
 function tideAt(t){
   return {x: Math.sin((t / 720) * Math.PI * 2) * (1.0 / GAME_M), z: 0};
 }
-// v10.6: rogue schedule — Hurricane every ~2.5-4 min, Storm ~5-8 min,
-// Rough rare, Calm never. Sailing against the tide steepens the sea, so the
-// interval shortens up to 4x when the tide opposes the waves.
-function armRogueTimer(){
-  const base = [Infinity, 600 + Math.random()*300, 300 + Math.random()*180, 150 + Math.random()*90][state.stage];
-  if(!isFinite(base)){ state.rogueTimer = -1; return; }
-  const wx = Math.sin(state.windDir), wz = -Math.cos(state.windDir);
-  const tx = tideAt(state.t).x >= 0 ? 1 : -1;
-  const opp = Math.max(0, -(wx * tx));
-  state.rogueTimer = base / (1 + 3 * opp);
-}
-// v10.6: dispersive focusing — a rogue wave built from the spectrum itself.
-// When seaFocus is armed, the six longest components re-phase so their
-// crests coincide at (x0, z0) at time t0, ramped in over ~18 s and out after
-// the crest passes. Peak crest ≈ sum of the aligned components.
-function focusRamp(t){
-  if(!seaFocus) return 0;
-  const t0 = seaFocus.t0;
-  if(t < t0 - 20 || t > t0 + 10) return 0;
-  if(t < t0 - 2){ const u = (t - (t0 - 20)) / 18; return u*u*(3-2*u); }
-  if(t <= t0) return 1;
-  const u = 1 - (t - t0) / 10; return u*u*(3-2*u);
-}
-function focusPhase(w, i, t){
-  const r = focusRamp(t);
-  if(!r || i >= 6) return 0;
-  return r * (Math.PI/2 - w.ph - w.k*(w.dx*seaFocus.x0 + w.dz*seaFocus.z0) + w.w*seaFocus.t0);
-}
 let ampCur = settings.wave;
 let ampTarget = ampCur;
 function gerstner(x, z, t){
   let y = 0, ox = 0, oz = 0;
   for(let i = 0; i < WAVES.length; i++){
     const w = WAVES[i];
-    const th = w.k * (w.dx * x + w.dz * z) - w.w * t + w.ph + focusPhase(w, i, t);
+    const th = w.k * (w.dx * x + w.dz * z) - w.w * t + w.ph;
     const A = w.amp * ampCur;
     const Q = Math.min(w.q, 1 / Math.max(0.001, w.k * A));
     ox += Q * A * w.dx * Math.cos(th);
     oz += Q * A * w.dz * Math.cos(th);
     y += A * Math.sin(th);
-  }
-  // rogue-wave bump: a temporary localised extra Gerstner component — the wave
-  // IS the ocean, not a mesh standing in it. It grows in over ~4 s so the sea
-  // visibly rises ahead of you, then travels with the swell (research rule:
-  // A_rogue ~ 1.0-1.2 x Hs, total crest ~ 2x Hs, telegraphed by the crest itself)
-  for(let i = 0; i < state.hazards.length; i++){
-    const h = state.hazards[i];
-    if(h.kind !== 'wave' || !h.bumpA) continue;
-    const grow = Math.min(1, (t - (h.born || 0)) / 4);
-    const dx = x - h.x, dz = z - h.z;
-    const d2 = dx * dx + dz * dz, sig = h.span * 0.45;
-    if(d2 < sig * sig * 4){
-      const along = dx * (h.dirx || 0) + dz * (h.dirz === undefined ? 1 : h.dirz);
-      y += h.bumpA * grow * Math.exp(-d2 / (2 * sig * sig)) * Math.sin(0.35 * along - t * 1.2 + h.ph);
-    }
   }
   return {x: x + ox, y, z: z + oz};
 }
@@ -574,7 +575,7 @@ function getOceanDataAt(x, z, t){
   let ovx = 0, ovy = 0, ovz = 0;
   for(let i = 0; i < WAVES.length; i++){
     const w = WAVES[i];
-    const th = w.k * (w.dx * x + w.dz * z) - w.w * t + w.ph + focusPhase(w, i, t);
+    const th = w.k * (w.dx * x + w.dz * z) - w.w * t + w.ph;
     const A = w.amp * ampCur;
     const Q = Math.min(w.q, 1 / Math.max(0.001, w.k * A));
     const sn = Math.sin(th), cs = Math.cos(th);
@@ -623,9 +624,7 @@ function waveSlope(x, z, t){
 // nearby hull sideways, and two hulls running close abeam suck gently
 // toward each other (Bernoulli). Small forces; they make close formation
 // sailing feel alive instead of ships passing through each other's water.
-// Skipped during a U-turn, when the formation is carried rigidly.
 function shipInteractions(dt){
-  if(state.uturnActive) return;
   for(let i = 0; i < fleet.length; i++){
     const a = fleet[i];
     if(!a.alive) continue;
@@ -1333,9 +1332,12 @@ class ShipMotion {
     const rudderK = rudderIn === 0 ? 12 : 5;
     this.rudder += (rudderIn - this.rudder) * (1 - Math.exp(-dt * rudderK));
     let speedFactor = 0.12 + 0.88 * Math.min(1, Math.abs(this.forwardSpeed) / 12);
-    if(input.uturn) speedFactor = Math.max(0.55, speedFactor); // v10.2: a U-turn keeps turning even at low speed
+    if(input.turnFloor) speedFactor = Math.max(0.55, speedFactor); // v11.0: an escort far from its slot keeps turning at low speed while re-forming
     const turnRate = this.rudderTurnSpeed * speedFactor * (input.turnSlow ?? 1);
-    const targetRate = this.rudder * turnRate;
+    // v11.0: going astern the rudder is on the propeller's suction side —
+    // nearly useless, and its effect reverses (reversed flow over the blade).
+    const astern = this.forwardSpeed < -0.5;
+    const targetRate = this.rudder * turnRate * (astern ? -0.25 : 1);
     const rateK = Math.abs(this.rudder) < 0.05 ? 10 : 4;
     this.headingRate += (targetRate - this.headingRate) * (1 - Math.exp(-dt * rateK));
     this.heading += this.headingRate * dt;
@@ -1347,7 +1349,7 @@ class ShipMotion {
     let vL = this.vx * r.x + this.vz * r.z;
     vF *= Math.exp(-dt * this.forwardDrag);
     vL *= Math.exp(-dt * this.lateralDrag);
-    vF = Math.max(-this.maxSpeed * 0.4, Math.min(this.maxSpeed, vF));
+    vF = Math.max(-this.maxSpeed * 0.5, Math.min(this.maxSpeed, vF)); // v11.0: FULL ASTERN is -50%
     this.vx = f.x * vF + r.x * vL;
     this.vz = f.z * vF + r.z * vL;
     this.forwardSpeed = vF; this.lateralSpeed = vL;
@@ -1457,13 +1459,24 @@ const fleet = [
   {type:'destroyer',  label:'Destroyer',  dx:-40,   dz:30,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.8},
   {type:'destroyer',  label:'Destroyer',  dx:40,    dz:30,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.8},
 ];
+const _nameCount = {};
 fleet.forEach(s => {
+  // v11.0: a command name per hull (the panel and helm show which ship you have)
+  _nameCount[s.type] = (_nameCount[s.type] || 0) + 1;
+  s.name = s.type === 'carrier' ? 'Carrier' : s.label + ' ' + _nameCount[s.type];
   s.group = makeShip(s.type);
   s.group.position.set(s.dx, 0, s.dz);
   s.x = s.dx; s.z = s.dz; s.heading = 0; s.y = 0;
-  const mSpec = s.type === 'carrier' ? { mass: 2.0, thrustForce: 28, rudderTurnSpeed: 0.6 }
-    : s.type === 'battleship' ? { mass: 1.5, thrustForce: 21, rudderTurnSpeed: 0.65 }
-    : { mass: 1.0, thrustForce: 14, rudderTurnSpeed: 0.7 };
+  // v11.0: spool rates (u/s per game-second) and rudder slew (deg/s) scale
+  // with displacement — a carrier is heavy and deliberate, a destroyer
+  // answers quickly. Slew: SOLAS allows 35°→35° in 28 s (2.5°/s); a
+  // Fletcher-class destroyer did it in ~5-10 s.
+  const mSpec = s.type === 'carrier' ? { mass: 2.0, thrustForce: 28, rudderTurnSpeed: 0.6, spoolUp: 0.8, spoolDown: 1.5, rudderSlew: 3 }
+    : s.type === 'battleship' ? { mass: 1.5, thrustForce: 21, rudderTurnSpeed: 0.65, spoolUp: 1.1, spoolDown: 2.0, rudderSlew: 4 }
+    : { mass: 1.0, thrustForce: 14, rudderTurnSpeed: 0.7, spoolUp: 1.6, spoolDown: 2.6, rudderSlew: 8 };
+  s.spoolUp = mSpec.spoolUp; s.spoolDown = mSpec.spoolDown; s.rudderSlew = mSpec.rudderSlew;
+  s.telegraph = 5; s.spoolSpeed = 0; s.rudderDeg = 0; s.rudderTargetDeg = 0; s.propToasted = false;
+  s.slotDx0 = s.dx; s.slotDz0 = s.dz;
   s.motion = new ShipMotion({
     ...mSpec, maxSpeed: 14, lateralDrag: 5.0, forwardDrag: 0.55,
     length: s.group.userData.len, beam: s.group.userData.wid,
@@ -1482,7 +1495,92 @@ fleet.forEach(s => {
   scene.add(ring);
   s.foam = ring;
 });
-function flagship(){ return fleet.find(s => s.alive) || null; }
+// ---------- v11.0: Engine Order Telegraph + fleet command ----------
+// Telegraph notches (Cold Waters / Atlantic Fleet / real USN bells): the
+// fractions are the prompt's even 20/40/60/80/100% steps — real USN bells
+// run slower (Missouri 1988: 1/3 ≈ 16%, 2/3 ≈ 31%, Standard ≈ 47%,
+// Full ≈ 62%, Flank 100%, because 1/3 and 2/3 are fractions of shaft RPM,
+// not speed). The even steps are a deliberate gameplay simplification.
+// Fractions are of the STAGE speed cap (st.speed: 8/10/12/14), so the sea
+// state still limits how fast any order can take you.
+const TELEGRAPH = [
+  {name:'FLANK AHEAD', frac:1.0},
+  {name:'FULL AHEAD', frac:0.8},
+  {name:'STANDARD AHEAD', frac:0.6},
+  {name:'HALF AHEAD', frac:0.4},
+  {name:'SLOW AHEAD', frac:0.2},
+  {name:'ALL STOP', frac:0},
+  {name:'HALF ASTERN', frac:-0.25},
+  {name:'FULL ASTERN', frac:-0.5},
+];
+const RUDDER_MAX = 35; // deg, hard over (SOLAS)
+function flagship(){
+  const p = fleet[state.playerIdx];
+  if(p && p.alive) return p;
+  const f = fleet.find(s => s.alive) || null;
+  if(f) state.playerIdx = fleet.indexOf(f);
+  return f;
+}
+// Engine Room compartment (index 4) flood caps the ordered speed; a
+// flooded-out engine room kills propulsion outright (Cold Waters rule).
+function propulsionDead(ship){
+  if(!ship || !ship.alive) return true;
+  return ship.motion.compartments[4].flood >= 0.9;
+}
+function telegraphTarget(ship, st){
+  const frac = TELEGRAPH[ship.telegraph].frac;
+  if(frac === 0) return 0;
+  const erFlood = ship.motion.compartments[4].flood;
+  const capFrac = Math.max(0, (1 - 0.6 * erFlood) * (1 - 0.25 * ship.floodTotal));
+  return frac * st.speed * capFrac;
+}
+function nearestNotch(ship, st){
+  const cur = ship.motion.forwardSpeed;
+  let best = 5, bd = Infinity;
+  TELEGRAPH.forEach((n, i) => {
+    const d = Math.abs(n.frac * st.speed - cur);
+    if(d < bd){ bd = d; best = i; }
+  });
+  return best;
+}
+function setTelegraph(i){
+  const f = flagship();
+  if(!f || !state.running) return;
+  if(propulsionDead(f)){ f.telegraph = 5; syncHelmUI(); return; }
+  f.telegraph = Math.max(0, Math.min(7, i));
+  syncHelmUI();
+}
+function stepTelegraph(dir){
+  const f = flagship();
+  if(!f || !state.running) return;
+  // dir +1 = faster (toward FLANK), -1 = slower (toward FULL ASTERN)
+  setTelegraph(f.telegraph - dir);
+}
+function switchShip(idx){
+  const next = fleet[idx];
+  if(!next || !next.alive || idx === state.playerIdx || !state.running) return;
+  const old = fleet[state.playerIdx];
+  // swap formation slots so the shape is preserved and the ex-flagship
+  // does not try to sit at (0,0) — it takes the new flagship's old slot
+  const tdx = old.dx, tdz = old.dz;
+  old.dx = next.dx; old.dz = next.dz;
+  next.dx = tdx; next.dz = tdz;
+  state.playerIdx = idx;
+  // sync the helm to the new ship without touching its momentum: the
+  // ordered speed starts where the ship already is
+  next.spoolSpeed = next.motion.forwardSpeed;
+  next.telegraph = nearestNotch(next, STAGES[state.stage]);
+  next.rudderDeg = next.motion.rudder * RUDDER_MAX;
+  next.rudderTargetDeg = next.rudderDeg;
+  syncHelmUI(); syncFleetPanel();
+  toast('🚢 You have command of the ' + next.name, old.name + ' follows as escort');
+}
+function cycleShip(dir){
+  for(let k = 1; k <= fleet.length; k++){
+    const idx = (state.playerIdx + dir * k + fleet.length * 2) % fleet.length;
+    if(fleet[idx].alive){ switchShip(idx); return; }
+  }
+}
 function fleetHp(){ return fleet.reduce((a, s) => a + Math.max(0, s.hp), 0); }
 function fleetMaxHp(){ return fleet.reduce((a, s) => a + s.maxHp, 0); }
 function aliveCount(){ return fleet.filter(s => s.alive).length; }
@@ -1654,17 +1752,16 @@ function placeBeacon(){
 const state = {
   running: false, paused: false, over: false,
   t: 0, dist: 0, score: 0, speed: 0,
-  stage: settings.startStage, shake: 0, sound: true, boost: false,
+  stage: settings.startStage, shake: 0, sound: true,
   rudder: 0, dragSteer: false, keys: {}, lost: 0,
-  joyX: 0, joyY: 0, joyActive: false,
-  hazards: [], spawnT: 0, boltT: 0, flashT: 0,
+  joyX: 0, joyActive: false,
+  boltT: 0, flashT: 0,
   speedLoss: 1, kickT: 99, prevRudder: 0,
-  rogueTimer: -1,
+  playerIdx: 0,
   camZoom: settings.camZoom ?? 1, freeLook: 0, freeLookActive: false,
   camPanX: settings.camPanX ?? 0, camPanY: settings.camPanY ?? 0,
   capT: 0,
   camHeading: 0, camBank: 0, headingRate: 0, camZfSm: 0,
-  lastWaveToast: -99,
   windDir: 0, curX: 0, curZ: 0, cog: 0,
 };
 let frameCount = 0;
@@ -1785,10 +1882,12 @@ function resetCamera(){
 function toggleCamPanel(){ $('camPanel').classList.toggle('hidden'); }
 $('camBtn').addEventListener('click', toggleCamPanel);
 $('camCloseBtn').addEventListener('click', () => $('camPanel').classList.add('hidden'));
-$('uturnBtn').addEventListener('click', () => { if(state.running) startUturn(); });
-// v10.9: fire on press, not just on click — a tap that does not complete
-// as a click (pointer drifts, element shifts) must still turn the fleet.
-$('uturnBtn').addEventListener('pointerdown', e => { e.preventDefault(); if(state.running) startUturn(); });
+// v11.0: telegraph panel — click a notch to order it; ▲/▼ step one notch
+document.querySelectorAll('.teleBtn').forEach(b => {
+  b.addEventListener('click', () => setTelegraph(parseInt(b.dataset.i, 10)));
+});
+$('teleUp').addEventListener('click', () => stepTelegraph(1));
+$('teleDown').addEventListener('click', () => stepTelegraph(-1));
 $('camBtnStart').addEventListener('click', toggleCamPanel);
 $('camResetBtn').addEventListener('click', resetCamera);
 $('camZoomSlider').addEventListener('input', e => { state.camZoom = 1 / parseFloat(e.target.value); saveCamera(); syncCameraUI(); });
@@ -1797,40 +1896,39 @@ $('camPanYSlider').addEventListener('input', e => { state.camPanY = parseFloat(e
 $('camZoomIn').addEventListener('click', () => { state.camZoom = Math.max(0.35, state.camZoom - 0.15); saveCamera(); syncCameraUI(); });
 $('camZoomOut').addEventListener('click', () => { state.camZoom = Math.min(2.5, state.camZoom + 0.15); saveCamera(); syncCameraUI(); });
 syncCameraUI();
-// virtual joystick: X = rudder, Y = engine throttle (push up for more speed)
+// v11.0: the helm is horizontal-only — X is the rudder, vertical drag is
+// ignored so the player never changes speed while turning
 const joyEl = $('joy'), joyKnob = $('joyKnob');
-const JOY_R = 44;
+const JOY_R = 82;
 function joySet(e){
   const r = joyEl.getBoundingClientRect();
   let dx = e.clientX - (r.left + r.width / 2);
-  let dy = e.clientY - (r.top + r.height / 2);
-  const d = Math.sqrt(dx * dx + dy * dy);
-  if(d > JOY_R){ dx = dx / d * JOY_R; dy = dy / d * JOY_R; }
-  state.joyX = dx / JOY_R; state.joyY = dy / JOY_R;
-  joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+  dx = Math.max(-JOY_R, Math.min(JOY_R, dx));
+  state.joyX = dx / JOY_R;
+  joyKnob.style.transform = `translate(${dx}px, 0px)`;
 }
 joyEl.addEventListener('pointerdown', e => { e.preventDefault(); state.joyActive = true; state.joyPointerId = e.pointerId; joyEl.setPointerCapture(e.pointerId); joySet(e); });
 joyEl.addEventListener('pointermove', e => { if(state.joyActive) joySet(e); });
 window.addEventListener('pointermove', e => { if(state.joyActive && e.pointerId === state.joyPointerId) joySet(e); });
-function joyEnd(){ state.joyActive = false; state.joyPointerId = null; state.joyX = 0; state.joyY = 0; joyKnob.style.transform = 'translate(0px, 0px)'; }
+function joyEnd(){ state.joyActive = false; state.joyPointerId = null; state.joyX = 0; joyKnob.style.transform = 'translate(0px, 0px)'; }
 joyEl.addEventListener('pointerup', joyEnd);
 joyEl.addEventListener('pointercancel', joyEnd);
 window.addEventListener('keydown', e => {
   state.keys[e.key] = true;
-  if(e.key === 'Shift') state.boost = true;
-  if(e.key === 'u' || e.key === 'U'){ if(state.running) startUturn(); }
+  // v11.0: W/S or Up/Down step the telegraph one notch (hold to keep
+  // stepping — keydown auto-repeats); 1-8 jump straight to a notch
+  if(e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') stepTelegraph(1);
+  if(e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') stepTelegraph(-1);
+  if(e.key >= '1' && e.key <= '8') setTelegraph(parseInt(e.key, 10) - 1);
+  if(e.key === 'Tab'){ e.preventDefault(); cycleShip(1); }
   if(e.key === 'p' || e.key === 'P') togglePause();
   if(e.key === 'Escape') $('camPanel').classList.add('hidden');
   if(e.key === 'r' || e.key === 'R') resetCamera();
-  if(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '].includes(e.key)) e.preventDefault();
+  if(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ', 'Tab'].includes(e.key)) e.preventDefault();
 });
 window.addEventListener('keyup', e => {
   state.keys[e.key] = false;
-  if(e.key === 'Shift') state.boost = false;
 });
-$('boostBtn').addEventListener('pointerdown', e => { e.preventDefault(); state.boost = true; });
-$('boostBtn').addEventListener('pointerup', () => { state.boost = false; });
-$('boostBtn').addEventListener('pointerleave', () => { state.boost = false; });
 $('soundBtn').addEventListener('click', () => {
   state.sound = !state.sound;
   $('soundBtn').textContent = state.sound ? '🔊' : '🔇';
@@ -1868,45 +1966,7 @@ function aheadOfFleet(dist, spread){
 }
 
 // ---------- spawning ----------
-function spawnHazard(forceKind){
-  const st = STAGES[state.stage];
-  let kind;
-  const r = Math.random();
-  // rogue crests are rarer and bigger in the storm; bumpA is 0.8 x Hs (v10.6: the old fixed 2.4-3.2 was 2-4x the significant wave height)
-  if(forceKind) kind = forceKind;
-  else if(state.stage >= 2 && r < 0.45) kind = 'wave';
-  else kind = 'debris';
-  const g = new THREE.Group();
-  let h;
-  if(kind === 'wave'){
-    // no mesh at all: the rogue wave is a localised Gerstner bump in the shared
-    // wave field, so the sea itself rises into a crest with a foam cap and the
-    // ships ride up its face — there is no wall standing in the ocean
-    const span = (state.stage >= 3 ? 65 : 55) + Math.random() * 25;
-    const wp = aheadOfFleet(170 + Math.random() * 60, 50);
-    h = {kind, group: g, x: wp.x, z: wp.z, span, r: span / 2, hitShips: new Set(),
-         bumpA: 0.8 * HS_CUR, ph: Math.random() * 6.28, dirx: wp.hx, dirz: wp.hz, born: state.t, foamT: 0};
-    // telegraph it: a rogue crest with no warning reads as nothing at all
-    // (v8.1: waves spawned every few seconds in Storm/Hurricane but were
-    // never noticed). Throttled so a storm does not spam the toast.
-    if(!forceKind && state.t - state.lastWaveToast > 25){
-      state.lastWaveToast = state.t;
-      toast('⚠️ ROGUE WAVE', 'A crest is building ahead — brace for it');
-    }
-  } else {
-    const b1 = box(2.6, 1.1, 1.8, new THREE.MeshStandardMaterial({color: 0x6b4a2f, roughness: 0.9}), 0, 0.6, 0);
-    const b2 = box(1.2, 0.9, 1.2, new THREE.MeshStandardMaterial({color: 0x4a3a28, roughness: 0.9}), 0.8, 1.4, 0.4);
-    g.add(b1, b2);
-    const wp = aheadOfFleet(170 + Math.random() * 60, 100);
-    h = {kind, group: g, x: wp.x, z: wp.z, r: 2.5, ph: Math.random() * 6.28, hitShips: new Set()};
-  }
-  g.position.set(h.x, 0, h.z);
-  scene.add(g);
-  state.hazards.push(h);
-}
 function clearWorld(){
-  state.hazards.forEach(h => scene.remove(h.group));
-  state.hazards = [];
   if(bolt){ scene.remove(bolt); bolt = null; }
   parts.forEach(p => { p.life = 0; });
   spritePool.forEach(s => { s.life = 0; s.sp.visible = false; });
@@ -1921,11 +1981,12 @@ function reset(){
   state.spawnT = 0; state.boltT = 0; state.flashT = 0;
   state.rudder = 0; state.dragSteer = false; state.speedLoss = 1; state.kickT = 99; state.prevRudder = 0;
   state.camHeading = 0; state.camBank = 0; state.headingRate = 0; state.camZfSm = 0;
-  state.rogueTimer = -1;
-  armRogueTimer(); // v10.6: recurring rogue schedule, armed for the start stage
+  state.playerIdx = 0;
   clearWorld();
   fleet.forEach(s => {
     s.hp = s.maxHp; s.alive = true; s.sinkT = 0;
+    s.dx = s.slotDx0; s.dz = s.slotDz0; // v11.0: restore canonical slots (switching swaps them)
+    s.telegraph = 5; s.spoolSpeed = 0; s.rudderDeg = 0; s.rudderTargetDeg = 0; s.propToasted = false;
     if(s.scorches){ s.scorches.forEach(d => s.group.remove(d.sp)); s.scorches = []; }
     s.x = s.dx; s.z = s.dz; s.heading = 0; s.y = 0;
     const mo = s.motion;
@@ -1999,17 +2060,6 @@ function drawMinimap(){
     ctx.fillStyle = col;
     ctx.beginPath(); ctx.arc(pp[0], pp[1], r, 0, 6.29); ctx.fill();
   };
-  // v10.4: solution quality (Cold Waters / Atlantic Fleet) — a contact is
-  // a sharp fix up close and a faint estimate at range, fainter still in
-  // Storm/Hurricane, so the minimap reads as tracking, not omniscience
-  state.hazards.forEach(h => {
-    const dH = Math.hypot(h.x - f.x, h.z - f.z);
-    const q = Math.max(0.2, Math.min(1, (1.3 - dH / 300) * (state.stage >= 2 ? 0.7 : 1)));
-    ctx.globalAlpha = q;
-    dot(h.x, h.z, h.kind === 'wave' ? 4 : 2.5,
-      h.kind === 'wave' ? '#7fb8e8' : '#a08050');
-    ctx.globalAlpha = 1;
-  });
   if(beacon){
     const pp = px(beacon.x, beacon.z);
     if(pp[0] > -6 && pp[0] < W + 6 && pp[1] > -6 && pp[1] < H + 6){
@@ -2029,9 +2079,55 @@ function drawMinimap(){
   ctx.lineTo(C + Math.sin(f.heading) * 10, C - Math.cos(f.heading) * 10); ctx.stroke();
 }
 
+// v11.0: keep the helm UI in step with the player ship — the telegraph
+// panel shows that ship's notch, target and actual speed; the fleet panel
+// shows every ship's integrity and which one you command.
+function syncHelmUI(){
+  const f = flagship();
+  if(!f) return;
+  document.querySelectorAll('.teleBtn').forEach(b => {
+    b.classList.toggle('on', parseInt(b.dataset.i, 10) === f.telegraph);
+  });
+  const dead = propulsionDead(f);
+  document.querySelectorAll('.teleBtn').forEach(b => { b.disabled = dead; });
+  $('teleShip').textContent = f.name;
+  $('shipName').textContent = f.name;
+  $('teleOrder').textContent = TELEGRAPH[f.telegraph].name + (dead ? ' — PROPULSION LOST' : '');
+  const st = STAGES[state.stage];
+  $('teleTarget').textContent = Math.round(telegraphTarget(f, st) * 2.2);
+  $('teleActual').textContent = Math.round(f.motion.forwardSpeed * 2.2);
+  const rd = Math.round(f.rudderDeg);
+  $('rudderReadout').textContent = 'RUDDER ' + Math.abs(rd) + '° · ' + (rd < -1 ? 'PORT' : rd > 1 ? 'STBD' : 'MIDSHIPS');
+}
+// v11.0: fleet command panel — built once, synced every frame
+function buildFleetPanel(){
+  const el = $('fleetPanel');
+  if(!el) return;
+  el.innerHTML = '<div class="fleetHead">⚓ Fleet — command</div>' + fleet.map((s, i) =>
+    '<button class="fleetRow" data-i="' + i + '"><span class="nm">' + s.name + '</span><span class="hp"></span></button>'
+  ).join('');
+  el.querySelectorAll('.fleetRow').forEach(b => {
+    b.addEventListener('click', () => switchShip(parseInt(b.dataset.i, 10)));
+  });
+}
+function syncFleetPanel(){
+  const el = $('fleetPanel');
+  if(!el) return;
+  el.querySelectorAll('.fleetRow').forEach(b => {
+    const s = fleet[parseInt(b.dataset.i, 10)];
+    if(!s) return;
+    b.classList.toggle('on', parseInt(b.dataset.i, 10) === state.playerIdx);
+    b.classList.toggle('sunk', !s.alive);
+    b.querySelector('.hp').textContent = Math.max(0, Math.round(s.hp / s.maxHp * 100)) + '%';
+  });
+}
+buildFleetPanel();
+
 function updateHud(){
   $('dist').textContent = Math.floor(state.dist);
   $('speed').textContent = Math.round(state.speed * 2.2);
+  syncHelmUI();
+  syncFleetPanel();
   $('score').textContent = state.score;
   const pct = Math.round(fleetHp() / fleetMaxHp() * 100);
   $('intPct').textContent = pct + '%';
@@ -2108,9 +2204,17 @@ function sinkShip(ship, mode){
     state.shake = Math.min(18, state.shake + 14);
     toast('💥 ' + ship.label + ' broke in two', 'magazine detonation — she is gone');
   }
+  const wasPlayer = (ship === fleet[state.playerIdx]);
   const next = flagship();
   if(next && ship.sinkMode !== 'breakup'){
     toast('⚠️ ' + ship.label + ' is going down', next.label + ' takes command — ' + aliveCount() + ' ships left');
+  }
+  // v11.0: if the player ship went down, the new flagship's helm syncs to
+  // her own speed — no lurch, no reset
+  if(next && wasPlayer){
+    next.spoolSpeed = next.motion.forwardSpeed;
+    next.telegraph = nearestNotch(next, STAGES[state.stage]);
+    syncHelmUI(); syncFleetPanel();
   }
 }
 // blastImpulse(x, z, power) — an inverse-square physical blast (v10.1).
@@ -2138,8 +2242,7 @@ function blastImpulse(x, z, power){
 // Atlantic Fleet rule (v10.4): only hits at/below the waterline flood a
 // compartment. A crest washing the deck does structural damage and can start
 // a fire, but it does not breach a compartment or sink the ship — sinking
-// has to come from the waterline. Collisions and debris are waterline hits;
-// rogue-wave crests are not (passed as belowWaterline = false).
+// has to come from the waterline. Collisions are waterline hits.
 function damageShip(ship, dmg, hx, hz, belowWaterline = true){
   if(!ship.alive) return;
   ship.hp -= dmg;
@@ -2198,74 +2301,33 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
 
 // ---------- buoyancy sampling (4-6 points per hull; long hulls average out swell) ----------
 // ---------- update ----------
-// v10.7: one shared U-turn latch — the stick's rising edge, the stick hold,
-// the HUD button and the 'u' key all go through here, so the turn no longer
-// depends on a single fragile input path. One turn per hold: pullUsed is set
-// on latch and cleared only when the stick is released.
-function startUturn(){
-  if(state.uturnActive || state.pullUsed) return;
-  const f0 = flagship();
-  const turnSign = (state.joyActive && state.joyX < -0.08) || state.keys['ArrowLeft'] || state.keys['a'] ? -1 : 1;
-  state.uturnTarget = (f0 ? f0.heading : 0) + turnSign * Math.PI;
-  state.uturnActive = true;
-  state.pullUsed = true;
-  // v10.9: the latch is unmistakable — a toast as well as the TURNING badge.
-  toast('⟲ U-TURN', 'Coming about — hold on');
-}
 function update(dt){
   const st = STAGES[state.stage];
   state.t += dt;
-  // v9.8: pull the stick back (or ArrowDown) and the fleet U-turns bow-first
-  // instead of reversing stern-first. The U-turn target is latched when the
-  // pull-back starts — holding it down does one turn, not a loop — and thrust
-  // only comes in as the bow swings onto the new course, so the ships never
-  // slide backwards. There is no reverse gear any more: release the throttle
-  // to coast to a stop.
-  const pullBack = (state.joyActive && state.joyY > 0.3) || state.keys['ArrowDown'] || state.keys['s'];
-  if(pullBack && !state.prevPullBack) startUturn();
-  // v10.7: hold fallback — if the stick is held back continuously for 0.5 s
-  // of game time without the rising edge firing (input sampled between
-  // frames on a slow device), latch the turn anyway. A held-back stick is a
-  // U-turn command, never just a brake.
-  if(pullBack && !state.uturnActive && !state.pullUsed){
-    state.pullHoldT = (state.pullHoldT || 0) + dt;
-    if(state.pullHoldT > 0.5) startUturn();
-  } else if(!pullBack){
-    state.pullHoldT = 0;
-    state.pullUsed = false;
+  // v11.0: Engine Order Telegraph — the ordered speed slews toward the
+  // notch target at the ship's spool rate (heavy displacement + turbine
+  // lag: a carrier takes ~17 s to work up to flank, a destroyer ~9 s),
+  // then the propeller chases that ordered speed. ALL STOP means the screw
+  // stops and hydrodynamic drag coasts the ship to a halt; FULL ASTERN is
+  // the brake as well as reverse (Atlantic Fleet rule).
+  const flag = flagship();
+  if(!flag){ gameOver(); return; }
+  const dead = propulsionDead(flag);
+  if(dead && !flag.propToasted){
+    flag.propToasted = true;
+    flag.telegraph = 5;
+    toast('⚠️ Engine room flooded', 'Propulsion lost — telegraph locked at ALL STOP');
   }
-  state.prevPullBack = pullBack;
-  let throttleInput = 0, braking = false;
-  state.uturnErr = null;
-  if(state.uturnActive){
-    const f0 = flagship();
-    const f0h = f0 ? f0.heading : 0;
-    let err = state.uturnTarget - f0h;
-    err = ((err + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
-    state.uturnErr = err;
-    const mag = state.joyActive ? Math.min(1, Math.hypot(state.joyX, state.joyY)) : 1;
-    // v10.2: keep way on during the turn — a higher minimum thrust (0.6) so
-    // the ship holds enough speed to swing round, and once latched the turn
-    // completes even if the stick is released (a flickering hold no longer
-    // cancels it mid-turn; only reaching the target heading ends it).
-    throttleInput = Math.max(0.6, mag * Math.max(0, Math.cos(err)));
-    if(Math.abs(err) < 0.2){ state.uturnActive = false; state.uturnTarget = null; }
-  } else if(state.keys['ArrowUp'] || state.keys['w']) throttleInput = 1;
-  else if(state.joyActive && state.joyY < -0.08) throttleInput = Math.min(1, -state.joyY);
-  // v10.7: the turn state is visible — a TURNING badge on the HUD while a
-  // U-turn is latched, so a missed latch reads as "no badge" instead of a
-  // silent brake.
-  $('turnBadge').classList.toggle('hidden', !state.uturnActive);
+  const target = dead ? 0 : telegraphTarget(flag, st);
+  const sp = flag.spoolSpeed;
+  const srate = target > sp ? flag.spoolUp : flag.spoolDown;
+  flag.spoolSpeed += Math.max(-srate * dt, Math.min(srate * dt, target - sp));
+  const thrustIn = dead ? 0 : Math.max(-1, Math.min(1, (flag.spoolSpeed - flag.motion.forwardSpeed) * 0.35));
   // speed loss in turns: ~1/4 after 90°, ~1/3 after 180° at full wheel
   const lossTarget = 1 - 0.33 * state.rudder * state.rudder;
   state.speedLoss += (lossTarget - state.speedLoss) * Math.min(1, dt * 0.5);
-  const flag0 = flagship();
-  const floodFactor = flag0 ? flag0.speedFactor : 1;
-  const speedTarget = Math.max(0, st.speed * throttleInput * (state.boost ? 1.5 : 1) * state.speedLoss * floodFactor);
-  // a heavy fleet takes its time: ~2 s to work up to speed, ~3 s to coast down
-  const easeRate = speedTarget > state.speed ? 1.0 : (braking ? 2.0 : 0.55);
-  state.speed += (speedTarget - state.speed) * (1 - Math.exp(-dt * easeRate));
-  const speed = state.speed;
+  const floodFactor = flag.speedFactor;
+  const speed = Math.max(0, flag.motion.forwardSpeed);
   // wind + current: the sea pushes the fleet sideways, so heading and
   // course-over-ground differ — steer for the COG, not just the compass
   state.windDir = Math.PI + 0.6 * Math.sin(state.t * 0.012) + 0.4 * Math.sin(state.t * 0.005 + 1.7);
@@ -2295,58 +2357,34 @@ function update(dt){
     showStage(ns);
     if(ns >= 2) thunder();
   }
-  // v10.6: rogue waves by dispersive focusing — recurring, not a one-off
-  // scripted climax. When the timer fires, the six longest components
-  // re-phase to crest together 150 units ahead in 20 s, and the bump hazard
-  // rides that focus (bumpA = 0.8 x Hs, not the old fixed 3.4). The timer
-  // re-arms per stage; sailing against the tide shortens the interval.
-  if(state.rogueTimer > 0){
-    state.rogueTimer -= dt;
-    if(state.rogueTimer <= 0){
-      const p = aheadOfFleet(150, 30);
-      seaFocus = {x0: p.x, z0: p.z, t0: state.t + 20};
-      spawnHazard('wave');
-      const h = state.hazards[state.hazards.length - 1];
-      if(h){
-        h.span = 50; h.bumpA = 0.8 * HS_CUR; h.x = p.x; h.z = p.z; h.dirx = p.hx; h.dirz = p.hz;
-        h.group.position.set(h.x, 0, h.z);
-      }
-      toast('⚠️ ROGUE WAVE', 'A rogue wave is building ahead — brace for it');
-      thunder();
-      armRogueTimer();
-    }
-  }
 
-  const flag = flagship();
-  if(!flag){ gameOver(); return; }
-
-  // steering via ShipMotion: keys give a hard rudder; joystick X is the
-  // rudder; drag steers too. The class owns the rudder, the speed-scaled
-  // turn rate, the velocity (split forward/lateral, so the ship drifts
-  // slightly in a wide turn), the waves and the heel.
+  // v11.0: steering via ShipMotion — the helm orders a rudder ANGLE
+  // (port/midships/starboard, max 35°) and the rudder slews to it at the
+  // ship's hydraulic rate; release returns it to midships. Keys give a hard
+  // rudder; joystick X is the rudder; drag steers too. The class owns the
+  // rudder, the speed-scaled turn rate, the velocity (split forward/lateral,
+  // so the ship drifts slightly in a wide turn), the waves and the heel.
   let keyRudder = 0;
   if(state.keys['ArrowLeft'] || state.keys['a']) keyRudder -= 1;
   if(state.keys['ArrowRight'] || state.keys['d']) keyRudder += 1;
-  let inputRudder = 0;
-  if(state.uturnErr !== null && state.uturnErr !== undefined){
-    // mid U-turn: the rudder chases the latched target heading; the keys
-    // pick the turn side if the player steers while turning
-    inputRudder = Math.max(-1, Math.min(1, state.uturnErr * 1.5));
-    if(keyRudder !== 0) inputRudder = keyRudder;
-  } else if(keyRudder !== 0) inputRudder = keyRudder;
-  else if(Math.abs(state.joyX) > 0.08) inputRudder = state.joyX;
-  else if(state.dragSteer) inputRudder = state.rudder;
+  let rudderTarget = 0;
+  if(keyRudder !== 0) rudderTarget = keyRudder * RUDDER_MAX;
+  else if(state.joyActive && Math.abs(state.joyX) > 0.08) rudderTarget = state.joyX * RUDDER_MAX;
+  else if(state.dragSteer) rudderTarget = state.rudder * RUDDER_MAX;
+  flag.rudderTargetDeg = rudderTarget;
+  const rs = flag.rudderSlew;
+  flag.rudderDeg += Math.max(-rs * dt, Math.min(rs * dt, rudderTarget - flag.rudderDeg));
   const fm = flag.motion;
-  fm.maxSpeed = Math.max(0, st.speed * (state.boost ? 1.5 : 1) * state.speedLoss * floodFactor);
+  fm.maxSpeed = Math.max(0, st.speed * state.speedLoss * floodFactor);
   const fwp = wavePush(flag.x, flag.z, state.t);
   fm.update(dt, {
-    thrust: throttleInput, rudder: inputRudder,
+    thrust: thrustIn, rudder: flag.rudderDeg / RUDDER_MAX,
     currentX: state.curX + fwp.x, currentZ: state.curZ + fwp.z,
-    time: state.t, turnSlow: 1 - flag.floodTotal * 0.4, uturn: state.uturnActive,
+    time: state.t, turnSlow: 1 - flag.floodTotal * 0.4, turnFloor: false,
   });
   flag.x = fm.x; flag.z = fm.z; flag.heading = fm.heading;
   state.rudder = fm.rudder; state.headingRate = fm.headingRate;
-  state.speed = Math.max(0, fm.forwardSpeed);
+  state.speed = fm.forwardSpeed;
   // course-over-ground: where the ship is actually going — heading plus the
   // lateral drift in a turn and the current, so HDG and COG differ in a turn
   const vx = fm.vx + state.curX, vz = fm.vz + state.curZ;
@@ -2371,29 +2409,6 @@ function update(dt){
   fleet.forEach(s => {
     if(!s.alive || s === flag) return;
     const m = s.motion;
-    // v10.4: rigid-body formation turn — during a U-turn the escorts do NOT
-    // steer by rudder. The same rudder gives each ship a different yaw rate
-    // (turn rate scales with each ship's own speed), so the formation sheared
-    // and the v10.3 check sank the fleet in its own turn. Instead each escort
-    // is carried around the flagship on its slot: the slot rotates with the
-    // flagship's heading, the escort eases onto it, and its velocity is the
-    // flagship's, so the relative velocity — and collision energy — is ~0.
-    // Normal Arrive resumes when the turn ends.
-    if(state.uturnActive){
-      const c0 = Math.cos(flag.heading), sn0 = Math.sin(flag.heading);
-      const tx0 = flag.x + s.dx * c0 - s.dz * sn0;
-      const tz0 = flag.z + s.dx * sn0 + s.dz * c0;
-      const k0 = 1 - Math.exp(-dt * 4);
-      m.x += (tx0 - m.x) * k0; m.z += (tz0 - m.z) * k0;
-      let dh0 = flag.heading - m.heading;
-      dh0 = ((dh0 + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
-      m.heading += dh0 * k0;
-      m.vx = flag.motion.vx; m.vz = flag.motion.vz;
-      m.headingRate = flag.motion.headingRate;
-      m.forwardSpeed = flag.motion.forwardSpeed; m.lateralSpeed = 0;
-      s.x = m.x; s.z = m.z; s.heading = m.heading;
-      return;
-    }
     const c = Math.cos(flag.heading), sn = Math.sin(flag.heading);
     let tx = flag.x + s.dx * c - s.dz * sn;
     let tz = flag.z + s.dx * sn + s.dz * c;
@@ -2482,20 +2497,16 @@ function update(dt){
       thrustIn = Math.max(0, Math.min(1, (desSpeed - m.forwardSpeed) / 5));
     }
     if(av.blocked) thrustIn = Math.min(thrustIn, 0.15);
-    // (v10.4: U-turns are rigid-body now — see the top of this loop. The
-    // v10.3 rudder-matching is gone: same rudder, different yaw rates.)
     // v10.2: catch-up boost — an escort far from its slot gets extra speed
     // so it closes the gap and the formation tightens up after a turn
     // instead of staying loose and scattered
     const catchUp = distToSlot > 25 ? 4 : 0;
-    // v10.3: during a U-turn the escort's speed is capped to the flagship's
-    // so it holds formation instead of pulling ahead while turning
-    m.maxSpeed = state.uturnActive ? Math.max(2, state.speed) : Math.max(6, state.speed + 5 + catchUp);
+    m.maxSpeed = Math.max(6, Math.max(0, state.speed) + 5 + catchUp);
     const ewp = wavePush(m.x, m.z, state.t);
     // v10.5: an escort far from its slot while the flagship is slow gets
-    // the U-turn turn-rate floor, so re-formation after a turn does not
-    // crawl at the low-speed turn rate
-    m.update(dt, { thrust: thrustIn, rudder: rudderIn, currentX: state.curX + ewp.x, currentZ: state.curZ + ewp.z, time: state.t, turnSlow: 1 - s.floodTotal * 0.4, uturn: state.uturnActive || (distToSlot > 25 && state.speed < 1) });
+    // the turn-rate floor, so re-formation does not crawl at the low-speed
+    // turn rate
+    m.update(dt, { thrust: thrustIn, rudder: rudderIn, currentX: state.curX + ewp.x, currentZ: state.curZ + ewp.z, time: state.t, turnSlow: 1 - s.floodTotal * 0.4, turnFloor: (distToSlot > 25 && state.speed < 1) });
     s.x = m.x; s.z = m.z; s.heading = m.heading;
   });
   // ship-to-ship collisions (v10.0): hulls are three circles along the
@@ -3008,86 +3019,6 @@ function update(dt){
       f.vx = Math.sin(state.windDir) * 0.8; f.vz = -Math.cos(state.windDir) * 0.8;
     }
   }
-
-  // spawning
-  state.spawnT += dt;
-  const rate = st.hazard * settings.hazard;
-  if(state.spawnT > 1 / rate){
-    state.spawnT = 0;
-    spawnHazard();
-  }
-
-  // hazards are fixed in the world; the fleet sails into them
-  state.hazards.forEach(h => {
-    if(h.kind === 'debris'){
-      h.x += state.curX * dt; h.z += state.curZ * dt;
-      h.group.position.x = h.x; h.group.position.z = h.z;
-      h.group.position.y = waveHeight(h.x, h.z, state.t) + 0.2;
-      h.group.rotation.y = h.ph + state.t * 0.2;
-      h.group.rotation.z = Math.sin(state.t + h.ph) * 0.15;
-    }
-    if(h.kind === 'wave'){
-      // a foaming ridge along the crest, so the rogue wave is visible as a
-      // raised white-capped ridge in the water — not just a swell
-      h.foamT -= dt;
-      if(h.foamT <= 0){
-        h.foamT = 0.35;
-        const dirx = h.dirx || 0, dirz = h.dirz === undefined ? 1 : h.dirz;
-        const across = (Math.random() - 0.5) * h.span * 0.8;
-        const fx2 = h.x + (-dirz) * across, fz2 = h.z + dirx * across;
-        spawnSprite(fx2, waveHeight(fx2, fz2, state.t) + 0.3, fz2, 2.5, 6 + Math.random() * 4, 2.5, 0.6, 0xffffff, 0.35);
-      }
-      if(Math.random() < 0.6){
-        for(let k = 0; k < 2; k++){
-          spawnParticle(h.x + (Math.random() - 0.5) * h.span * 0.8, waveHeight(h.x, h.z, state.t) + 1.5 + Math.random() * 2, h.z,
-            (Math.random() - 0.5) * 2, 1 + Math.random(), 2, 0.8, 0.9, 0.95, 1, -2);
-        }
-      }
-    }
-  });
-  state.hazards = state.hazards.filter(h => {
-    if(Math.hypot(h.x - flag.x, h.z - flag.z) > 340){ scene.remove(h.group); return false; }
-    return true;
-  });
-
-  // collisions — damage lands on the ship actually hit, at the hit point
-  fleet.forEach(s => {
-    if(!s.alive) return;
-    state.hazards.forEach(h => {
-      if(h.hitShips.has(s)) return;
-      let hit = false;
-      if(h.kind === 'wave'){
-        const dx = s.x - h.x, dz = s.z - h.z;
-        const dirx = h.dirx || 0, dirz = h.dirz === undefined ? 1 : h.dirz;
-        const along = dx * dirx + dz * dirz;
-        const across = dx * (-dirz) + dz * dirx;
-        hit = Math.abs(along) < 4 && Math.abs(across) < h.span / 2;
-      } else {
-        const dx = s.x - h.x, dz = s.z - h.z;
-        hit = Math.sqrt(dx * dx + dz * dz) < h.r + 2;
-      }
-      if(hit){
-        h.hitShips.add(s);
-        damageShip(s, h.kind === 'wave' ? 12 : 6, h.x, h.z, h.kind !== 'wave');
-        if(h.kind === 'wave'){
-          // the crest shoves the ship sideways and heels it over
-          const dirx = h.dirx || 0, dirz = h.dirz === undefined ? 1 : h.dirz;
-          s.shoveX = dirx * 12; s.shoveZ = dirz * 12;
-          s.heelKick = (Math.random() < 0.5 ? -1 : 1) * 0.3;
-          // v10.8: the crest hit reads on the water — a white-water spray
-          // column where the wave struck the hull
-          burst(s.x, s.y + 1, s.z, 14, [0.95, 0.98, 1], 4, 3);
-          for(let i = 0; i < 6; i++){
-            spawnSprite(s.x + (Math.random() - 0.5) * 6, s.y + 1.5, s.z + (Math.random() - 0.5) * 6,
-              1.2, 4, 4, 0.9, 0xffffff, 0.6);
-          }
-        } else {
-          // v10.8: debris strike — a small splash where it hit
-          burst(s.x, s.y + 0.5, s.z, 8, [0.9, 0.95, 1], 3, 2);
-        }
-      }
-    });
-  });
 
   // lightning, clouds
   clouds.forEach(c => {
