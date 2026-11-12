@@ -166,7 +166,7 @@
     </div>
     <button class="ghostBtn" id="camBtnStart">🎥 Camera</button><br>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v10.9</div>
+    <div class="ver">v10.10</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -2515,39 +2515,25 @@ function update(dt){
       // five circles per hull, a shallow bow graze can be found first while
       // a deeper mid-hull overlap exists in the same frame — and the graze
       // gate would then throw a real impact out as a brush-past.
+      // v10.10: no cushion — hulls that overlap are colliding, full stop.
+      // The v10.8 soft-repulsion fender zone (a gentle push before contact)
+      // is removed: it made collisions rarer by padding them, and
+      // collisions are meant to be honest, not forgiving. Prevention
+      // belongs to the avoidance intelligence (whiskers, keep-out, throttle
+      // cut), not to the impact itself.
       let hit = null;
-      let nearGap = Infinity, nearNx = 0, nearNz = 0;
-      for(let ia = 0; ia < cA.length; ia++){
-        const ca = cA[ia];
-        for(let ib = 0; ib < cB.length; ib++){
-          const cb = cB[ib];
+      for(const ca of cA){
+        for(const cb of cB){
           const dx = cb.x - ca.x, dz = cb.z - ca.z;
           const d = Math.hypot(dx, dz);
           if(d < ca.r + cb.r && d > 0.01){
             const depth = (ca.r + cb.r) - d;
             if(!hit || depth > hit.depth){
               hit = {x: (ca.x + cb.x) / 2, z: (ca.z + cb.z) / 2,
-                     nx: dx / d, nz: dz / d, depth,
-                     end: ia === 0 || ia === 4 || ib === 0 || ib === 4};
+                     nx: dx / d, nz: dz / d, depth};
             }
-          } else if(d > 0.01){
-            const gap = d - (ca.r + cb.r);
-            if(gap < nearGap){ nearGap = gap; nearNx = dx / d; nearNz = dz / d; }
           }
         }
-      }
-      // v10.8: soft repulsion — hulls that are close but not touching get a
-      // gentle push apart (no damage, no banner), so most contacts never
-      // happen. This is the fender zone: ships ease away before steel meets.
-      if(!hit && nearGap < 2.5){
-        const ma0 = shipMass(a), mb0 = shipMass(b);
-        const invSum0 = 1 / ma0 + 1 / mb0;
-        const pushV = (2.5 - nearGap) * 0.6;
-        a.motion.vx -= nearNx * pushV * (1 / ma0) / invSum0;
-        a.motion.vz -= nearNz * pushV * (1 / ma0) / invSum0;
-        b.motion.vx += nearNx * pushV * (1 / mb0) / invSum0;
-        b.motion.vz += nearNz * pushV * (1 / mb0) / invSum0;
-        continue;
       }
       if(!hit) continue;
       // relative velocity at the contact point, split into normal (crushing)
@@ -2602,11 +2588,29 @@ function update(dt){
         a.heelKick = (a.heelKick || 0) + Math.sign(leverA || 1) * 0.12 * Math.min(1, closing / 8);
         b.heelKick = (b.heelKick || 0) + Math.sign(leverB || 1) * 0.12 * Math.min(1, closing / 8);
       }
-      // one damaging impact per pair every 1.5 s — the shove above keeps
-      // the hulls from grinding, the cooldown keeps the damage from
-      // repeating. v10.5b: the cooldown starts only when damage is actually
-      // dealt — a graze or gentle nudge used to start the window and then a
-      // real hit landing inside it was silently skipped.
+      // v10.10: a sustained scrape grinds the hull. While the hulls stay
+      // overlapped and sliding past each other, both take continuous damage
+      // scaled by the sliding speed, split by inverse mass like the impact
+      // (lighter ship takes more). This runs outside the impact cooldown
+      // below: a long grind is a real collision, not one hit. Gated on real
+      // overlap (depth >= 0.5) and real sliding (|vt| > 2), so hulls merely
+      // resting together in the swell do not grind.
+      if(hit.depth >= 0.5 && Math.abs(vt) > 2){
+        const scrapeDPS = Math.min(8, Math.abs(vt) * 0.8);
+        a.hp -= scrapeDPS * dt * (mb / (ma + mb)) * 2;
+        b.hp -= scrapeDPS * dt * (ma / (ma + mb)) * 2;
+        if(Math.random() < 0.5){
+          spawnParticle(hit.x, 2, hit.z, (Math.random() - 0.5) * 2, 2 + Math.random() * 2, (Math.random() - 0.5) * 2,
+            0.4, 1, 0.75, 0.2, -0.5);
+        }
+        if(a.hp <= 0 && a.alive) sinkShip(a, pickSinkMode(a, 5));
+        if(b.hp <= 0 && b.alive) sinkShip(b, pickSinkMode(b, 5));
+      }
+      // one damaging impact per pair every 1.5 s — the cooldown keeps the
+      // impact damage from repeating (the sustained scrape above is
+      // separate and continuous). v10.5b: the cooldown starts only when
+      // damage is actually dealt — a graze or gentle nudge used to start
+      // the window and then a real hit landing inside it was silently skipped.
       const key = i + ':' + j;
       if(state.collCool[key] && state.t - state.collCool[key] < 1.5) continue;
       // v10.3: gentle contact deals no damage — two hulls drifting together
@@ -2625,10 +2629,11 @@ function update(dt){
       // three solid hits sink a destroyer, three or four a battleship.
       const redMass = (ma * mb) / (ma + mb);
       const ke = 0.5 * redMass * closing * closing;
-      // v10.8: a bow/stern (end-circle) hit glances off at 0.6x damage —
-      // the tapered ends deflect rather than crush — while a mid-hull hit
-      // takes the full blow.
-      const dmgBase = (12 + ke * 0.75) * (hit.end ? 0.6 : 1); // a touch is 12, a hard hit ~55
+      // v10.10: full kinetic-energy damage, no glance discount — the
+      // v10.8 0.6x end-circle factor is removed. A hit is a hit: KE and
+      // masses decide it, and the normal component already makes a parallel
+      // scrape cheaper than a square-on ram.
+      const dmgBase = 12 + ke * 0.75; // a touch is 12, a hard hit ~55
       const dmgA = Math.max(1, Math.round(dmgBase * (mb / (ma + mb)) * 2));
       const dmgB = Math.max(1, Math.round(dmgBase * (ma / (ma + mb)) * 2));
       // v10.8: the explosion scales with the hit — a hard ram throws a
