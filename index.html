@@ -166,7 +166,7 @@
     </div>
     <button class="ghostBtn" id="camBtnStart">🎥 Camera</button><br>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v10.10</div>
+    <div class="ver">v10.11</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -2045,8 +2045,12 @@ function updateHud(){
 }
 
 // ---------- damage / flooding / sinking ----------
-function pickSinkMode(ship, dmg){
-  if(dmg >= 25) return 'breakup'; // magazine detonation — she breaks in two
+// v10.11: a ship breaks in two only from a heavy hit ON the Forward
+// Magazine (or a catastrophic 40+ hit). A hard sideswipe that deals 25
+// damage used to break a destroyer in two at rest — that is not how steel
+// fails. The other modes follow the flooding state.
+function pickSinkMode(ship, dmg, magHit = false){
+  if((dmg >= 25 && magHit) || dmg >= 40) return 'breakup'; // magazine detonation — she breaks in two
   if(Math.abs(ship.floodSide) > 0.6) return 'capsize'; // one-sided flooding rolls her over
   if(ship.floodEnd > 0.5) return 'bow'; // bow compartments flooded — down by the bow
   if(ship.floodEnd < -0.5) return 'stern'; // stern flooded — down by the stern
@@ -2148,6 +2152,7 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
   // rupture the nearest watertight compartment (v10.1): the hit's position
   // along the hull picks the compartment — Forward Magazine at the bow,
   // Bow, Mid-Port/Starboard, Engine Room, Stern at the stern
+  let magHit = false; // v10.11: whether the hit landed in the Forward Magazine
   if(belowWaterline){
     const along = (hx - ship.x) * Math.sin(ship.heading) - (hz - ship.z) * Math.cos(ship.heading);
     const across = (hx - ship.x) * Math.cos(ship.heading) + (hz - ship.z) * Math.sin(ship.heading);
@@ -2159,6 +2164,7 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
     else if(an > -0.25) ci = across >= 0 ? 3 : 2; // Mid-Starboard / Mid-Port
     else if(an > -0.6) ci = 4; // Engine Room
     else ci = 5; // Stern
+    if(ci === 0) magHit = true;
     const comp = ship.motion.compartments[ci];
     if(comp) comp.flood = Math.min(1, comp.flood + 0.3 + dmg * 0.01);
   }
@@ -2187,7 +2193,7 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
       (Math.random() - 0.5) * 1.5, 2 + Math.random() * 2, state.speed * 0.25,
       0.7, 1, 0.6 + Math.random() * 0.3, 0.15, -0.5);
   }
-  if(ship.hp <= 0) sinkShip(ship, pickSinkMode(ship, dmg));
+  if(ship.hp <= 0) sinkShip(ship, pickSinkMode(ship, dmg, magHit));
 }
 
 // ---------- buoyancy sampling (4-6 points per hull; long hulls average out swell) ----------
@@ -2441,18 +2447,26 @@ function update(dt){
     let dh = desHeading - m.heading;
     dh = ((dh + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
     let rudderIn = Math.max(-1, Math.min(1, dh * 1.5));
+    // v10.11: avoidance overhaul. The v10.7/v10.10 checks showed escorts
+    // angled ~45 deg at spawn and motoring into each other at rest: every
+    // escort's whiskers constantly tripped on its neighbours' avoid circles
+    // (radius len * 0.75 — 36 for a battleship, 43 for the carrier — far
+    // wider than the ships, in a formation whose slots are 30-45 apart),
+    // so the bias steered them from the first second and their thrust ran
+    // along the wrong headings. Two fixes: (1) an escort ON its slot
+    // (distToSlot < 12) skips whisker avoidance entirely — the slots are
+    // designed safe, the keep-out box still protects the carrier, and
+    // collisions are the backstop; (2) en route, an obstacle's circle is
+    // sized by its BEAM, not its length (beam * 1.5, floored at len * 0.25,
+    // + 4): carrier 23, battleship 17, destroyer 13.
     const obstacles = [];
-    // v10.9: an escort in formation does not whisker-avoid the flagship —
-    // its slot sits deliberately inside the carrier's avoid circle, so the
-    // bias used to slowly rotate resting escorts away from north (the
-    // scattered headings the v10.7 check saw at spawn). The flagship
-    // keep-out box still protects the carrier, whiskers still avoid the
-    // other escorts, and en-route escorts (far from slot) avoid everyone.
-    fleet.forEach(o => { if(o !== s && o.alive && !(distToSlot < 12 && o === flag)) obstacles.push({ x: o.x, z: o.z, r: o.group.userData.len * 0.75 }); });
+    if(distToSlot >= 12){
+      fleet.forEach(o => { if(o !== s && o.alive) obstacles.push({ x: o.x, z: o.z, r: Math.max(o.group.userData.wid * 1.5, o.group.userData.len * 0.25) + 4 }); });
+    }
     // v10.8: escorts see each other sooner — whisker lookahead 26 -> 34 —
     // and a blocked centre whisker cuts the throttle, so an escort slows to
     // a crawl instead of motoring into the ship ahead of it.
-    const av = m.avoid(obstacles, 34);
+    const av = distToSlot < 12 ? { bias: 0, blocked: false } : m.avoid(obstacles, 34);
     rudderIn = Math.max(-1, Math.min(1, rudderIn + av.bias));
     // v10.8: holding station replaces the v10.4 dead-zone. The old 4-unit
     // dead-zone let resting escorts wander off on the current and swell
@@ -2603,6 +2617,16 @@ function update(dt){
           spawnParticle(hit.x, 2, hit.z, (Math.random() - 0.5) * 2, 2 + Math.random() * 2, (Math.random() - 0.5) * 2,
             0.4, 1, 0.75, 0.2, -0.5);
         }
+        // v10.11: a scrape is otherwise silent — the integrity bar falls
+        // with no banner, and the v10.10 check read that as damage appearing
+        // from nowhere. One toast per pair, at most every 5 s, so the player
+        // can see which two hulls are grinding.
+        const skey = i + ':' + j;
+        state.scrapeCool = state.scrapeCool || {};
+        if(!state.scrapeCool[skey] || state.t - state.scrapeCool[skey] > 5){
+          state.scrapeCool[skey] = state.t;
+          toast('⚠ HULLS SCRAPING', a.label + ' and ' + b.label + ' grinding together!');
+        }
         if(a.hp <= 0 && a.alive) sinkShip(a, pickSinkMode(a, 5));
         if(b.hp <= 0 && b.alive) sinkShip(b, pickSinkMode(b, 5));
       }
@@ -2674,8 +2698,9 @@ function update(dt){
       }
       // fire: a hit can start one; it burns the ship down, spawns flame and
       // smoke, and spreads while it burns. Flooding puts it out, damage
-      // control slowly beats it down. A big fire in the forward magazine is
-      // what breaks a ship in two.
+      // control slowly beats it down. A fire that burns a ship down sinks
+      // her by flooding and list, not by breaking her in two — only a heavy
+      // hit on the Forward Magazine does that (v10.11).
       if(s.fire > 0){
         s.hp -= s.fire * dt * 1.5;
         s.fireT = (s.fireT || 0) + dt;
