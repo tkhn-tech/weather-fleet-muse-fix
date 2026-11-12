@@ -161,7 +161,7 @@
     </div>
     <button class="ghostBtn" id="camBtnStart">🎥 Camera</button><br>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v10.5b</div>
+    <div class="ver">v10.6</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -361,10 +361,10 @@ const numTex125 = hullNumTex('125');
 // One sea-state parameter drives everything: wind -> wave height/length/period,
 // fog, sky, foam and camera shake all follow it (War Thunder preset style).
 const STAGES = [
-  {name:'Calm Seas', desc:'The fleet sails out. Hold formation.', speed:8,  amp:0.30, hazard:0.25, wind:5,  sky:0x9fc3d8, sea:0x1a5a78, fogFar:380, sunI:1.15},
-  {name:'Rough Seas', desc:'Swell building. Watch the crests.',      speed:10, amp:0.55, hazard:0.40, wind:10, sky:0x7e9db4, sea:0x174a64, fogFar:300, sunI:1.0},
-  {name:'Storm', desc:'Lightning, rogue waves.',                     speed:12, amp:0.90, hazard:0.60, wind:15, sky:0x5a7286, sea:0x12394e, fogFar:220, sunI:0.85},
-  {name:'Hurricane', desc:'Everything the sea has. Hold on.',        speed:14, amp:1.30, hazard:0.85, wind:20, sky:0x39434e, sea:0x0d2839, fogFar:150, sunI:0.6},
+  {name:'Calm Seas', desc:'The fleet sails out. Hold formation.', speed:8,  amp:0.25, hazard:0.25, wind:5,  sky:0x9fc3d8, sea:0x1a5a78, fogFar:380, sunI:1.15},
+  {name:'Rough Seas', desc:'Swell building. Watch the crests.',      speed:10, amp:0.50, hazard:0.40, wind:10, sky:0x7e9db4, sea:0x174a64, fogFar:300, sunI:1.0},
+  {name:'Storm', desc:'Lightning, rogue waves.',                     speed:12, amp:0.75, hazard:0.60, wind:15, sky:0x5a7286, sea:0x12394e, fogFar:220, sunI:0.85},
+  {name:'Hurricane', desc:'Everything the sea has. Hold on.',        speed:14, amp:1.00, hazard:0.85, wind:20, sky:0x39434e, sea:0x0d2839, fogFar:150, sunI:0.6},
 ];
 const STAGE_AT = [0, 400, 1100, 2100];
 
@@ -398,8 +398,11 @@ $('bestDist').textContent = best.dist + ' nm';
 $('bestScore').textContent = best.score;
 
 // ---------- Gerstner waves (shared by ocean mesh + CPU buoyancy) ----------
-// 1 world unit ~ 16.6 m (carrier 22 units = 333 m). g in game units = 9.81 / 16.6.
-const G_GAME = 0.59;
+// v10.6: 1 world unit ≈ 5.74 m (carrier 58 units = 333 m), so g in game
+// units = 9.81 / 5.74 ≈ 1.71. The old 0.59 (from when the carrier was 22
+// units) made every wave oscillate ~1.7x too slowly for its length.
+const GAME_M = 5.74;
+const G_GAME = 9.81 / GAME_M;
 // ---------- WarshipPhysicsSystem constants (v10.1, tunable) ----------
 // One place for the physics the wave-riding, collisions and sinking share:
 // the same 6-DoF rigid-body state, the same hull nodes, the same impulses.
@@ -412,30 +415,124 @@ const PHYSICS = {
   waveDrag: 0.25,          // speed loss when the bow buries in a crest
   despawnDepth: 20,        // a wreck despawns 20 units below the surface
   orbitalScale: 1.0,       // how much of the wave orbital motion pushes the hull
-  slopeSlide: 0.5,         // how hard the hull slides down a wave slope
+  slopeSlide: 0.17,        // how hard the hull slides down a wave slope (v10.6: rescaled so G*slopeSlide stays ~0.29 now that G_GAME is the true 1.71)
 };
-const WAVES = [
-  {lam: 180, amp: 0.35, q: 0.25, dx: 0.20,  dz: 0.98,  ph: 2.0},
-  {lam: 110, amp: 0.80, q: 0.30, dx: 0.30,  dz: 0.95,  ph: 4.4},
-  {lam: 55,  amp: 1.00, q: 0.35, dx: 0.12,  dz: 0.99,  ph: 0.0},
-  {lam: 40,  amp: 0.25, q: 0.45, dx: -0.35, dz: 0.94,  ph: 0.8},
-  {lam: 28,  amp: 0.55, q: 0.65, dx: -0.25, dz: 0.97,  ph: 1.7},
-  {lam: 14,  amp: 0.30, q: 0.75, dx: 0.45,  dz: 0.89,  ph: 3.1},
-  {lam: 9,   amp: 0.12, q: 0.75, dx: 0.55,  dz: 0.83,  ph: 4.0},
-  {lam: 7,   amp: 0.15, q: 0.85, dx: -0.60, dz: 0.80,  ph: 5.2},
-  {lam: 3.5, amp: 0.07, q: 0.90, dx: 0.80,  dz: 0.60,  ph: 2.3},
-  {lam: 5,   amp: 0.10, q: 0.85, dx: -0.45, dz: 0.89,  ph: 1.2},
-  {lam: 2.2, amp: 0.05, q: 0.90, dx: 0.70,  dz: 0.71,  ph: 3.7},
-];
-WAVES.forEach(w => { w.k = 2 * Math.PI / w.lam; w.w = Math.sqrt(G_GAME * w.k); w.bdx = w.dx; w.bdz = w.dz; });
-const WAVE_AMP_SUM = WAVES.reduce((a, w) => a + w.amp, 0);
-let ampCur = STAGES[settings.startStage].amp * settings.wave;
+const WAVES = [];
+let WAVE_AMP_SUM = 0;
+let HS_CUR = 0.25;   // significant wave height in game units, current stage
+let STOKES_U = 0;    // Stokes drift at the surface, game units/s, down-wave
+let seaFocus = null; // dispersive-focusing rogue event {x0, z0, t0}
+// v10.6: the wave field is sampled from a real JONSWAP spectrum (Hasselmann
+// et al. 1973, gamma = 3.3, fetch 300 km — the South China Sea gives fetches
+// of hundreds of km, and this sea is still building, not fully developed).
+// 14 wind-sea components by equal-variance quantiles of the spectrum, every
+// component the same amplitude a_i = sqrt(2*m0/N) so the sampled sea has
+// exactly the right Hs by construction; directions spread cos^2s (s = 10)
+// about the wind; omega from the deep-water dispersion relation
+// omega = sqrt(g*k). Total variance comes from the JONSWAP fetch law
+// (m0 = 1.67e-7 * U^2 * F / g), not from integrating the spectrum shape:
+// the published alpha fetch law and the Hs fetch law disagree by ~1.5x, and
+// the Hs law is the measured one. Plus 4 long swell components from a
+// different direction (NE-monsoon swell off the South China Sea) — real seas
+// are bimodal, and crossing seas are a genuine rogue-wave mechanism.
+// Verified in Node against the report's stage table: Tp 7.13/8.99/10.29/11.32 s,
+// Hs 0.25/0.50/0.75/1.00 units, a_i 0.024/0.047/0.071/0.094 units.
+const JONSWAP_FETCH = 300000, JONSWAP_GAMMA = 3.3, SPEC_N = 14;
+function jonswapS(om, U){
+  const wp = 22 * Math.cbrt(9.81*9.81/(U*JONSWAP_FETCH));
+  const alpha = 0.076 * Math.pow(U*U/(JONSWAP_FETCH*9.81), 0.22);
+  const sig = om <= wp ? 0.07 : 0.09;
+  const r = Math.exp(-((om-wp)*(om-wp))/(2*sig*sig*wp*wp));
+  return alpha*9.81*9.81/Math.pow(om,5) * Math.exp(-1.25*Math.pow(wp/om,4)) * Math.pow(JONSWAP_GAMMA, r);
+}
+function buildSpectrum(U){
+  const wp = 22 * Math.cbrt(9.81*9.81/(U*JONSWAP_FETCH));
+  const lo = 0.3*wp, hi = 4*wp, M = 240, dw = (hi-lo)/M;
+  const cdf = [0];
+  let m0int = 0;
+  for(let s = 0; s < M; s++){
+    m0int += 0.5*(jonswapS(lo+s*dw, U)+jonswapS(lo+(s+1)*dw, U))*dw;
+    cdf.push(m0int);
+  }
+  const m0 = 1.67e-7*U*U*JONSWAP_FETCH/9.81; // fetch-law variance (measured Hs)
+  const aM = Math.sqrt(2*m0/SPEC_N); // metres, same for every component
+  const frac = x => x - Math.floor(x);
+  const comps = [];
+  let stokes = 0; // m/s, summed over the wind-sea components
+  for(let i = 0; i < SPEC_N; i++){
+    const target = (i+0.5)/SPEC_N * m0int;
+    let s = 0; while(s < M && cdf[s+1] < target) s++;
+    const f = (target - cdf[s]) / Math.max(1e-12, cdf[s+1]-cdf[s]);
+    const om = lo + (s+f)*dw;
+    const kM = om*om/9.81, lamM = 2*Math.PI/kM;
+    const th = 0.7 * Math.sin(2*Math.PI*i*0.618034); // +/-40 deg spread
+    const lamU = lamM / GAME_M;
+    stokes += Math.pow(aM*kM, 2) * (om/kM);
+    comps.push({lam: lamU, amp: aM/GAME_M, q: 0.7,
+      dx: Math.sin(th), dz: Math.cos(th),
+      ph: 2*Math.PI*frac(Math.sin(i*127.1+311.7)*43758.5453),
+      k: 2*Math.PI/lamU, w: 0, bdx: 0, bdz: 0});
+  }
+  // swell: long, low, nearly unidirectional, ~55 deg off the wind
+  const HsM = 4*Math.sqrt(m0);
+  const swellLams = [350, 280, 220, 160]; // metres
+  for(let j = 0; j < 4; j++){
+    const th = 0.96 + 0.09*Math.sin(2*Math.PI*j*0.618034);
+    const lamU = swellLams[j] / GAME_M;
+    comps.push({lam: lamU, amp: 0.1*HsM/GAME_M, q: 0.4,
+      dx: Math.sin(th), dz: Math.cos(th),
+      ph: 2*Math.PI*frac(Math.sin(j*57.3+91.7)*24634.6345),
+      k: 2*Math.PI/lamU, w: 0, bdx: 0, bdz: 0});
+  }
+  comps.forEach(w => { w.w = Math.sqrt(G_GAME * w.k); w.bdx = w.dx; w.bdz = w.dz; });
+  WAVES.length = 0;
+  comps.forEach(c => WAVES.push(c));
+  WAVE_AMP_SUM = comps.reduce((a, w) => a + w.amp, 0);
+  HS_CUR = HsM / GAME_M;
+  STOKES_U = stokes / GAME_M;
+}
+buildSpectrum(STAGES[settings.startStage].wind);
+// v10.6: Singapore Strait tide — up to ~3 kn in the real strait, reversing
+// roughly E-W with the tide. One full cycle per 12 minutes of game time so
+// the player actually feels it reverse; amplitude 1.0 m/s.
+function tideAt(t){
+  return {x: Math.sin((t / 720) * Math.PI * 2) * (1.0 / GAME_M), z: 0};
+}
+// v10.6: rogue schedule — Hurricane every ~2.5-4 min, Storm ~5-8 min,
+// Rough rare, Calm never. Sailing against the tide steepens the sea, so the
+// interval shortens up to 4x when the tide opposes the waves.
+function armRogueTimer(){
+  const base = [Infinity, 600 + Math.random()*300, 300 + Math.random()*180, 150 + Math.random()*90][state.stage];
+  if(!isFinite(base)){ state.rogueTimer = -1; return; }
+  const wx = Math.sin(state.windDir), wz = -Math.cos(state.windDir);
+  const tx = tideAt(state.t).x >= 0 ? 1 : -1;
+  const opp = Math.max(0, -(wx * tx));
+  state.rogueTimer = base / (1 + 3 * opp);
+}
+// v10.6: dispersive focusing — a rogue wave built from the spectrum itself.
+// When seaFocus is armed, the six longest components re-phase so their
+// crests coincide at (x0, z0) at time t0, ramped in over ~18 s and out after
+// the crest passes. Peak crest ≈ sum of the aligned components.
+function focusRamp(t){
+  if(!seaFocus) return 0;
+  const t0 = seaFocus.t0;
+  if(t < t0 - 20 || t > t0 + 10) return 0;
+  if(t < t0 - 2){ const u = (t - (t0 - 20)) / 18; return u*u*(3-2*u); }
+  if(t <= t0) return 1;
+  const u = 1 - (t - t0) / 10; return u*u*(3-2*u);
+}
+function focusPhase(w, i, t){
+  const r = focusRamp(t);
+  if(!r || i >= 6) return 0;
+  return r * (Math.PI/2 - w.ph - w.k*(w.dx*seaFocus.x0 + w.dz*seaFocus.z0) + w.w*seaFocus.t0);
+}
+let ampCur = settings.wave;
 let ampTarget = ampCur;
 function gerstner(x, z, t){
   let y = 0, ox = 0, oz = 0;
   for(let i = 0; i < WAVES.length; i++){
     const w = WAVES[i];
-    const th = w.k * (w.dx * x + w.dz * z) - w.w * t + w.ph;
+    const th = w.k * (w.dx * x + w.dz * z) - w.w * t + w.ph + focusPhase(w, i, t);
     const A = w.amp * ampCur;
     const Q = Math.min(w.q, 1 / Math.max(0.001, w.k * A));
     ox += Q * A * w.dx * Math.cos(th);
@@ -472,7 +569,7 @@ function getOceanDataAt(x, z, t){
   let ovx = 0, ovy = 0, ovz = 0;
   for(let i = 0; i < WAVES.length; i++){
     const w = WAVES[i];
-    const th = w.k * (w.dx * x + w.dz * z) - w.w * t + w.ph;
+    const th = w.k * (w.dx * x + w.dz * z) - w.w * t + w.ph + focusPhase(w, i, t);
     const A = w.amp * ampCur;
     const Q = Math.min(w.q, 1 / Math.max(0.001, w.k * A));
     const sn = Math.sin(th), cs = Math.cos(th);
@@ -1536,7 +1633,7 @@ const state = {
   joyX: 0, joyY: 0, joyActive: false,
   hazards: [], pickups: [], spawnT: 0, pickupT: 0, boltT: 0, flashT: 0,
   speedLoss: 1, kickT: 99, prevRudder: 0,
-  rogueDone: false, rogueTimer: -1, rogueWarned: false,
+  rogueTimer: -1,
   camZoom: settings.camZoom ?? 1, freeLook: 0, freeLookActive: false,
   camPanX: settings.camPanX ?? 0, camPanY: settings.camPanY ?? 0,
   capT: 0,
@@ -1575,7 +1672,11 @@ function applyStage(i){
   sun.intensity = st.sunI;
   oceanUniforms.uSky.value.setHex(st.sky);
   oceanUniforms.uSunI.value = st.sunI;
-  ampTarget = st.amp * settings.wave;
+  // v10.6: the spectrum is rebuilt from the stage wind — wavelengths,
+  // heights and periods all follow JONSWAP. ampCur only carries the
+  // start-screen wave setting; the stage Hs lives in the components.
+  buildSpectrum(st.wind);
+  ampTarget = settings.wave;
   sunGlow.material.opacity = i === 0 ? 0.8 : i === 1 ? 0.5 : i === 2 ? 0.2 : 0.08;
 }
 
@@ -1738,7 +1839,7 @@ function spawnHazard(forceKind){
   const st = STAGES[state.stage];
   let kind;
   const r = Math.random();
-  // rogue crests are rarer and bigger in the storm; the hurricane gets one scripted monster
+  // rogue crests are rarer and bigger in the storm; bumpA is 0.8 x Hs (v10.6: the old fixed 2.4-3.2 was 2-4x the significant wave height)
   if(forceKind) kind = forceKind;
   else if(state.stage >= 2 && r < 0.45) kind = 'wave';
   else kind = 'debris';
@@ -1751,7 +1852,7 @@ function spawnHazard(forceKind){
     const span = (state.stage >= 3 ? 65 : 55) + Math.random() * 25;
     const wp = aheadOfFleet(170 + Math.random() * 60, 50);
     h = {kind, group: g, x: wp.x, z: wp.z, span, r: span / 2, hitShips: new Set(),
-         bumpA: state.stage >= 3 ? 3.2 : 2.4, ph: Math.random() * 6.28, dirx: wp.hx, dirz: wp.hz, born: state.t, foamT: 0};
+         bumpA: 0.8 * HS_CUR, ph: Math.random() * 6.28, dirx: wp.hx, dirz: wp.hz, born: state.t, foamT: 0};
     // telegraph it: a rogue crest with no warning reads as nothing at all
     // (v8.1: waves spawned every few seconds in Storm/Hurricane but were
     // never noticed). Throttled so a storm does not spam the toast.
@@ -1802,11 +1903,8 @@ function reset(){
   state.spawnT = 0; state.pickupT = 0; state.boltT = 0; state.flashT = 0;
   state.rudder = 0; state.dragSteer = false; state.speedLoss = 1; state.kickT = 99; state.prevRudder = 0;
   state.camHeading = 0; state.camBank = 0; state.headingRate = 0; state.camZfSm = 0;
-  state.rogueDone = false; state.rogueTimer = -1; state.rogueWarned = false;
-  // a run that STARTS in the hurricane never crosses the stage boundary, so
-  // the scripted climax (armed on entering stage 3) would never fire — arm
-  // it here too (v8.1: no rogue wave at all in a Hurricane-start run)
-  if(state.stage === 3){ state.rogueTimer = 20; state.rogueWarned = false; }
+  state.rogueTimer = -1;
+  armRogueTimer(); // v10.6: recurring rogue schedule, armed for the start stage
   clearWorld();
   fleet.forEach(s => {
     s.hp = s.maxHp; s.alive = true; s.sinkT = 0;
@@ -1827,7 +1925,7 @@ function reset(){
     s.group.rotation.set(0, 0, 0);
     s.foam.visible = true;
   });
-  ampCur = STAGES[state.stage].amp * settings.wave;
+  ampCur = settings.wave;
   applyStage(state.stage);
   placeBeacon();
   updateHud();
@@ -2123,9 +2221,17 @@ function update(dt){
   // wind + current: the sea pushes the fleet sideways, so heading and
   // course-over-ground differ — steer for the COG, not just the compass
   state.windDir = Math.PI + 0.6 * Math.sin(state.t * 0.012) + 0.4 * Math.sin(state.t * 0.005 + 1.7);
-  const curSpeed = st.wind * 0.12;
-  state.curX = Math.sin(state.windDir) * curSpeed;
-  state.curZ = -Math.cos(state.windDir) * curSpeed;
+  // v10.6: three-term real current (research: the old wind x 0.12 was ~5x
+  // too strong, and at 1.3 deg N there is effectively no Ekman spiral, so
+  // the wind drift runs essentially downwind). 1) wind drift 2.5% of wind
+  // speed, downwind; 2) Stokes drift from the spectrum, down-wave; 3) a
+  // reversing Singapore Strait tide, 1.0 m/s E-W, plus a steady 0.2 m/s
+  // NE-monsoon bias. The tide can exceed the wind drift — that is realistic
+  // here, and sailing against it steepens the sea.
+  const tide = tideAt(state.t);
+  const drift = 0.025 * st.wind / GAME_M + STOKES_U;
+  state.curX = Math.sin(state.windDir) * drift + tide.x - 0.025;
+  state.curZ = -Math.cos(state.windDir) * drift + tide.z + 0.025;
   // the wave field follows the wind, so beam/following/quartering seas change
   // as the wind shifts and the fleet turns
   const wa = state.windDir - Math.PI, wc = Math.cos(wa), ws = Math.sin(wa);
@@ -2140,28 +2246,26 @@ function update(dt){
     applyStage(ns);
     showStage(ns);
     if(ns >= 2) thunder();
-    if(ns === 3 && !state.rogueDone){
-      state.rogueTimer = 20;
-      state.rogueWarned = false;
-    }
   }
-  // one telegraphed rogue wave as the hurricane climax (~2x Hs)
-  if(state.stage === 3 && !state.rogueDone && state.rogueTimer > 0){
+  // v10.6: rogue waves by dispersive focusing — recurring, not a one-off
+  // scripted climax. When the timer fires, the six longest components
+  // re-phase to crest together 150 units ahead in 20 s, and the bump hazard
+  // rides that focus (bumpA = 0.8 x Hs, not the old fixed 3.4). The timer
+  // re-arms per stage; sailing against the tide shortens the interval.
+  if(state.rogueTimer > 0){
     state.rogueTimer -= dt;
-    if(state.rogueTimer < 10 && !state.rogueWarned){
-      state.rogueWarned = true;
-      toast('⚠️ ROGUE WAVE', 'A rogue wave is building ahead — brace for it');
-      thunder();
-    }
     if(state.rogueTimer <= 0){
-      state.rogueDone = true;
+      const p = aheadOfFleet(150, 30);
+      seaFocus = {x0: p.x, z0: p.z, t0: state.t + 20};
       spawnHazard('wave');
       const h = state.hazards[state.hazards.length - 1];
       if(h){
-        const p = aheadOfFleet(150, 30);
-        h.span = 75; h.bumpA = 3.4; h.x = p.x; h.z = p.z; h.dirx = p.hx; h.dirz = p.hz;
+        h.span = 50; h.bumpA = 0.8 * HS_CUR; h.x = p.x; h.z = p.z; h.dirx = p.hx; h.dirz = p.hz;
         h.group.position.set(h.x, 0, h.z);
       }
+      toast('⚠️ ROGUE WAVE', 'A rogue wave is building ahead — brace for it');
+      thunder();
+      armRogueTimer();
     }
   }
 
@@ -2723,13 +2827,15 @@ function update(dt){
   });
 
   // crest foam: whitecaps where the sea is actually steepening, drifting downwind
-  const foamChance = 0.25 + state.stage * 0.35;
+  // v10.6: Monahan's law — foam chance scales with wind^3.41, and foam only
+  // sits on real crests (height above 0.6 x Hs). Calm: a rare fleck.
+  const foamChance = Math.min(0.9, 0.02 + 3.84e-6 * Math.pow(st.wind, 3.41) * 7);
   if(Math.random() < foamChance){
     const fx = flag.x + (Math.random() - 0.5) * 120;
     const fz = flag.z - 120 + Math.random() * 150;
-    if(waveHeight(fx, fz, state.t) > ampCur * 1.15){
+    if(waveHeight(fx, fz, state.t) > HS_CUR * 0.6){
       const f = spawnSprite(fx, waveHeight(fx, fz, state.t) + 0.1, fz, 5 + Math.random() * 3, 4 + Math.random() * 4, 2, 0.3, 0xffffff, 0.3);
-      f.vx = 0.4; f.vz = 1.0;
+      f.vx = Math.sin(state.windDir) * 0.8; f.vz = -Math.cos(state.windDir) * 0.8;
     }
   }
 
@@ -2840,16 +2946,21 @@ function update(dt){
     if(c.position.x - flag.x > 200) c.position.x -= 400;
     if(c.position.x - flag.x < -200) c.position.x += 400;
   });
-  // v10.4: whitecaps — in Storm/Hurricane, foam patches burst on the
-  // steepest crests near the fleet (the worse the weather, the more
-  // broken water, Cold Waters' sea-state feel)
+  // v10.6: whitecaps from Monahan's law (W = 3.84e-6 * U^3.41), not a timer:
+  // foam spawns where the sea is actually steep (local slope past ~0.28,
+  // near the Michell breaking limit) and high (upper half of the waves),
+  // with probability scaled so the covered fraction matches W — ~0.1% in
+  // Calm, ~1% Rough, ~4% Storm, ~10% Hurricane.
   state.capT += dt;
-  if(state.stage >= 2 && state.capT > 0.12){
+  if(state.capT > 0.12){
     state.capT = 0;
     const cx = flag.x + (Math.random() - 0.5) * 320;
     const cz = flag.z + (Math.random() - 0.5) * 320;
-    if(waveHeight(cx, cz, state.t) > ampCur * 1.05){
-      const cap = spawnSprite(cx, waveHeight(cx, cz, state.t) + 0.3, cz, 2.5, 6 + Math.random() * 6, 3, 0.5, 0xffffff, 0.35);
+    const d = getOceanDataAt(cx, cz, state.t);
+    const steep = Math.hypot(d.slopeX, d.slopeZ);
+    const wFrac = 3.84e-6 * Math.pow(st.wind, 3.41);
+    if(d.height > HS_CUR * 0.5 && steep > 0.28 && Math.random() < Math.min(0.95, 0.05 + wFrac / 0.105 * 0.9)){
+      const cap = spawnSprite(cx, d.height + 0.3, cz, 2.5, 6 + Math.random() * 6, 3, 0.5, 0xffffff, 0.35);
       cap.vy = 0.4;
     }
   }
