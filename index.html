@@ -113,10 +113,12 @@
     <div id="integrityBar"><div id="integrityFill"></div></div>
     <div id="stageBar"><div id="stageFill"></div></div></div>
   <div class="pill">⭐ <b id="score">0</b></div>
+  <div class="pill hidden" id="turnBadge">⟲ TURNING</div>
   <button class="iconBtn" id="soundBtn" title="Sound on/off">🔊</button>
   <button class="iconBtn" id="restartBtn" title="Restart round">↻</button>
   <button class="iconBtn" id="pauseBtn" title="Pause">⏸</button>
   <button class="iconBtn" id="camBtn" title="Camera controls">🎥</button>
+  <button class="iconBtn" id="uturnBtn" title="U-turn (or hold the stick back)">⟲</button>
 </div>
 
 <div id="camPanel" class="hidden">
@@ -135,7 +137,7 @@
 <div id="miniMap"><canvas id="miniCv" width="128" height="128"></canvas></div>
 
 <div id="stageToast"><h2 id="stageName">Calm Seas</h2><p id="stageDesc">The fleet sails out. Hold formation.</p></div>
-<div id="hint">Hold ↑ / push the stick up to sail — release and the fleet coasts to idle<br>← → steer · BOOST to push</div>
+<div id="hint">Hold ↑ / push the stick up to sail — release and the fleet coasts to idle<br>← → steer · BOOST to push · ⟲ button or hold the stick back to U-turn</div>
 <button id="boostBtn">BOOST</button>
 <div id="joy"><div id="joyKnob"></div></div>
 
@@ -161,7 +163,7 @@
     </div>
     <button class="ghostBtn" id="camBtnStart">🎥 Camera</button><br>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v10.6</div>
+    <div class="ver">v10.7</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -1758,6 +1760,7 @@ function resetCamera(){
 }
 function toggleCamPanel(){ $('camPanel').classList.toggle('hidden'); }
 $('camBtn').addEventListener('click', toggleCamPanel);
+$('uturnBtn').addEventListener('click', () => { if(state.running) startUturn(); });
 $('camBtnStart').addEventListener('click', toggleCamPanel);
 $('camResetBtn').addEventListener('click', resetCamera);
 $('camZoomSlider').addEventListener('input', e => { state.camZoom = 1 / parseFloat(e.target.value); saveCamera(); syncCameraUI(); });
@@ -1787,6 +1790,7 @@ joyEl.addEventListener('pointercancel', joyEnd);
 window.addEventListener('keydown', e => {
   state.keys[e.key] = true;
   if(e.key === 'Shift') state.boost = true;
+  if(e.key === 'u' || e.key === 'U'){ if(state.running) startUturn(); }
   if(e.key === 'p' || e.key === 'P') togglePause();
   if(e.key === 'r' || e.key === 'R') resetCamera();
   if(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '].includes(e.key)) e.preventDefault();
@@ -2174,6 +2178,18 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
 
 // ---------- buoyancy sampling (4-6 points per hull; long hulls average out swell) ----------
 // ---------- update ----------
+// v10.7: one shared U-turn latch — the stick's rising edge, the stick hold,
+// the HUD button and the 'u' key all go through here, so the turn no longer
+// depends on a single fragile input path. One turn per hold: pullUsed is set
+// on latch and cleared only when the stick is released.
+function startUturn(){
+  if(state.uturnActive || state.pullUsed) return;
+  const f0 = flagship();
+  const turnSign = (state.joyActive && state.joyX < -0.08) || state.keys['ArrowLeft'] || state.keys['a'] ? -1 : 1;
+  state.uturnTarget = (f0 ? f0.heading : 0) + turnSign * Math.PI;
+  state.uturnActive = true;
+  state.pullUsed = true;
+}
 function update(dt){
   const st = STAGES[state.stage];
   state.t += dt;
@@ -2184,11 +2200,17 @@ function update(dt){
   // slide backwards. There is no reverse gear any more: release the throttle
   // to coast to a stop.
   const pullBack = (state.joyActive && state.joyY > 0.3) || state.keys['ArrowDown'] || state.keys['s'];
-  if(pullBack && !state.prevPullBack && !state.uturnActive){
-    const f0 = flagship();
-    const turnSign = (state.joyActive && state.joyX < -0.08) || state.keys['ArrowLeft'] || state.keys['a'] ? -1 : 1;
-    state.uturnTarget = (f0 ? f0.heading : 0) + turnSign * Math.PI;
-    state.uturnActive = true;
+  if(pullBack && !state.prevPullBack) startUturn();
+  // v10.7: hold fallback — if the stick is held back continuously for 0.5 s
+  // of game time without the rising edge firing (input sampled between
+  // frames on a slow device), latch the turn anyway. A held-back stick is a
+  // U-turn command, never just a brake.
+  if(pullBack && !state.uturnActive && !state.pullUsed){
+    state.pullHoldT = (state.pullHoldT || 0) + dt;
+    if(state.pullHoldT > 0.5) startUturn();
+  } else if(!pullBack){
+    state.pullHoldT = 0;
+    state.pullUsed = false;
   }
   state.prevPullBack = pullBack;
   let throttleInput = 0, braking = false;
@@ -2208,6 +2230,10 @@ function update(dt){
     if(Math.abs(err) < 0.2){ state.uturnActive = false; state.uturnTarget = null; }
   } else if(state.keys['ArrowUp'] || state.keys['w']) throttleInput = 1;
   else if(state.joyActive && state.joyY < -0.08) throttleInput = Math.min(1, -state.joyY);
+  // v10.7: the turn state is visible — a TURNING badge on the HUD while a
+  // U-turn is latched, so a missed latch reads as "no badge" instead of a
+  // silent brake.
+  $('turnBadge').classList.toggle('hidden', !state.uturnActive);
   // speed loss in turns: ~1/4 after 90°, ~1/3 after 180° at full wheel
   const lossTarget = 1 - 0.33 * state.rudder * state.rudder;
   state.speedLoss += (lossTarget - state.speedLoss) * Math.min(1, dt * 0.5);
@@ -3187,13 +3213,21 @@ function idleUpdate(dt){
 function loop(){
   requestAnimationFrame(loop);
   frameCount++;
-  const dt = Math.min(clock.getDelta(), 0.05);
+  // v10.7: fixed substeps — the old dt clamp (0.05 s) silently threw away
+  // most of real time on a slow device, so the whole game ran in slow
+  // motion there: coast-downs took minutes, escorts looked frozen, drift
+  // was invisible, and short inputs could fall between frames. Elapsed time
+  // is now replayed in 0.05 s substeps (capped at 6 per frame so a stalled
+  // tab cannot spiral), so game time tracks real time.
+  const rawDt = Math.min(clock.getDelta(), 0.35);
+  const steps = Math.max(1, Math.min(6, Math.ceil(rawDt / 0.05)));
+  const dt = rawDt / steps;
   updateOcean(state.t);
   if(state.running && !state.paused && !state.over){
-    update(dt);
+    for(let si = 0; si < steps; si++) update(dt);
     updateCamera(dt);
   } else if(!state.running && !state.over){
-    idleUpdate(dt);
+    idleUpdate(rawDt);
   } else if(state.over){
     updateCamera(dt);
     updateParticles(dt);
