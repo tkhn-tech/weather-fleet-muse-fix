@@ -134,6 +134,47 @@
   #camResetBtn{display:block;width:100%;margin-top:12px;background:#ffd166;color:#1a2a1a;border:none;border-radius:999px;padding:10px;font-size:14px;font-weight:800;cursor:pointer}
   #camResetBtn:active{transform:scale(.97)}
   @media (max-width:560px){ #camPanel{right:8px;left:8px;width:auto;top:calc(58px + env(safe-area-inset-top))} }
+  /* v11.1: the helm adapts to phone screens — the telegraph was too big
+     in portrait and ran off the top of the screen in landscape */
+  @media (max-width:560px){
+    #telegraphPanel{right:8px;bottom:204px;width:128px;padding:8px 8px 10px}
+    #telegraphPanel .teleHead{font-size:10px;margin-bottom:6px}
+    .teleBtns{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+    .teleBtn{padding:7px 2px;font-size:10.5px}
+    .teleStep button{padding:7px 0}
+    #teleReadout{font-size:11px}
+    #fleetPanel{width:112px}
+    .fleetRow{padding:4px 5px;font-size:11px}
+    #joy{left:12px;bottom:calc(14px + env(safe-area-inset-bottom));width:180px;height:56px}
+    #joyKnob{width:40px;height:40px;margin:-20px 0 0 -20px}
+    #rudderReadout{left:12px;bottom:calc(78px + env(safe-area-inset-bottom))}
+    #hint{display:none}
+  }
+  @media (max-height:500px){
+    .hud{gap:6px;padding-left:8px;padding-right:8px}
+    .pill{padding:6px 9px;font-size:12px}
+    #integrityWrap{max-width:190px;padding:6px 9px}
+    .iconBtn{width:32px;height:32px;font-size:14px}
+    #stageToast h2{font-size:22px}
+    #telegraphPanel{right:8px;bottom:100px;width:132px;padding:8px 8px 10px}
+    #telegraphPanel .teleHead{font-size:10px;margin-bottom:6px}
+    .teleBtns{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+    .teleBtn{padding:6px 2px;font-size:10.5px}
+    .teleStep button{padding:6px 0}
+    #teleReadout{font-size:10.5px;margin-top:4px}
+    #fleetPanel{left:8px;top:calc(56px + env(safe-area-inset-top));width:120px;padding:6px}
+    .fleetRow{padding:4px 5px;font-size:11px}
+    #miniMap{right:8px;bottom:12px}
+    #miniCv{width:84px;height:84px}
+    #joy{left:12px;bottom:calc(12px + env(safe-area-inset-bottom));width:190px;height:52px}
+    #joyKnob{width:40px;height:40px;margin:-20px 0 0 -20px}
+    #rudderReadout{left:12px;bottom:calc(72px + env(safe-area-inset-bottom))}
+    .card{padding:16px}
+    .card h1{font-size:26px}
+    .card .sub{font-size:13px}
+    .seaBox{margin-top:12px;padding:10px 12px}
+    .bigBtn{padding:12px 28px;font-size:15px}
+  }
   .hidden{display:none!important}
 </style>
 <script type="importmap">
@@ -214,7 +255,7 @@
     </div>
     <button class="ghostBtn" id="camBtnStart">🎥 Camera</button><br>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.0</div>
+    <div class="ver">v11.1</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -1534,15 +1575,6 @@ function telegraphTarget(ship, st){
   const capFrac = Math.max(0, (1 - 0.6 * erFlood) * (1 - 0.25 * ship.floodTotal));
   return frac * st.speed * capFrac;
 }
-function nearestNotch(ship, st){
-  const cur = ship.motion.forwardSpeed;
-  let best = 5, bd = Infinity;
-  TELEGRAPH.forEach((n, i) => {
-    const d = Math.abs(n.frac * st.speed - cur);
-    if(d < bd){ bd = d; best = i; }
-  });
-  return best;
-}
 function setTelegraph(i){
   const f = flagship();
   if(!f || !state.running) return;
@@ -1566,10 +1598,12 @@ function switchShip(idx){
   old.dx = next.dx; old.dz = next.dz;
   next.dx = tdx; next.dz = tdz;
   state.playerIdx = idx;
-  // sync the helm to the new ship without touching its momentum: the
-  // ordered speed starts where the ship already is
+  // v11.1: sync the helm to the new ship without touching its momentum —
+  // the ordered speed starts where the ship already is, but the ORDER is
+  // inherited from the old flagship, so the fleet does not slow down just
+  // because the new ship was slower when she took command
   next.spoolSpeed = next.motion.forwardSpeed;
-  next.telegraph = nearestNotch(next, STAGES[state.stage]);
+  next.telegraph = old.telegraph;
   next.rudderDeg = next.motion.rudder * RUDDER_MAX;
   next.rudderTargetDeg = next.rudderDeg;
   syncHelmUI(); syncFleetPanel();
@@ -1898,13 +1932,19 @@ $('camZoomOut').addEventListener('click', () => { state.camZoom = Math.min(2.5, 
 syncCameraUI();
 // v11.0: the helm is horizontal-only — X is the rudder, vertical drag is
 // ignored so the player never changes speed while turning
+// v11.1: the travel radius follows the track's rendered width, so the
+// knob stays inside the track when the track shrinks on phone screens
 const joyEl = $('joy'), joyKnob = $('joyKnob');
-const JOY_R = 82;
+function joyRadius(){
+  const r = joyEl.getBoundingClientRect();
+  return Math.max(30, r.width / 2 - 24);
+}
 function joySet(e){
   const r = joyEl.getBoundingClientRect();
+  const jr = joyRadius();
   let dx = e.clientX - (r.left + r.width / 2);
-  dx = Math.max(-JOY_R, Math.min(JOY_R, dx));
-  state.joyX = dx / JOY_R;
+  dx = Math.max(-jr, Math.min(jr, dx));
+  state.joyX = dx / jr;
   joyKnob.style.transform = `translate(${dx}px, 0px)`;
 }
 joyEl.addEventListener('pointerdown', e => { e.preventDefault(); state.joyActive = true; state.joyPointerId = e.pointerId; joyEl.setPointerCapture(e.pointerId); joySet(e); });
@@ -2209,11 +2249,12 @@ function sinkShip(ship, mode){
   if(next && ship.sinkMode !== 'breakup'){
     toast('⚠️ ' + ship.label + ' is going down', next.label + ' takes command — ' + aliveCount() + ' ships left');
   }
-  // v11.0: if the player ship went down, the new flagship's helm syncs to
-  // her own speed — no lurch, no reset
+  // v11.1: if the player ship went down, the new flagship's helm syncs to
+  // her own speed — no lurch, no reset — and inherits the lost ship's
+  // order, so the fleet does not slow down on command transfer
   if(next && wasPlayer){
     next.spoolSpeed = next.motion.forwardSpeed;
-    next.telegraph = nearestNotch(next, STAGES[state.stage]);
+    next.telegraph = ship.telegraph;
     syncHelmUI(); syncFleetPanel();
   }
 }
@@ -2322,7 +2363,12 @@ function update(dt){
   const sp = flag.spoolSpeed;
   const srate = target > sp ? flag.spoolUp : flag.spoolDown;
   flag.spoolSpeed += Math.max(-srate * dt, Math.min(srate * dt, target - sp));
-  const thrustIn = dead ? 0 : Math.max(-1, Math.min(1, (flag.spoolSpeed - flag.motion.forwardSpeed) * 0.35));
+  // v11.1: feed the drag forward. A proportional screw controller must
+  // hold thrust just to overcome hydrodynamic drag (0.55 x speed), so
+  // without this the ship settles ~2 kn below the ordered speed (v11.0
+  // check: target 18, actual 16 in Calm). thrustForce/mass is 14 for
+  // every class, so the drag term is 0.55/14 = 0.039 x ordered speed.
+  const thrustIn = dead ? 0 : Math.max(-1, Math.min(1, (flag.spoolSpeed - flag.motion.forwardSpeed) * 0.35 + 0.039 * flag.spoolSpeed));
   // speed loss in turns: ~1/4 after 90°, ~1/3 after 180° at full wheel
   const lossTarget = 1 - 0.33 * state.rudder * state.rudder;
   state.speedLoss += (lossTarget - state.speedLoss) * Math.min(1, dt * 0.5);
@@ -2448,16 +2494,19 @@ function update(dt){
     const holding = state.speed < 1;
     const desired = m.arrive({ x: tx, z: tz }, holding ? 12 : 30, Math.max(6, state.speed + 4));
     const desSpeed = Math.hypot(desired.x, desired.z);
-    let desHeading = desSpeed > 0.5 ? Math.atan2(desired.x, -desired.z) : s.heading;
-    // when close to the slot, align the bow with the flagship's heading so
-    // the escort straightens onto the fleet course instead of pointing at
-    // the slot (v8.7: the starboard escort stayed ~40 deg off after turns)
     const distToSlot = Math.hypot(tx - m.x, tz - m.z);
-    if (distToSlot < 12) {
-      const w = 1 - distToSlot / 12;
-      let dhF = flag.heading - desHeading;
-      dhF = ((dhF + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
-      desHeading += dhF * w;
+    // v11.1: hard parallel alignment near the slot. The old linear blend
+    // (w = 1 - dist/12) only straightened the bow at dist 0, which the
+    // current never lets an escort reach — so every escort settled into a
+    // steady ~30-50 deg inward crab and the formation converged on the
+    // carrier (v11.0 check: the wedge). Within 6 units the bow is simply
+    // the flagship's heading; the escort closes the last few units by
+    // sailing parallel, and only steers at the slot from farther out.
+    let desHeading;
+    if (distToSlot < 6) {
+      desHeading = flag.heading;
+    } else {
+      desHeading = desSpeed > 0.5 ? Math.atan2(desired.x, -desired.z) : s.heading;
     }
     let dh = desHeading - m.heading;
     dh = ((dh + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
