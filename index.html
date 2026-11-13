@@ -274,7 +274,7 @@
     </div>
     <button class="ghostBtn" id="camBtnStart">🎥 Camera</button><br>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.10</div>
+    <div class="ver">v11.11</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -983,19 +983,29 @@ scene.add(ocean);
 // stands at the freak wave's position and faces the fleet. It is purely
 // visual — the Gerstner bump still does the physics. Created once
 // (hidden); updateFreakCrest() positions it every frame in loop().
-const freakCrestGeo = new THREE.PlaneGeometry(60, 16, 24, 4);
+const freakCrestGeo = new THREE.PlaneGeometry(100, 24, 24, 6);
 {
   const cg = freakCrestGeo.attributes.position;
   const ccol = new Float32Array(cg.count * 3);
   for(let i = 0; i < cg.count; i++){
-    const y = cg.getY(i); // -8..8 (the plane is centred)
-    const t = (y + 8) / 16; // 0 at the base, 1 at the crest
-    // the top curls forward (toward +Z, the face the fleet sees)
-    cg.setZ(i, Math.pow(t, 2) * 6);
-    // vertex colours: deep blue at the base, white foam at the crest
-    ccol[i * 3] = 0.05 + t * 0.85;
-    ccol[i * 3 + 1] = 0.25 + t * 0.65;
-    ccol[i * 3 + 2] = 0.45 + t * 0.5;
+    const y = cg.getY(i); // -12..12 (the plane is centred)
+    const t = (y + 12) / 24; // 0 at the base, 1 at the crest
+    // v11.11: only a slight forward lean (was t²×6) — the strong curl
+    // hid the blue face behind the white crest from the chase camera.
+    cg.setZ(i, Math.pow(t, 2) * 2);
+    // v11.11: mostly deep blue, with only the top 15% (t>=0.85) white
+    // foam. The v11.10 gradient went white too early, so the visible
+    // part (above the ~8-high bump, t>=0.33) read as predominantly
+    // white. Now it is a deep-blue wall with a white foam crest.
+    let r, g, b;
+    if(t < 0.85){
+      const u = t / 0.85;
+      r = 0.05 + u * 0.10; g = 0.25 + u * 0.20; b = 0.45 + u * 0.20;
+    } else {
+      const u = (t - 0.85) / 0.15;
+      r = 0.15 + u * 0.80; g = 0.45 + u * 0.50; b = 0.65 + u * 0.33;
+    }
+    ccol[i * 3] = r; ccol[i * 3 + 1] = g; ccol[i * 3 + 2] = b;
   }
   freakCrestGeo.setAttribute('color', new THREE.BufferAttribute(ccol, 3));
 }
@@ -1007,11 +1017,12 @@ function updateFreakCrest(){
   const fw = state.freakWave;
   if(!fw){ freakCrest.visible = false; return; }
   freakCrest.visible = true;
-  // the base at sea level (y=0), the top at y=16 — a wall rising above
-  // the bump (which is ~8 high), so it reads as a wall from the chase
-  // camera. The +Z face (the curl) points along the wave's travel
-  // direction, so the fleet sees the breaking face coming at it.
-  freakCrest.position.set(fw.x, 8, fw.z);
+  // v11.11: the base at sea level (y=0), the top at y=24 — a wall
+  // rising ~16 above the bump (which is ~8 high), so it reads as a
+  // wall from the chase camera. The +Z face (the lean) points along
+  // the wave's travel direction, so the fleet sees the breaking face
+  // coming at it.
+  freakCrest.position.set(fw.x, 12, fw.z);
   freakCrest.rotation.y = Math.atan2(fw.dirX, fw.dirZ);
 }
 // sea colours, set per stage: troughs dark, crests pale, foam a grey-white
