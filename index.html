@@ -272,13 +272,13 @@
     </div>
     <button class="ghostBtn" id="camBtnStart">🎥 Camera</button><br>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.5</div>
+    <div class="ver">v11.6</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
     </div>
-    <p class="keys">Rudder: joystick (left/right), drag, or ← → / A D — release to return to midships &nbsp;·&nbsp; Telegraph: W / S or ↑ ↓, click the panel, or keys 1–8 &nbsp;·&nbsp; Command: Tab or the fleet panel &nbsp;·&nbsp; Pause: P &nbsp;·&nbsp; Watch a sinking ship: C<br>
-      Wheel: zoom &nbsp;·&nbsp; Right-drag: free look &nbsp;·&nbsp; 🎥 Camera panel: zoom &amp; look in any direction, R resets the camera, ✕ closes it</p>
+    <p class="keys">Rudder: joystick (left/right) or ← → / A D — release to return to midships &nbsp;·&nbsp; Telegraph: W / S or ↑ ↓, click the panel, or keys 1–8 &nbsp;·&nbsp; Command: Tab or the fleet panel &nbsp;·&nbsp; Pause: P &nbsp;·&nbsp; Watch a sinking ship: C<br>
+      Drag / swipe the sea: orbit the camera round the fleet &nbsp;·&nbsp; Wheel: zoom &nbsp;·&nbsp; Right-drag: free look &nbsp;·&nbsp; 🎥 Camera panel: zoom &amp; look in any direction, R resets the camera, ✕ closes it</p>
   </div>
 </div>
 
@@ -1549,13 +1549,18 @@ const roster = [
   // are the cruiser equivalents on the flanks, slightly ahead; four Burke
   // destroyers screen it — two forward pickets, two on the aft quarters.
   // v11.4: each hull has a key, so the start-of-run fleet picker can name it.
+  // v11.6: the slots widen again (x1.6 of the design, from x1.4) — the
+  // v11.5 check lost ships on the coast-down and re-acceleration while
+  // holding formation (the aft destroyer-battleship gap was only ~7).
+  // The wider slots give a ~13 gap; the fit cap rises to 2.2 so the
+  // whole formation still fits in frame.
   {key:'carrier', type:'carrier',    label:'Carrier',    dx:0,     dz:0,    hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4, freeboard:3.3},
-  {key:'bb1',     type:'battleship', label:'Battleship', dx:-42,   dz:-11,  hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:3.0},
-  {key:'bb2',     type:'battleship', label:'Battleship', dx:42,    dz:-11,  hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:3.0},
-  {key:'dd1',     type:'destroyer',  label:'Destroyer',  dx:-62,   dz:-67,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:2.7},
-  {key:'dd2',     type:'destroyer',  label:'Destroyer',  dx:62,    dz:-67,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:2.7},
-  {key:'dd3',     type:'destroyer',  label:'Destroyer',  dx:-56,   dz:42,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:2.7},
-  {key:'dd4',     type:'destroyer',  label:'Destroyer',  dx:56,    dz:42,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:2.7},
+  {key:'bb1',     type:'battleship', label:'Battleship', dx:-48,   dz:-13,  hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:3.0},
+  {key:'bb2',     type:'battleship', label:'Battleship', dx:48,    dz:-13,  hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:3.0},
+  {key:'dd1',     type:'destroyer',  label:'Destroyer',  dx:-70,   dz:-77,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:2.7},
+  {key:'dd2',     type:'destroyer',  label:'Destroyer',  dx:70,    dz:-77,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:2.7},
+  {key:'dd3',     type:'destroyer',  label:'Destroyer',  dx:-64,   dz:48,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:2.7},
+  {key:'dd4',     type:'destroyer',  label:'Destroyer',  dx:64,    dz:48,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:2.7},
 ];
 // v11.4: the fleet for a round is the roster filtered by the player's
 // start-of-run selection (settings.fleetSel). `fleet` stays the name every
@@ -1722,7 +1727,7 @@ function enterSpectate(ship){
   // v11.5: cancel any helm input in progress — a drag or a held key from
   // before the spectate must not carry into it (the flagship holds her
   // course while you watch).
-  joyEnd(); state.dragSteer = false; state.rudder = 0;
+  joyEnd(); state.orbitDrag = false; state.rudder = 0; // v11.6: dragSteer is gone; the orbit offsets persist so the spectate camera uses the same azimuth
   const f = flagship();
   $('spectateBar').textContent = '👁 SPECTATING · ' + ship.name + ' is going down — press C or Esc to return to the helm' + (f ? ' (' + f.name + ')' : '');
   $('spectateBar').classList.remove('hidden');
@@ -1914,7 +1919,7 @@ const state = {
   running: false, paused: false, over: false,
   t: 0, dist: 0, score: 0, speed: 0,
   stage: settings.startStage, shake: 0, sound: true,
-  rudder: 0, dragSteer: false, keys: {}, lost: 0,
+  rudder: 0, keys: {}, lost: 0, // v11.6: dragSteer removed (the drag orbits the camera)
   joyX: 0, joyActive: false,
   boltT: 0, flashT: 0,
   speedLoss: 1, kickT: 99, prevRudder: 0,
@@ -1922,6 +1927,7 @@ const state = {
   spectateShip: null, // v11.4: the sinking ship being watched (null = on the helm)
   camZoom: settings.camZoom ?? 1, freeLook: 0, freeLookActive: false,
   camPanX: settings.camPanX ?? 0, camPanY: settings.camPanY ?? 0,
+  camOrbitAz: 0, camOrbitEl: 0, orbitDrag: false, orbitLastX: 0, orbitLastY: 0, // v11.6: drag/swipe orbits the camera round its anchor
   capT: 0,
   camHeading: 0, camBank: 0, headingRate: 0, camZfSm: 0,
   windDir: 0, curX: 0, curZ: 0, cog: 0,
@@ -1994,19 +2000,38 @@ function thunder(){ noiseBurst(1.2, 220, 0.25); }
 function explosion(){ noiseBurst(0.5, 420, 0.3); blip(70, 0.4, 'sawtooth', 0.12); }
 
 // ---------- input ----------
+// v11.6: the drag on the sea orbits the camera round its anchor (the
+// flagship) — left mouse button, or one finger on a touch screen. Drag
+// right/left to swing round the fleet, drag up/down to raise/lower the
+// camera. The orbit is an offset from the chase heading, so the camera
+// stays at its chase distance and the fleet stays in frame; it persists
+// until R (or the panel button) resets it. This replaces the drag-steer
+// (v10.0–v11.5: dragging the sea set the rudder) — the same gesture
+// cannot steer and orbit at once, and the joystick and the keys are the
+// rudder now. Right-drag is still free-look (pan the look direction).
+// The same azimuth swings the spectate camera round the sinking ship,
+// so the drag works while spectating too.
 canvas.addEventListener('pointerdown', e => {
   if(e.button === 2){ state.freeLookActive = true; return; }
-  if(e.button === 0 && !state.spectateShip){ state.dragSteer = true; state.rudder = Math.max(-1, Math.min(1, ((e.clientX / window.innerWidth) * 2 - 1) * 1.4)); } // v11.5: no drag-steer while spectating
+  if(e.button === 0){ state.orbitDrag = true; state.orbitLastX = e.clientX; state.orbitLastY = e.clientY; }
 });
 canvas.addEventListener('pointermove', e => {
-  if(state.dragSteer && !state.spectateShip) state.rudder = Math.max(-1, Math.min(1, ((e.clientX / window.innerWidth) * 2 - 1) * 1.4)); // v11.5: no drag-steer while spectating
+  if(state.orbitDrag){
+    const dx = e.clientX - state.orbitLastX, dy = e.clientY - state.orbitLastY;
+    state.orbitLastX = e.clientX; state.orbitLastY = e.clientY;
+    // drag right swings the camera right (clockwise round the fleet);
+    // drag up raises the camera. The elevation is clamped so the camera
+    // never goes under the water or fully top-down.
+    state.camOrbitAz -= dx * 0.005;
+    state.camOrbitEl = Math.max(-0.15, Math.min(0.6, state.camOrbitEl - dy * 0.005));
+  }
   if(state.freeLookActive) state.freeLook = Math.max(-0.6, Math.min(0.6, state.freeLook + e.movementX * 0.003));
 });
-window.addEventListener('pointerup', e => { if(e.button === 2) state.freeLookActive = false; if(e.button === 0) state.dragSteer = false; });
-// a missed pointerup (pointercancel, window blur) must not leave a steering
-// input latched on — a latched rudder keeps the ship turning after release
-window.addEventListener('pointercancel', () => { state.freeLookActive = false; state.dragSteer = false; joyEnd(); });
-window.addEventListener('blur', () => { state.freeLookActive = false; state.dragSteer = false; state.keys = {}; joyEnd(); });
+window.addEventListener('pointerup', e => { if(e.button === 2) state.freeLookActive = false; if(e.button === 0) state.orbitDrag = false; });
+// a missed pointerup (pointercancel, window blur) must not leave a drag
+// latched on — a latched orbit keeps swinging the camera after release
+window.addEventListener('pointercancel', () => { state.freeLookActive = false; state.orbitDrag = false; joyEnd(); });
+window.addEventListener('blur', () => { state.freeLookActive = false; state.orbitDrag = false; state.keys = {}; joyEnd(); });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
@@ -2040,6 +2065,7 @@ function syncCameraUI(){
 }
 function resetCamera(){
   state.camZoom = 1; state.camPanX = 0; state.camPanY = 0; state.freeLook = 0; state.camZfSm = 0;
+  state.camOrbitAz = 0; state.camOrbitEl = 0; state.orbitDrag = false; // v11.6: R also returns the camera to its default angle
   saveCamera(); syncCameraUI();
 }
 function toggleCamPanel(){ $('camPanel').classList.toggle('hidden'); }
@@ -2174,7 +2200,7 @@ function reset(){
   state.dist = STAGE_AT[state.stage];
   state.shake = 0; state.over = false; state.paused = false;
   state.spawnT = 0; state.boltT = 0; state.flashT = 0;
-  state.rudder = 0; state.dragSteer = false; state.speedLoss = 1; state.kickT = 99; state.prevRudder = 0;
+  state.rudder = 0; state.orbitDrag = false; state.speedLoss = 1; state.kickT = 99; state.prevRudder = 0; // v11.6: dragSteer is gone (the drag orbits the camera)
   state.camHeading = 0; state.camBank = 0; state.headingRate = 0; state.camZfSm = 0;
   state.playerIdx = 0;
   clearWorld();
@@ -2637,7 +2663,7 @@ function update(dt){
   let rudderTarget = 0;
   if(keyRudder !== 0) rudderTarget = keyRudder * RUDDER_MAX;
   else if(state.joyActive && Math.abs(state.joyX) > 0.08) rudderTarget = state.joyX * RUDDER_MAX;
-  else if(state.dragSteer) rudderTarget = state.rudder * RUDDER_MAX;
+  // v11.6: the drag-steer is gone (the drag orbits the camera now); keys > joystick is the whole priority.
   if(state.spectateShip) rudderTarget = 0; // v11.4: the helm is locked while spectating — the flagship holds her course
   flag.rudderTargetDeg = rudderTarget;
   const rs = flag.rudderSlew;
@@ -2721,27 +2747,29 @@ function update(dt){
     const distToSlot = Math.hypot(tx - m.x, tz - m.z);
     // v11.5: traffic speed limit, geometry-true. The v11.4 cap used the
     // whisker bounding radius (max(wid*1.5, len*0.25)+4), which is LARGER
-    // than the design slot spacing (the carrier-battleship pair is 31
-    // units apart, the bounding touch is 40), so it capped the
-    // battleships at 1 u/s even in formation. Now the gap is the real
-    // hull-circle gap, and the cap only applies while the escort is OFF
-    // its slot — holding formation at the design spacing is safe, so the
-    // cap must not fire there. The cap tightens as the gap closes, so an
-    // escort creeps to a near-stop before contact instead of charging in.
-    // A sinking wreck (sinkT < 0.7, still above water) counts, so the
-    // escorts creep around her too. It still steers nothing.
+    // than the design slot spacing, so it capped the battleships at 1 u/s
+    // even in formation. Now the gap is the real hull-circle gap. v11.6:
+    // two tiers — off-slot (distToSlot > 6) the threshold is 10 (as
+    // v11.5); on-slot it is 5. The v11.5 check lost ships on the
+    // coast-down and re-acceleration while the escorts were HOLDING
+    // formation (on their slots), so the cap never fired; the design gap
+    // is now ~13, so a 5-unit threshold only bites when a speed change
+    // has already closed the gap dangerously. The cap tightens as the
+    // gap closes, so an escort creeps to a near-stop before contact
+    // instead of charging in. A sinking wreck (sinkT < 0.7, still above
+    // water) counts, so the escorts creep around her too. It still
+    // steers nothing.
     let trafficCap = Infinity;
-    if(distToSlot > 6){
-      fleet.forEach(o => {
-        if(o !== s && (o.alive || (!o.alive && o.sinkT < 0.7))){
-          const d = Math.hypot(o.x - m.x, o.z - m.z);
-          if(d < 31){
-            const gap = hullGap(s, o);
-            if(gap < 10) trafficCap = Math.min(trafficCap, Math.max(1, gap));
-          }
+    const gapThresh = distToSlot > 6 ? 10 : 5;
+    fleet.forEach(o => {
+      if(o !== s && (o.alive || (!o.alive && o.sinkT < 0.7))){
+        const d = Math.hypot(o.x - m.x, o.z - m.z);
+        if(d < 31){
+          const gap = hullGap(s, o);
+          if(gap < gapThresh) trafficCap = Math.min(trafficCap, Math.max(1, gap));
         }
-      });
-    }
+      }
+    });
     if(trafficCap < Infinity) desSpeed = Math.min(desSpeed, trafficCap);
     // v11.2: cap the approach angle. A ship can only move along its
     // heading, so closing a sideways gap REQUIRES pointing at the slot —
@@ -3470,7 +3498,10 @@ function updateCamera(dt){
     if(sh.sinkT >= 1){
       exitSpectate('she is gone — back to the helm');
     } else {
-      const shx = Math.sin(sh.heading), shz = -Math.cos(sh.heading);
+      // v11.6: the orbit azimuth swings the spectate camera round the
+      // sinking ship too, so the user can watch her go down from any
+      // angle (the elevation follows her depth, so it is not orbited).
+      const shx = Math.sin(sh.heading + (state.camOrbitAz || 0)), shz = -Math.cos(sh.heading + (state.camOrbitAz || 0));
       // v11.5: the camera follows her under. Above the surface it holds
       // off at 55 units; as she goes down it closes in (to 30) for the
       // detail, and it dives below the surface with her — 6 units above
@@ -3520,6 +3551,17 @@ function updateCamera(dt){
   const chx = Math.sin(state.camHeading), chz = -Math.cos(state.camHeading);
   const crx = Math.cos(state.camHeading), crz = Math.sin(state.camHeading);
   const a = state.freeLook;
+  // v11.6: orbit — the camera swings round its anchor (the flagship) by
+  // camOrbitAz from the chase heading, so the fleet stays in frame at
+  // its chase distance. The orbited basis (oh/or) drives the camera
+  // POSITION and the follow; the chase basis (ch/cr) still drives the
+  // LOOK direction, so a turn keeps reading as a turn. The elevation
+  // offset raises the camera (tan(el) x distance) — clamped at the
+  // input, so it never goes under the water or fully top-down.
+  const oa = state.camOrbitAz || 0;
+  const ohx = Math.sin(state.camHeading + oa), ohz = -Math.cos(state.camHeading + oa);
+  const orx = Math.cos(state.camHeading + oa), orz = Math.sin(state.camHeading + oa);
+  const orbEl = state.camOrbitEl || 0;
   // frame the whole fleet, not just the flagship: the camera sits behind
   // the flagship, so the rear escorts are much closer to the lens than the
   // flagship and subtend a big angle — a fit measured from the formation
@@ -3545,9 +3587,9 @@ function updateCamera(dt){
   const lookY = 2 + state.camPanY;
   let fitD = camZ;
   for(let it = 0; it < 12; it++){
-    const tY = camY * (fitD / camZ) + Math.sin(state.t * 0.5) * 0.4;
-    const tX = flag.x - chx * fitD * Math.cos(a) + crx * fitD * Math.sin(a) * 0.55;
-    const tZ = flag.z - chz * fitD * Math.cos(a) + crz * fitD * Math.sin(a) * 0.55;
+    const tY = camY * (fitD / camZ) + Math.tan(orbEl) * fitD + Math.sin(state.t * 0.5) * 0.4;
+    const tX = flag.x - ohx * fitD * Math.cos(a) + orx * fitD * Math.sin(a) * 0.55;
+    const tZ = flag.z - ohz * fitD * Math.cos(a) + orz * fitD * Math.sin(a) * 0.55;
     if(fleetFits(tX, tY, tZ, lx, lookY, lz, tanH, tanV)) break;
     fitD *= 1.15;
     // v10.4: a deliberate close zoom accepts cropping — the auto fit must
@@ -3555,7 +3597,9 @@ function updateCamera(dt){
     // out does the fit still add room, up to 1.3x).
     // v11.5: the fit cap rises with the bigger formation (1.3 -> 1.6), so
     // the whole fleet still fits in frame at the default zoom.
-    const fitCap = state.camZoom < 1 ? camZ : camZ * 1.6;
+    // v11.6: 2.2 — the wider slots (x1.6) need more room, and the v11.5
+    // check clipped the outer destroyers at 1.6.
+    const fitCap = state.camZoom < 1 ? camZ : camZ * 2.2;
     if(fitD >= fitCap){ fitD = fitCap; break; }
   }
   // smooth the fit distance: snap out instantly when the fleet needs room,
@@ -3565,18 +3609,18 @@ function updateCamera(dt){
   if(state.camZoom < 1) state.camZfSm = camZ; // v10.4: a stored fit pull-back must not defeat a close zoom
   const camZf = Math.max(camZ, state.camZfSm);
   const camYf = camY * (camZf / camZ);
-  const tx = flag.x - chx * camZf * Math.cos(a) + crx * camZf * Math.sin(a) * 0.55;
-  const ty = camYf + Math.sin(state.t * 0.5) * 0.4;
-  const tz = flag.z - chz * camZf * Math.cos(a) + crz * camZf * Math.sin(a) * 0.55;
+  const tx = flag.x - ohx * camZf * Math.cos(a) + orx * camZf * Math.sin(a) * 0.55;
+  const ty = camYf + Math.tan(orbEl) * camZf + Math.sin(state.t * 0.5) * 0.4;
+  const tz = flag.z - ohz * camZf * Math.cos(a) + orz * camZf * Math.sin(a) * 0.55;
   // stiff follow: faster along the direction of travel, softer sideways,
   // so the camera keeps up at speed without snapping in a turn — and
   // stiffer once the turn ends, so it settles behind the stern promptly
   const ex = tx - camera.position.x, ez = tz - camera.position.z;
-  const along = ex * chx + ez * chz;
-  const perp = ex * (-chz) + ez * chx;
+  const along = ex * ohx + ez * ohz;
+  const perp = ex * (-ohz) + ez * ohx;
   const kA = 1 - Math.exp(-dt * (turning ? 5.5 : 7.5)), kL = 1 - Math.exp(-dt * (turning ? 5.0 : 6.5));
-  camera.position.x += chx * along * kA + (-chz) * perp * kL;
-  camera.position.z += chz * along * kA + chx * perp * kL;
+  camera.position.x += ohx * along * kA + (-ohz) * perp * kL;
+  camera.position.z += ohz * along * kA + ohx * perp * kL;
   camera.position.y += (ty - camera.position.y) * (1 - Math.exp(-dt * 4));
   if(state.shake > 0.3){
     camera.position.x += (Math.random() - 0.5) * state.shake * 0.12;
@@ -3680,11 +3724,21 @@ function loop(){
     updateCamera(dt);
   } else if(!state.running && !state.over){
     idleUpdate(rawDt);
+    updateHud(); // v11.6: the HUD (fleet count, integrity, minimap) must
+    // track the picker on the start screen too — updateHud only ran
+    // inside update() (running), so the count froze at the load value
+    // (v11.5 check: it read x7 with 3 picked, x3 with 7 picked).
   } else if(state.over){
     updateCamera(dt);
     updateParticles(dt);
     updateSprites(dt);
   }
+  // v11.6: the banner is a pure function of spectateShip, enforced
+  // every frame in every state — the updateCamera check (v11.5b) does
+  // not run when paused or on the start screen, and the v11.5 check
+  // still saw a stale banner after a sinking finished. This is the same
+  // rule, in the one place that runs unconditionally.
+  if(!state.spectateShip) $('spectateBar').classList.add('hidden');
   updateUnderwater();
   skyDome.position.copy(camera.position);
   if(composer) composer.render(); else renderer.render(scene, camera);
