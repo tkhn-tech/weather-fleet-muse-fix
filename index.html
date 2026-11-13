@@ -272,7 +272,7 @@
     </div>
     <button class="ghostBtn" id="camBtnStart">🎥 Camera</button><br>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.6</div>
+    <div class="ver">v11.8</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -343,7 +343,13 @@ renderer.toneMappingExposure = 1.0;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9fc3d8);
-scene.fog = new THREE.Fog(0x9fc3d8, 60, 380);
+// v11.7/v11.8: no DISTANCE fog (removed at Nicholas's request — the fleet
+// used to fade into the haze). The fog object is kept with a far of
+// 5000, so above water it is effectively invisible (a ship 60-120 units
+// away is fogged 0-1%, the horizon ~16% toward the sky colour), but
+// updateUnderwater can still close it in for the underwater murk, which
+// Nicholas says is fine. The stage fogFar values stay removed.
+scene.fog = new THREE.Fog(0x9fc3d8, 60, 5000);
 // sky dome (v9.0): a gradient sky sphere that follows the camera, so the
 // horizon blends into a real sky instead of a flat clear colour. The ocean
 // shader reflects this same gradient at grazing angles.
@@ -471,16 +477,16 @@ const numTex125 = hullNumTex('125');
 // One sea-state parameter drives everything: wind -> wave height/length/period,
 // fog, sky, foam and camera shake all follow it (War Thunder preset style).
 const STAGES = [
-  {name:'Calm Seas', desc:'The fleet sails out. Hold formation.', speed:8,  amp:0.35, wind:5,  sky:0x9fc3d8, sea:0x1a5a78, fogFar:380, sunI:1.15},
-  {name:'Rough Seas', desc:'Swell building. Watch the crests.',      speed:10, amp:0.70, wind:10, sky:0x7e9db4, sea:0x174a64, fogFar:300, sunI:1.0},
-  {name:'Storm', desc:'Lightning, heavy seas.',                     speed:12, amp:1.05, wind:15, sky:0x5a7286, sea:0x12394e, fogFar:220, sunI:0.85},
-  {name:'Hurricane', desc:'Everything the sea has. Hold on.',        speed:14, amp:1.40, wind:20, sky:0x39434e, sea:0x0d2839, fogFar:150, sunI:0.6},
+  {name:'Calm Seas', desc:'The fleet sails out. Hold formation.', speed:8,  amp:0.35, wind:5,  sky:0x9fc3d8, sea:0x1a5a78, sunI:1.15},
+  {name:'Rough Seas', desc:'Swell building. Watch the crests.',      speed:10, amp:0.70, wind:10, sky:0x7e9db4, sea:0x174a64, sunI:1.0},
+  {name:'Storm', desc:'Lightning, heavy seas.',                     speed:12, amp:1.05, wind:15, sky:0x5a7286, sea:0x12394e, sunI:0.85},
+  {name:'Hurricane', desc:'Everything the sea has. Hold on.',        speed:14, amp:1.40, wind:20, sky:0x39434e, sea:0x0d2839, sunI:0.6},
 ];
 const STAGE_AT = [0, 400, 1100, 2100];
 // v11.5: the stage's base atmosphere, so the underwater pass can lerp away
 // from it and back without drift (it reads the stage values, never its own
 // previous output). Updated in applyStage().
-const stageBase = {sky: new THREE.Color(0x9fc3d8), fogFar: 380, sunI: 1.15};
+const stageBase = {sky: new THREE.Color(0x9fc3d8), sunI: 1.15}; // v11.7: fogFar removed (no fog)
 const UNDER_COL = new THREE.Color(0x0a3542); // deep blue-green, 20 units down
 
 const savedSettings = JSON.parse(localStorage.getItem('hurricane_fleet_settings') || '{}');
@@ -532,6 +538,7 @@ function wireFleetPicker(){
       sync();
       applyFleetSelection();
       buildFleetPanel(); syncFleetPanel();
+      updateHud(); // v11.8: the HUD count must update on a picker change (the v11.6 check still saw x7 with 3 picked — the idle-branch call alone did not take effect)
     });
   });
   sync();
@@ -656,6 +663,18 @@ function gerstner(x, z, t){
     oz += Q * A * w.dz * Math.cos(th);
     y += A * Math.sin(th);
   }
+  // v11.8: freak wave — one huge, moving Gaussian crest (Hurricane +
+  // Huge waves only). It is added to the Gerstner field, so the ocean
+  // surface shows it (updateOcean uses gerstner) and the ships ride it
+  // (sampleWaves uses waveHeight, which is gerstner). A single bump, not
+  // a ridge: a wall of water, ~5.5 units high and ~56 across.
+  if(state.freakWave){
+    const fw = state.freakWave;
+    const fdx = x - fw.x, fdz = z - fw.z;
+    const fd2 = fdx * fdx + fdz * fdz;
+    const fr2 = fw.radius * fw.radius;
+    if(fd2 < fr2 * 9) y += fw.amp * Math.exp(-fd2 / (2 * fr2));
+  }
   return {x: x + ox, y, z: z + oz};
 }
 function waveHeight(x, z, t){ return gerstner(x, z, t).y; }
@@ -685,6 +704,20 @@ function getOceanDataAt(x, z, t){
     ovx += Q * A * w.dx * w.w * sn;
     ovy += -A * w.w * cs;
     ovz += Q * A * w.dz * w.w * sn;
+  }
+  // v11.8: freak wave (the same Gaussian as gerstner) — height and
+  // slope, so the shared ocean query (wave push, swamping) sees it too.
+  if(state.freakWave){
+    const fw = state.freakWave;
+    const fdx = x - fw.x, fdz = z - fw.z;
+    const fd2 = fdx * fdx + fdz * fdz;
+    const fr2 = fw.radius * fw.radius;
+    if(fd2 < fr2 * 9){
+      const fg = fw.amp * Math.exp(-fd2 / (2 * fr2));
+      y += fg;
+      dydx += -fg * fdx / fr2;
+      dydz += -fg * fdz / fr2;
+    }
   }
   // tangent vectors of the displaced surface, crossed for the normal
   const tx = 1 + doxdx, ty = dydx, tz = dozdx;
@@ -828,7 +861,7 @@ const oceanUniforms = {
 Object.assign(oceanUniforms, THREE.UniformsUtils.clone(THREE.UniformsLib.fog));
 const oceanMat = new THREE.ShaderMaterial({
   uniforms: oceanUniforms,
-  fog: true,
+  fog: true, // v11.8: the fog is back with a far of 5000 (no visible distance fog above water), so the ocean takes the underwater murk when the camera dives
   side: THREE.DoubleSide,
   vertexShader: `
     attribute float aSteep;
@@ -1922,6 +1955,10 @@ const state = {
   rudder: 0, keys: {}, lost: 0, // v11.6: dragSteer removed (the drag orbits the camera)
   joyX: 0, joyActive: false,
   boltT: 0, flashT: 0,
+  // v11.8: freak waves (Nicholas, 2026-11-13) — Hurricane + Huge waves only.
+  freakWave: null, // the active freak wave {id,x,z,dirX,dirZ,amp,radius,speed,age,life}
+  freakT: 45, // game-seconds until the next freak wave may spawn
+  freakId: 0, // counter for unique freak-wave ids (a ship is hit once per wave)
   speedLoss: 1, kickT: 99, prevRudder: 0,
   playerIdx: 0,
   spectateShip: null, // v11.4: the sinking ship being watched (null = on the helm)
@@ -1953,13 +1990,12 @@ function toast(title, sub){ showStageToast(title, sub); }
 
 function applyStage(i){
   const st = STAGES[i];
-  stageBase.sky.setHex(st.sky); stageBase.fogFar = st.fogFar; stageBase.sunI = st.sunI;
+  stageBase.sky.setHex(st.sky); stageBase.sunI = st.sunI;
   scene.background.setHex(st.sky);
-  scene.fog.color.setHex(st.sky);
+  scene.fog.color.setHex(st.sky); // v11.8: the fog colour follows the stage sky (for the slight horizon fade and the underwater murk)
   skyUniforms.uHorizon.value.setHex(st.sky);
   skyUniforms.uZenith.value.setHex(st.sky).multiplyScalar(0.72);
   updateEnvironment();
-  scene.fog.far = st.fogFar;
   setSeaColors(st.sea);
   sun.intensity = st.sunI;
   oceanUniforms.uSky.value.setHex(st.sky);
@@ -2200,6 +2236,7 @@ function reset(){
   state.dist = STAGE_AT[state.stage];
   state.shake = 0; state.over = false; state.paused = false;
   state.spawnT = 0; state.boltT = 0; state.flashT = 0;
+  state.freakWave = null; state.freakT = 45; // v11.8: no freak wave carries into a new round
   state.rudder = 0; state.orbitDrag = false; state.speedLoss = 1; state.kickT = 99; state.prevRudder = 0; // v11.6: dragSteer is gone (the drag orbits the camera)
   state.camHeading = 0; state.camBank = 0; state.headingRate = 0; state.camZfSm = 0;
   state.playerIdx = 0;
@@ -2216,6 +2253,7 @@ function reset(){
     mo.forwardSpeed = 0; mo.lateralSpeed = 0; mo.heel = 0; mo.kickT = 99;
     s.pitchSm = 0; s.rollSm = 0; s.groundT = 0; s.shoveX = 0; s.shoveZ = 0; s.heelKick = 0;
     s.floodSide = 0; s.floodEnd = 0; s.floodTotal = 0; s.floodDestroyed = false;
+    s.lastFreakId = 0; // v11.8: the freak-wave hit flag resets with the ship
     s.motion.compartments.forEach(c => c.flood = 0); // v10.1: compartments dry again
     s.pitchVel = 0; s.rollVel = 0; // v10.1: spring-damper at rest
     s.list = 0; s.trim = 0; s.draft = 0; s.speedFactor = 1; s.capsize = false;
@@ -2292,6 +2330,12 @@ function drawMinimap(){
       ctx.lineTo(pp[0], pp[1] + r); ctx.lineTo(pp[0] - r * 0.7, pp[1]);
       ctx.closePath(); ctx.fill();
     }
+  }
+  // v11.8: the freak wave, a red pulsing dot so the player can see where
+  // the wall of water is and turn into it (bow-on) or away.
+  if(state.freakWave){
+    const fw = state.freakWave;
+    dot(fw.x, fw.z, 4 + Math.sin(state.t * 6) * 1.5, '#ff5a4e');
   }
   // v11.3: the escorts, with heading ticks — the minimap used to show
   // only the flagship and the waypoint, so no check could ever measure a
@@ -2558,9 +2602,53 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
 
 // ---------- buoyancy sampling (4-6 points per hull; long hulls average out swell) ----------
 // ---------- update ----------
+// v11.8: spawn a freak wave. It appears at a random bearing around the
+// flagship, 180-250 units out, and travels toward the fleet, so it will
+// meet the ships. Speed 18 u/s (faster than the fleet's 14 at FLANK in a
+// Hurricane, so it catches up). One at a time.
+function spawnFreakWave(){
+  const flag = flagship() || fleet[0];
+  const ang = Math.random() * Math.PI * 2;
+  const dist = 180 + Math.random() * 70;
+  const sx = flag.x + Math.sin(ang) * dist;
+  const sz = flag.z + Math.cos(ang) * dist;
+  const toX = flag.x - sx, toZ = flag.z - sz;
+  const tl = Math.hypot(toX, toZ) || 1;
+  state.freakId++;
+  state.freakWave = {
+    id: state.freakId, x: sx, z: sz,
+    dirX: toX / tl, dirZ: toZ / tl,
+    amp: 5.5, radius: 28, speed: 18, age: 0, life: 30,
+  };
+  toast('⚠️ FREAK WAVE', 'a wall of water is coming — turn into it (bow-on) or be rolled!');
+}
 function update(dt){
   const st = STAGES[state.stage];
   state.t += dt;
+  // v11.8: freak waves (Nicholas, 2026-11-13) — Hurricane + Huge waves
+  // only. A freak wave is one huge, moving crest (a wall of water, ~5.5
+  // units high) that spawns ahead of the fleet and travels in to meet
+  // it. It is a user-requested exception to the v11.0 "no hazards" rule,
+  // gated to Hurricane + Huge waves.
+  if(state.stage === 3 && ampCur > 1.5){
+    if(!state.freakWave){
+      state.freakT -= dt;
+      if(state.freakT <= 0) spawnFreakWave();
+    } else {
+      const fw = state.freakWave;
+      fw.age += dt;
+      fw.x += fw.dirX * fw.speed * dt;
+      fw.z += fw.dirZ * fw.speed * dt;
+      if(fw.age > fw.life){
+        state.freakWave = null;
+        state.freakT = 45 + Math.random() * 30; // 45-75 s of game time to the next one
+      }
+    }
+  } else if(state.freakWave){
+    // left Hurricane/Huge (stage change or wave setting) — the wave is gone
+    state.freakWave = null;
+    state.freakT = 45;
+  }
   // v11.0: Engine Order Telegraph — the ordered speed slews toward the
   // notch target at the ship's spool rate (heavy displacement + turbine
   // lag: a carrier takes ~17 s to work up to flank, a destroyer ~9 s),
@@ -2568,6 +2656,14 @@ function update(dt){
   // stops and hydrodynamic drag coasts the ship to a halt; FULL ASTERN is
   // the brake as well as reverse (Atlantic Fleet rule).
   const flag = flagship();
+  // v11.8: rocking gain — the waves rock the ships more as the weather
+  // worsens and the waves are set higher (Nicholas, 2026-11-13). The
+  // wave slope already grows with the stage (the spectrum amps), but the
+  // spring-damper smooths it away, so the visible rock is too small.
+  // The gain multiplies the spring target: 1.0 in Calm on Normal waves,
+  // ~1.6 in a Hurricane on Normal, ~1.8 in a Hurricane on Huge. Calm is
+  // unchanged; the rock grows with the weather, as he asked.
+  const rockGain = 1 + state.stage * 0.2 + Math.max(0, ampCur - 1) * 0.4;
   // v11.5: the collision shape, hoisted to the top of update() so the
   // escort loop can use it too (it was defined down in the collision
   // section, after the escort loop, where a const cannot be reached).
@@ -2822,8 +2918,13 @@ function update(dt){
     // cuts its motor.
     let thrustIn;
     if(holding){
-      thrustIn = Math.max(-1, Math.min(1, (desSpeed - m.forwardSpeed) / 2));
-      if(distToSlot < 1.5 && Math.abs(m.forwardSpeed) < 0.5) thrustIn = 0;
+      // v11.8: the v11.6 check found the fleet colliding at rest (100% ->
+      // 84% with no input) — the holding gain (/2) was too weak to counter
+      // the current, and the settled cut (1.5/0.5) let escorts go slack
+      // and drift into each other. Stronger gain (/1) and a tighter cut
+      // (0.8/0.3), so a resting escort holds its slot firmly.
+      thrustIn = Math.max(-1, Math.min(1, (desSpeed - m.forwardSpeed) / 1));
+      if(distToSlot < 0.8 && Math.abs(m.forwardSpeed) < 0.3) thrustIn = 0;
     } else {
       // v11.2: escorts may brake underway. The old [0,1] clamp meant an
       // escort faster than its desired speed could only coast down on drag
@@ -3122,8 +3223,8 @@ function update(dt){
       const dampK = (2 / s.tau) * PHYSICS.bilgeDamping;
       s.pitchVel = s.pitchVel || 0;
       s.rollVel = s.rollVel || 0;
-      s.pitchVel += ((mo.pitch - s.pitchSm) * springK - dampK * s.pitchVel * (1 + Math.abs(s.pitchVel) * 1.5)) * dt;
-      s.rollVel += ((mo.roll - s.rollSm) * springK - dampK * s.rollVel * (1 + Math.abs(s.rollVel) * 1.5)) * dt;
+      s.pitchVel += ((mo.pitch * rockGain - s.pitchSm) * springK - dampK * s.pitchVel * (1 + Math.abs(s.pitchVel) * 1.5)) * dt;
+      s.rollVel += ((mo.roll * rockGain - s.rollSm) * springK - dampK * s.rollVel * (1 + Math.abs(s.rollVel) * 1.5)) * dt;
       s.pitchSm += s.pitchVel * dt;
       s.rollSm += s.rollVel * dt;
       const kick = mo.rudder * 0.03 * Math.exp(-mo.kickT * 2.5);
@@ -3179,6 +3280,31 @@ function update(dt){
       }
       s.group.position.set(s.x, s.y, s.z);
       s.group.rotation.set(s.pitchSm + s.trim, -s.heading, s.rollSm + s.list + mo.heel + kick + s.heelKick);
+      // v11.8: freak-wave hit. When the crest passes a ship, the angle
+      // between the wave's travel direction and the ship's axis decides
+      // her fate. Beam-on (the wave travels across the hull) she is
+      // rolled over and capsizes. Bow-on (head-on, or stern-on) she is
+      // swamped — she takes on water and survives, but only so many
+      // times (each swamping adds 0.3 flood; at 0.9 she goes down).
+      // Each wave hits a ship at most once (lastFreakId).
+      if(state.freakWave && s.lastFreakId !== state.freakWave.id){
+        const fw = state.freakWave;
+        const fdx = s.x - fw.x, fdz = s.z - fw.z;
+        if(fdx * fdx + fdz * fdz < fw.radius * fw.radius){
+          s.lastFreakId = fw.id;
+          // cos of the angle between the wave direction and the ship's axis
+          const fx = Math.sin(s.heading), fz = -Math.cos(s.heading);
+          const cosA = Math.abs(fw.dirX * fx + fw.dirZ * fz);
+          if(cosA < 0.5){
+            toast('💥 FREAK WAVE', s.name + ' took it beam-on and rolled over!');
+            sinkShip(s, 'capsize');
+          } else {
+            s.floodTotal = Math.min(1, (s.floodTotal || 0) + 0.3);
+            s.hp = Math.max(1, s.hp - 8);
+            toast('🌊 SWAMPED', s.name + ' took a freak wave head-on — she survives, but she is taking on water.');
+          }
+        }
+      }
     } else {
       // sinking (v10.0): how she goes down depends on the damage — capsize
       // rolls her over, bow/stern take her down by that end, settle sinks
@@ -3599,7 +3725,9 @@ function updateCamera(dt){
     // the whole fleet still fits in frame at the default zoom.
     // v11.6: 2.2 — the wider slots (x1.6) need more room, and the v11.5
     // check clipped the outer destroyers at 1.6.
-    const fitCap = state.camZoom < 1 ? camZ : camZ * 2.2;
+    // v11.8: 2.6 — the v11.6 check still clipped the trailing destroyers
+    // at 2.2, so the camera pulls back further at the default zoom.
+    const fitCap = state.camZoom < 1 ? camZ : camZ * 2.6;
     if(fitD >= fitCap){ fitD = fitCap; break; }
   }
   // smooth the fit distance: snap out instantly when the fleet needs room,
@@ -3685,20 +3813,25 @@ function idleUpdate(dt){
 
 // ---------- main loop ----------
 // v11.5: the ocean is a volume, not just a surface (Cold Waters). When
-// the camera goes under, the scene becomes underwater: the fog closes in
-// and turns deep blue-green, the sun dims, the sky dome hides (it has
-// fog:false, so it would show a pale sky underwater), and the tint washes
-// the view. The ocean is already DoubleSide, so the surface renders from
-// below — the shader's Fresnel makes it mostly sky-coloured from below,
-// a bright ceiling, which reads as the surface. Called every frame in
-// loop(), after updateCamera, so it uses the camera's final position.
+// the camera goes under, the scene becomes underwater: the background
+// turns deep blue-green, the fog closes in (the murk — Nicholas says it
+// is fine), the sun dims, the sky dome hides (it has fog:false, so it
+// would show a pale sky underwater), and the tint washes the view.
+// v11.8: the fog is back, but only for the murk — above water its far is
+// 5000, so there is no distance fog (the v11.7 removal stands for the
+// above-water view). The ocean is already DoubleSide, so the surface
+// renders from below — the shader's Fresnel makes it mostly sky-coloured
+// from below, a bright ceiling, which reads as the surface. Called every
+// frame in loop(), after updateCamera, so it uses the camera's final position.
 function updateUnderwater(){
   const cy = camera.position.y;
   const u = THREE.MathUtils.clamp((1 - cy) / 6, 0, 1); // 0 at y>=1, 1 at y<=-5
   const us = u * u * (3 - 2 * u); // smoothstep, so the surface crossing is gentle
+  // v11.8: the murk is back (the fog closes in underwater), but above
+  // water the far is 5000, so there is no distance fog.
   scene.fog.color.lerpColors(stageBase.sky, UNDER_COL, us);
   scene.fog.near = 60 + (2 - 60) * us;
-  scene.fog.far = stageBase.fogFar + (55 - stageBase.fogFar) * us;
+  scene.fog.far = 5000 + (55 - 5000) * us;
   scene.background.lerpColors(stageBase.sky, UNDER_COL, us);
   sun.intensity = stageBase.sunI + (0.25 - stageBase.sunI) * us;
   hemi.intensity = 0.9 + (0.45 - 0.9) * us;
@@ -3738,7 +3871,15 @@ function loop(){
   // not run when paused or on the start screen, and the v11.5 check
   // still saw a stale banner after a sinking finished. This is the same
   // rule, in the one place that runs unconditionally.
+  // v11.8: the banner text refreshes every frame, so the flagship name
+  // in parentheses stays current when command changes mid-spectate (the
+  // v11.6 check saw it still read "(Carrier)" after Destroyer 1 took
+  // command). The banner is still a pure function of spectateShip.
   if(!state.spectateShip) $('spectateBar').classList.add('hidden');
+  else {
+    const f = flagship();
+    $('spectateBar').textContent = '👁 SPECTATING · ' + state.spectateShip.name + ' is going down — press C or Esc to return to the helm' + (f ? ' (' + f.name + ')' : '');
+  }
   updateUnderwater();
   skyDome.position.copy(camera.position);
   if(composer) composer.render(); else renderer.render(scene, camera);
