@@ -255,7 +255,7 @@
     </div>
     <button class="ghostBtn" id="camBtnStart">🎥 Camera</button><br>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.1</div>
+    <div class="ver">v11.2</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -1588,16 +1588,32 @@ function stepTelegraph(dir){
   // dir +1 = faster (toward FLANK), -1 = slower (toward FULL ASTERN)
   setTelegraph(f.telegraph - dir);
 }
+// v11.2: re-derive every ship's slot from its CURRENT position relative
+// to the new flagship. The old slot swap teleported the formation's
+// reference frame 40-65 units — every escort's target jumped at once and
+// the whole fleet scrambled across itself. Re-deriving freezes the
+// formation exactly as it is: nobody's target moves, only the command
+// changes. The slot frame is flag.pos + R(flag.heading) x (dx, dz), so
+// the inverse is dx = ox*cos(h) + oz*sin(h), dz = -ox*sin(h) + oz*cos(h).
+function rederiveSlots(newFlag){
+  const c = Math.cos(newFlag.heading), sn = Math.sin(newFlag.heading);
+  fleet.forEach(s => {
+    if(!s.alive) return;
+    const ox = s.x - newFlag.x, oz = s.z - newFlag.z;
+    s.dx = ox * c + oz * sn;
+    s.dz = -ox * sn + oz * c;
+  });
+}
 function switchShip(idx){
   const next = fleet[idx];
   if(!next || !next.alive || idx === state.playerIdx || !state.running) return;
   const old = fleet[state.playerIdx];
-  // swap formation slots so the shape is preserved and the ex-flagship
-  // does not try to sit at (0,0) — it takes the new flagship's old slot
-  const tdx = old.dx, tdz = old.dz;
-  old.dx = next.dx; old.dz = next.dz;
-  next.dx = tdx; next.dz = tdz;
   state.playerIdx = idx;
+  // v11.2: re-derive the slots from where the ships actually are — the
+  // formation keeps its current shape and nobody's target jumps (see
+  // rederiveSlots). The old swap moved the reference frame 40-65 units
+  // and sent every escort scrambling across the formation.
+  rederiveSlots(next);
   // v11.1: sync the helm to the new ship without touching its momentum —
   // the ordered speed starts where the ship already is, but the ORDER is
   // inherited from the old flagship, so the fleet does not slow down just
@@ -2253,6 +2269,10 @@ function sinkShip(ship, mode){
   // her own speed — no lurch, no reset — and inherits the lost ship's
   // order, so the fleet does not slow down on command transfer
   if(next && wasPlayer){
+    // v11.2: the formation keeps its shape on a sinking too — re-derive
+    // the slots instead of re-centring on the new flagship (which used to
+    // teleport every escort's target and scramble the survivors)
+    rederiveSlots(next);
     next.spoolSpeed = next.motion.forwardSpeed;
     next.telegraph = ship.telegraph;
     syncHelmUI(); syncFleetPanel();
@@ -2495,18 +2515,24 @@ function update(dt){
     const desired = m.arrive({ x: tx, z: tz }, holding ? 12 : 30, Math.max(6, state.speed + 4));
     const desSpeed = Math.hypot(desired.x, desired.z);
     const distToSlot = Math.hypot(tx - m.x, tz - m.z);
-    // v11.1: hard parallel alignment near the slot. The old linear blend
-    // (w = 1 - dist/12) only straightened the bow at dist 0, which the
-    // current never lets an escort reach — so every escort settled into a
-    // steady ~30-50 deg inward crab and the formation converged on the
-    // carrier (v11.0 check: the wedge). Within 6 units the bow is simply
-    // the flagship's heading; the escort closes the last few units by
-    // sailing parallel, and only steers at the slot from farther out.
+    // v11.2: cap the approach angle. A ship can only move along its
+    // heading, so closing a sideways gap REQUIRES pointing at the slot —
+    // the v11.1 hard-parallel rule could not close a lateral gap, so
+    // escorts kept drifting out of the 6-unit bubble on the current and
+    // re-approaching at a steep angle: the wedge is a limit cycle, not a
+    // spawn bug. The cap grows with distance — near the slot the bow stays
+    // within ~24 deg of the fleet heading and the gap closes slowly and
+    // safely; far away the ship may steer freely to its slot. Inside 6
+    // units the bow is simply the flagship's heading.
     let desHeading;
     if (distToSlot < 6) {
       desHeading = flag.heading;
     } else {
-      desHeading = desSpeed > 0.5 ? Math.atan2(desired.x, -desired.z) : s.heading;
+      const rawHeading = desSpeed > 0.5 ? Math.atan2(desired.x, -desired.z) : s.heading;
+      const cap = Math.min(Math.PI / 2, (24 + (distToSlot - 6) * 2) * Math.PI / 180);
+      let dhF = rawHeading - flag.heading;
+      dhF = ((dhF + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+      desHeading = flag.heading + Math.max(-cap, Math.min(cap, dhF));
     }
     let dh = desHeading - m.heading;
     dh = ((dh + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
@@ -2543,7 +2569,14 @@ function update(dt){
       thrustIn = Math.max(-1, Math.min(1, (desSpeed - m.forwardSpeed) / 2));
       if(distToSlot < 1.5 && Math.abs(m.forwardSpeed) < 0.5) thrustIn = 0;
     } else {
-      thrustIn = Math.max(0, Math.min(1, (desSpeed - m.forwardSpeed) / 5));
+      // v11.2: escorts may brake underway. The old [0,1] clamp meant an
+      // escort faster than its desired speed could only coast down on drag
+      // — so when the flagship slowed, the escorts ran on into the ships
+      // ahead of them (v11.1 check: battleships grinding on the coast-down).
+      // Thrust now chases the desired speed both ways, like the flagship's
+      // own controller; it cannot drive the ship astern, because the error
+      // term goes to zero as forward speed meets the desired speed.
+      thrustIn = Math.max(-1, Math.min(1, (desSpeed - m.forwardSpeed) / 5));
     }
     if(av.blocked) thrustIn = Math.min(thrustIn, 0.15);
     // v10.2: catch-up boost — an escort far from its slot gets extra speed
