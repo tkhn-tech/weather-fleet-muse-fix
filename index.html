@@ -125,6 +125,9 @@
      camera goes under (opacity set by updateUnderwater); the gradient is
      darker at the edges so the deep reads as a volume, not a flat colour. */
   #waterTint{position:fixed;inset:0;z-index:8;pointer-events:none;opacity:0;background:radial-gradient(ellipse at 50% 40%, rgba(10,60,70,.28), rgba(4,25,35,.62))}
+  /* v11.14: lens droplets — a fullscreen droplet overlay shown for 1.5 s
+     when the camera surfaces (opacity + runoff set by updateUnderwater). */
+  #lensDroplets{position:fixed;inset:0;z-index:9;pointer-events:none;opacity:0;background-repeat:no-repeat;background-size:cover}
   /* v11.1: the helm adapts to phone screens — the telegraph was too big
      in portrait and ran off the top of the screen in landscape */
   @media (max-width:560px){
@@ -182,11 +185,13 @@
     <div id="stageBar"><div id="stageFill"></div></div></div>
   <div id="freakWarn" class="hidden">⚠️ FREAK WAVE — a wall of water is coming! Turn into it (bow-on) or be rolled!</div>
   <div id="waterTint"></div>
+  <div id="lensDroplets"></div>
   <div class="pill">⭐ <b id="score">0</b></div>
   <button class="iconBtn" id="soundBtn" title="Sound on/off">🔊</button>
   <button class="iconBtn" id="restartBtn" title="Restart round">↻</button>
   <button class="iconBtn" id="pauseBtn" title="Pause">⏸</button>
   <button class="iconBtn" id="camBtn" title="Reset camera (R)">↺</button>
+  <button class="iconBtn" id="diveBtn" title="Underwater camera (U)">🌊</button>
 </div>
 
 <div id="telegraphPanel">
@@ -213,7 +218,7 @@
 <div id="miniMap"><canvas id="miniCv" width="128" height="128"></canvas></div>
 
 <div id="stageToast"><h2 id="stageName">Calm Seas</h2><p id="stageDesc">The fleet sails out. Hold formation.</p></div>
-<div id="hint">Telegraph (W/S or ↑ ↓) sets speed — the ship spools up to the order<br>Joystick / ← → / A D is the rudder — release and it returns to midships · Tab switches ship<br>Drag the sea to orbit the camera · pinch to zoom · ↺ (or R) resets it</div>
+<div id="hint">Telegraph (W/S or ↑ ↓) sets speed — the ship spools up to the order<br>Joystick / ← → / A D is the rudder — release and it returns to midships · Tab switches ship<br>Drag the sea to orbit the camera · pinch to zoom · ↺ (or R) resets it · U dives below the surface</div>
 <div id="rudderReadout">RUDDER 0° · MIDSHIPS</div>
 <div id="joy"><span class="joyLab" style="left:10px">PORT</span><span class="joyLab" style="right:10px">STBD</span><div class="joyTick" style="left:12%"></div><div class="joyTick" style="left:50%"></div><div class="joyTick" style="left:88%"></div><div id="joyKnob"></div></div>
 
@@ -245,13 +250,13 @@
         <button data-k="dd1">Destroyer 1</button><button data-k="dd2">Destroyer 2</button><button data-k="dd3">Destroyer 3</button><button data-k="dd4">Destroyer 4</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.12</div>
+    <div class="ver">v11.14</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
     </div>
-    <p class="keys">Rudder: joystick (left/right) or ← → / A D — release to return to midships &nbsp;·&nbsp; Telegraph: W / S or ↑ ↓, click the panel, or keys 1–8 &nbsp;·&nbsp; Command: Tab or the fleet panel &nbsp;·&nbsp; Pause: P &nbsp;·&nbsp; Watch a sinking ship: C<br>
-      Drag / swipe the sea: orbit the camera round the fleet &nbsp;·&nbsp; Wheel: zoom &nbsp;·&nbsp; Right-drag: free look &nbsp;·&nbsp; 🎥 Camera panel: zoom &amp; look in any direction, R resets the camera, ✕ closes it</p>
+    <p class="keys">Rudder: joystick (left/right) or ← → / A D — release to return to midships &nbsp;·&nbsp; Telegraph: W / S or ↑ ↓, click the panel, or keys 1–8 &nbsp;·&nbsp; Command: Tab or the fleet panel &nbsp;·&nbsp; Pause: P<br>
+      Drag / swipe the sea: orbit the camera round the fleet &nbsp;·&nbsp; Wheel / pinch: zoom &nbsp;·&nbsp; Right-drag: free look &nbsp;·&nbsp; ↺ (or R) resets the camera &nbsp;·&nbsp; U: dive below the surface</p>
   </div>
 </div>
 
@@ -376,6 +381,43 @@ scene.add(flashLight);
 const boomLight = new THREE.PointLight(0xff8c2e, 0, 60);
 scene.add(boomLight);
 
+// v11.14: underwater post pass — a fullscreen shader that fades in when the
+// camera is submerged (uUnder 0..1): subtle chromatic aberration, a gentle
+// wavy UV distortion, and deep blue-green colour grading. It sits after
+// SMAA and before OutputPass so it works in linear space.
+const UnderwaterShader = {
+  uniforms: {
+    tDiffuse: {value: null},
+    uUnder: {value: 0},
+    uTime: {value: 0},
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main(){
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float uUnder;
+    uniform float uTime;
+    varying vec2 vUv;
+    void main(){
+      vec2 uv = vUv;
+      vec2 wob = vec2(sin(uv.y * 20.0 + uTime * 1.2) * 0.003, cos(uv.x * 18.0 + uTime * 0.9) * 0.003) * uUnder;
+      uv += wob;
+      vec2 dir = uv - 0.5;
+      float ab = 0.0025 * uUnder * (0.5 + dot(dir, dir) * 2.0);
+      float r = texture2D(tDiffuse, uv + dir * ab).r;
+      float g = texture2D(tDiffuse, uv).g;
+      float b = texture2D(tDiffuse, uv - dir * ab).b;
+      vec3 col = vec3(r, g, b);
+      vec3 graded = col * vec3(0.75, 0.95, 1.05) + vec3(0.0, 0.03, 0.06) * uUnder;
+      col = mix(col, graded, uUnder);
+      gl_FragColor = vec4(col, 1.0);
+    }`
+};
+let underPass = null;
 let composer = null;
 try {
   const {EffectComposer} = await import('three/addons/postprocessing/EffectComposer.js');
@@ -383,10 +425,13 @@ try {
   const {UnrealBloomPass} = await import('three/addons/postprocessing/UnrealBloomPass.js');
   const {SMAAPass} = await import('three/addons/postprocessing/SMAAPass.js');
   const {OutputPass} = await import('three/addons/postprocessing/OutputPass.js');
+  const {ShaderPass} = await import('three/addons/postprocessing/ShaderPass.js');
   composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
   composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.35, 0.6, 1.0));
   composer.addPass(new SMAAPass(window.innerWidth, window.innerHeight));
+  underPass = new ShaderPass(UnderwaterShader);
+  composer.addPass(underPass);
   composer.addPass(new OutputPass());
 } catch(e) { composer = null; }
 
@@ -832,6 +877,12 @@ const oceanUniforms = {
   uSunI:  {value: 1.15},
   uTime:  {value: 0},
   uFoam:  {value: new THREE.Color(0xdde8ee)},
+  // v11.14: hull foam + Kelvin wake — the 7 fleet ships (x, z, heading,
+  // forwardSpeed) and their sizes (len, beam); the wind for storm streaks.
+  uShips: {value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()]},
+  uShipSize: {value: [new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2()]},
+  uWind:  {value: new THREE.Vector2(0, 1)},
+  uWindStr: {value: 0},
 };
 Object.assign(oceanUniforms, THREE.UniformsUtils.clone(THREE.UniformsLib.fog));
 const oceanMat = new THREE.ShaderMaterial({
@@ -865,6 +916,10 @@ const oceanMat = new THREE.ShaderMaterial({
     uniform float uSunI;
     uniform float uTime;
     uniform vec3 uFoam;
+    uniform vec4 uShips[7];
+    uniform vec2 uShipSize[7];
+    uniform vec2 uWind;
+    uniform float uWindStr;
     varying vec3 vNormal;
     varying vec3 vWorldPos;
     varying float vSteep;
@@ -883,6 +938,22 @@ const oceanMat = new THREE.ShaderMaterial({
       return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
     }
     void main(){
+      // v11.14: Snell's Window — the ocean is DoubleSide, so when the camera
+      // is below the surface this fragment is the underside. Looking up, the
+      // refracted sky is a bright circular window overhead (within ~48 deg
+      // of straight up, the critical angle); outside it is total internal
+      // reflection — the dark deep-blue abyss. No fog here: the murk would
+      // wash the bright window out.
+      if(!gl_FrontFacing){
+        vec3 R = normalize(vWorldPos - cameraPosition);
+        float upAmt = R.y;
+        float win = smoothstep(0.60, 0.72, upAmt);
+        vec3 skyRef = uSky * 1.3 + vec3(1.0, 0.95, 0.8) * pow(max(dot(R, uSunDir), 0.0), 200.0) * 3.0;
+        vec3 abyss = vec3(0.01, 0.10, 0.16);
+        vec3 col = mix(abyss, skyRef, win);
+        gl_FragColor = vec4(col, 1.0);
+        return;
+      }
       vec3 V = normalize(cameraPosition - vWorldPos);
       float dist = length(cameraPosition - vWorldPos);
       vec2 wp = vWorldPos.xz;
@@ -890,7 +961,7 @@ const oceanMat = new THREE.ShaderMaterial({
       // far sea stays calm (footprint fade). The perturbation is the
       // gradient of value noise, not a product of sines — a sine product
       // tiles into a regular ribbed/corrugated pattern on a calm sea (v8.1).
-      // 3 high-frequency normal octaves (v9.0): three value-noise scales
+      // 4 high-frequency normal octaves (v9.0: 3; v11.14: a 4th, finest octave): value-noise scales
       // scrolling at different speeds and directions, summed into the
       // normal so the surface ripples instead of repeating one pattern.
       float detailFade = exp(-dist / 170.0);
@@ -913,15 +984,23 @@ const oceanMat = new THREE.ShaderMaterial({
         float e = 0.2;
         g3 = vec2(vnoise(rp) - vnoise(rp + vec2(e, 0.0)), vnoise(rp) - vnoise(rp + vec2(0.0, e)));
       }
-      N.xz += detailFade * (0.30 * g1 + 0.18 * g2 + 0.10 * g3);
+      vec2 g4 = vec2(0.0);
+      {
+        vec2 rp = wp * 9.0 + vec2(-uTime * 0.8, uTime * 0.7);
+        float e = 0.12;
+        g4 = vec2(vnoise(rp) - vnoise(rp + vec2(e, 0.0)), vnoise(rp) - vnoise(rp + vec2(0.0, e)));
+      }
+      N.xz += detailFade * (0.30 * g1 + 0.18 * g2 + 0.10 * g3 + 0.05 * g4);
       N = normalize(N);
       float ndv = max(dot(N, V), 0.0);
       // deep colour in the troughs, lighter toward the crests
       vec3 water = mix(uDeep, uBase, smoothstep(-0.15, 0.45, vH));
       water = mix(water, uCrest, smoothstep(0.55, 1.0, vH) * 0.65);
-      // subsurface scatter: crests glow when you look toward the sun
-      float sss = pow(max(dot(V, -uSunDir), 0.0), 3.0) * smoothstep(0.25, 1.0, vH);
-      water += uCrest * sss * 0.55;
+      // v11.14: subsurface scatter — thin crests glow deep translucent
+      // turquoise-blue when backlit (looking toward the sun through the
+      // wave). Stronger on steep, thin crests (vSteep) as well as high ones.
+      float sss = pow(max(dot(V, -uSunDir), 0.0), 3.0) * smoothstep(0.25, 1.0, vH) * (0.6 + 0.4 * smoothstep(0.3, 0.8, vSteep));
+      water += vec3(0.05, 0.65, 0.60) * sss * 0.8;
       // Schlick Fresnel: sky reflection takes over at grazing angles
       float F = 0.03 + 0.97 * pow(1.0 - ndv, 5.0);
       vec3 col = mix(water, uSky, F * 0.85);
@@ -936,7 +1015,53 @@ const oceanMat = new THREE.ShaderMaterial({
       float foamGate = smoothstep(0.15, 0.55, vSteep) * smoothstep(0.0, 0.4, vH);
       float foam = smoothstep(0.5, 0.85, foamGate + (n - 0.5) * 0.7);
       foam *= exp(-dist / 260.0);
-      col = mix(col, uFoam, foam * 0.9);
+      // v11.14: hull waterline foam + Kelvin wake, driven by the fleet.
+      // uShips[i] = (x, z, heading, forwardSpeed); uShipSize[i] = (len, beam).
+      // The hull is a capsule (a centreline segment bow-to-stern with the beam
+      // as its radius); the foam is a churning band just outside it, the Kelvin
+      // wake is a V at 19.5 deg opening astern, and the propeller wash is a foam
+      // patch directly astern. All scale with speed; one churn noise (computed
+      // once per fragment) keeps it cheap, and a range guard skips far ships.
+      float churnN = vnoise(wp * 1.5 + vec2(uTime * 1.5, -uTime * 1.0));
+      float shipFoam = 0.0;
+      for(int i = 0; i < 7; i++){
+        if(uShipSize[i].x > 1.0){
+          vec2 d = wp - uShips[i].xy;
+          if(abs(d.x) < 160.0 && abs(d.y) < 160.0){
+            float ch = cos(uShips[i].z), sn = sin(uShips[i].z);
+            float lx = d.x * ch + d.y * sn;
+            float lz = -d.x * sn + d.y * ch;
+            float hl = uShipSize[i].x * 0.5;
+            float hb = uShipSize[i].y * 0.5;
+            float spd = abs(uShips[i].w);
+            float spdF = smoothstep(0.0, 8.0, spd);
+            float lzC = clamp(lz, -hl, hl);
+            float segD = length(vec2(lx, lz - lzC));
+            float w = segD - hb;
+            float band = smoothstep(0.0, 1.5, w) * (1.0 - smoothstep(1.5, 5.0, w));
+            float hullF = band * (0.25 + 0.75 * spdF) * (0.6 + 0.4 * churnN);
+            float astern = lz - hl;
+            float wakeF = 0.0;
+            if(astern > 0.0 && astern < 120.0){
+              float armD = min(abs(lx * 0.943 - astern * 0.334), abs(lx * 0.943 + astern * 0.334));
+              float armF = (1.0 - smoothstep(0.0, 3.0, armD)) * (1.0 - smoothstep(20.0, 120.0, astern));
+              float washF = (1.0 - smoothstep(0.0, 4.0, abs(lx))) * (1.0 - smoothstep(5.0, 60.0, astern));
+              wakeF = (armF * 0.7 + washF * 0.9) * spdF * (0.6 + 0.4 * churnN);
+            }
+            shipFoam += hullF + wakeF;
+          }
+        }
+      }
+      shipFoam = min(shipFoam, 1.0) * exp(-dist / 260.0);
+      // v11.14: storm sea-spray — at high wind the whitecap foam stretches
+      // along the wind vector into wind-blown streaks (anisotropic noise:
+      // the coordinate along the wind is compressed, so features elongate
+      // along it). Gated on wind strength (stage wind / 20) and on crests.
+      vec2 wPerp = vec2(-uWind.y, uWind.x);
+      vec2 streakUV = vec2(dot(wp, wPerp), dot(wp, uWind) * 0.15);
+      float streak = vnoise(streakUV * 0.35 + vec2(0.0, uTime * 0.25));
+      float streakF = smoothstep(0.55, 0.8, streak) * smoothstep(0.4, 0.8, uWindStr) * 0.6 * smoothstep(0.0, 0.3, vH) * exp(-dist / 260.0);
+      col = mix(col, uFoam, clamp(foam + shipFoam + streakF, 0.0, 1.0) * 0.9);
       gl_FragColor = vec4(col, 1.0);
       #include <fog_fragment>
     }`,
@@ -944,6 +1069,92 @@ const oceanMat = new THREE.ShaderMaterial({
 const ocean = new THREE.Mesh(oceanGeo, oceanMat);
 ocean.position.set(0, 0, 0);
 scene.add(ocean);
+// v11.14: volumetric god rays — light shafts hanging down from the surface
+// (Cold Waters). Large, thin, additive-blended planes with a vertical
+// gradient texture (bright at the surface, fading with depth), following
+// the camera and visible only when underwater. They are angled along the
+// sun direction and shimmer gently.
+function makeRayTexture(){
+  const c = document.createElement('canvas'); c.width = 64; c.height = 256;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, 'rgba(180,220,235,0.55)');
+  grad.addColorStop(0.5, 'rgba(140,190,215,0.22)');
+  grad.addColorStop(1, 'rgba(120,180,205,0.0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 256);
+  const side = g.createLinearGradient(0, 0, 64, 0);
+  side.addColorStop(0, 'rgba(0,0,0,1)');
+  side.addColorStop(0.25, 'rgba(0,0,0,0)');
+  side.addColorStop(0.75, 'rgba(0,0,0,0)');
+  side.addColorStop(1, 'rgba(0,0,0,1)');
+  g.globalCompositeOperation = 'destination-out';
+  g.fillStyle = side; g.fillRect(0, 0, 64, 256);
+  return new THREE.CanvasTexture(c);
+}
+const godRayTex = makeRayTexture();
+const godRays = new THREE.Group();
+const godRayMats = [];
+for(let i = 0; i < 8; i++){
+  const mat = new THREE.MeshBasicMaterial({map: godRayTex, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false});
+  const geo = new THREE.PlaneGeometry(6 + Math.random() * 8, 34);
+  const m = new THREE.Mesh(geo, mat);
+  const a = (i / 8) * Math.PI * 2 + Math.random() * 0.5;
+  const r = 8 + Math.random() * 18;
+  m.position.set(Math.cos(a) * r, -14, Math.sin(a) * r);
+  m.rotation.set(0.25, a, 0.12 * (Math.random() - 0.5));
+  godRays.add(m); godRayMats.push(mat);
+}
+godRays.visible = false;
+scene.add(godRays);
+// v11.14: marine snow / plankton — a cloud of slowly drifting white dots
+// around the camera, visible only underwater. The points live in a local
+// box that follows the camera (the group's position is the camera's), so
+// they are always around the lens; they drift down and wrap.
+const SNOW_N = 300;
+const snowGeo = new THREE.BufferGeometry();
+const snowPos = new Float32Array(SNOW_N * 3);
+const snowVel = new Float32Array(SNOW_N);
+for(let i = 0; i < SNOW_N; i++){
+  snowPos[i * 3] = (Math.random() - 0.5) * 60;
+  snowPos[i * 3 + 1] = (Math.random() - 0.5) * 40;
+  snowPos[i * 3 + 2] = (Math.random() - 0.5) * 60;
+  snowVel[i] = 0.4 + Math.random() * 0.8;
+}
+snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
+const snowMat = new THREE.PointsMaterial({color: 0xdfeef5, size: 0.35, transparent: true, opacity: 0.7, depthWrite: false, sizeAttenuation: true});
+const snowPoints = new THREE.Points(snowGeo, snowMat);
+snowPoints.visible = false;
+snowPoints.frustumCulled = false;
+scene.add(snowPoints);
+// v11.14: lens droplets — when the camera surfaces, a fullscreen droplet
+// overlay fades in and runs off over 1.5 s. The texture is generated once
+// on a canvas (random soft droplets with highlights + a few runoff streaks).
+function makeDropletTexture(){
+  const c = document.createElement('canvas'); c.width = 512; c.height = 512;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, 512, 512);
+  for(let i = 0; i < 70; i++){
+    const x = Math.random() * 512, y = Math.random() * 512;
+    const r = 3 + Math.random() * 14;
+    const grad = g.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r);
+    grad.addColorStop(0, 'rgba(255,255,255,0.75)');
+    grad.addColorStop(0.6, 'rgba(200,225,235,0.28)');
+    grad.addColorStop(1, 'rgba(200,225,235,0.0)');
+    g.fillStyle = grad;
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  }
+  for(let i = 0; i < 12; i++){
+    const x = Math.random() * 512, y = Math.random() * 300;
+    const len = 30 + Math.random() * 90;
+    const grad = g.createLinearGradient(0, y, 0, y + len);
+    grad.addColorStop(0, 'rgba(220,235,240,0.35)');
+    grad.addColorStop(1, 'rgba(220,235,240,0.0)');
+    g.fillStyle = grad;
+    g.fillRect(x, y, 2.5, len);
+  }
+  return c.toDataURL();
+}
+$('lensDroplets').style.backgroundImage = 'url(' + makeDropletTexture() + ')';
 // v11.10: the freak-wave crest — a dedicated "wall of water" mesh. The
 // Gerstner bump (v11.8/v11.9) drives the ships but is a smooth dome that
 // blends into the Huge-wave swells from the low chase camera (the v11.9
@@ -1861,6 +2072,25 @@ function updateParticles(dt){
   pGeo.attributes.position.needsUpdate = true;
   pGeo.attributes.color.needsUpdate = true;
 }
+// v11.14: propeller cavitation — a moving ship trails small rising bubbles
+// from her stern (visible from the underwater camera). One bubble per ship
+// every ~0.2 s while she is making more than 3 u/s; each rises to the
+// surface over ~2 s and fades.
+function emitPropBubbles(dt){
+  for(let i = 0; i < fleet.length; i++){
+    const s = fleet[i];
+    if(!s || !s.alive || !s.motion) continue;
+    const spd = Math.abs(s.motion.forwardSpeed);
+    if(spd < 3) continue;
+    s.bubbleT = (s.bubbleT || 0) - dt;
+    if(s.bubbleT > 0) continue;
+    s.bubbleT = 0.2;
+    const ms = MODEL_SPEC[s.type] || {len: 40};
+    const sx = s.x - Math.sin(s.heading) * (ms.len * 0.5);
+    const sz = s.z + Math.cos(s.heading) * (ms.len * 0.5);
+    spawnParticle(sx + (Math.random() - 0.5) * 2, -1.5, sz + (Math.random() - 0.5) * 2, 0, 1.2 + Math.random() * 0.8, 0, 2.0 + Math.random(), 0.75, 0.85, 0.95, 0.3);
+  }
+}
 
 // ---------- sprite pool (smoke, wakes, crest foam) ----------
 const spritePool = [];
@@ -1979,6 +2209,7 @@ const state = {
   capT: 0,
   camHeading: 0, camBank: 0, headingRate: 0, camZfSm: 0,
   windDir: 0, curX: 0, curZ: 0, cog: 0,
+  diveCam: false, diveBlend: 0, dropletT: 0, // v11.14: underwater camera (U) + lens droplets
 };
 let frameCount = 0;
 let clock = new THREE.Clock();
@@ -2154,6 +2385,17 @@ function resetCamera(){
 // v11.12: the HUD camera button is now the reset button (the panel is
 // gone). Pinch (touch) and the wheel (mouse) zoom; drag orbits.
 $('camBtn').addEventListener('click', resetCamera);
+$('diveBtn').addEventListener('click', toggleDiveCam);
+
+// v11.14: the underwater / hull-inspection camera (U). It dives the camera
+// below the surface near the flagship; the helm is NOT locked. Pressing U
+// (or the button) again surfaces it, and the lens droplets run off.
+function toggleDiveCam(){
+  if(!state.running || state.over) return;
+  state.diveCam = !state.diveCam;
+  $('diveBtn').textContent = state.diveCam ? '⬆️' : '🌊';
+  $('diveBtn').title = state.diveCam ? 'Surface camera (U)' : 'Underwater camera (U)';
+}
 // v11.0: telegraph panel — click a notch to order it; ▲/▼ step one notch
 document.querySelectorAll('.teleBtn').forEach(b => {
   b.addEventListener('click', () => setTelegraph(parseInt(b.dataset.i, 10)));
@@ -2193,6 +2435,7 @@ window.addEventListener('keydown', e => {
   if(e.key === 'Tab'){ e.preventDefault(); cycleShip(1); }
   if(e.key === 'p' || e.key === 'P') togglePause();
   if(e.key === 'r' || e.key === 'R') resetCamera();
+  if(e.key === 'u' || e.key === 'U') toggleDiveCam();
   if(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ', 'Tab'].includes(e.key)) e.preventDefault();
 });
 window.addEventListener('keyup', e => {
@@ -2244,6 +2487,8 @@ function clearWorld(){
 // ---------- reset / start / game over ----------
 function reset(){
   state.t = 0; state.score = 0; state.lost = 0; state.speed = 0;
+  state.diveCam = false; state.diveBlend = 0; state.dropletT = 0;
+  const db = $('diveBtn'); if(db){ db.textContent = '🌊'; db.title = 'Underwater camera (U)'; }
   // v11.4: the round's fleet is the player's selection (roster filtered
   // by settings.fleetSel); unselected hulls are hidden
   applyFleetSelection();
@@ -3665,6 +3910,9 @@ function updateCamera(dt){
   // is gone). The chase camera stays behind her stern in the fleet's
   // frame; drag/swipe orbits it round the anchor, pinch/wheel zooms.
   const flag = flagship() || fleet[0];
+  // v11.14: the dive camera blends in/out smoothly (~1 s) instead of cutting
+  state.diveBlend += ((state.diveCam ? 1 : 0) - state.diveBlend) * (1 - Math.exp(-dt * 2.5));
+  state.diveBlend = Math.max(0, Math.min(1, state.diveBlend));
   const aspect = window.innerWidth / window.innerHeight;
   const camZ0 = aspect < 0.75 ? 80 : aspect < 1.1 ? 70 : 60;
   const camY0 = aspect < 0.75 ? 26 : aspect < 1.1 ? 22 : 19; // v10.0: lower, more at-sea-level view
@@ -3717,8 +3965,8 @@ function updateCamera(dt){
   // v10.4 camera customisation: the camera position stays locked behind the
   // fleet — only the look direction pans (left/right, up/down), so the user
   // zooms in toward any part of the scene from a fixed position.
-  const lx = flag.x + chx * lookAhead + crx * state.camPanX, lz = flag.z + chz * lookAhead + crz * state.camPanX;
-  const lookY = 2 + state.camPanY;
+  let lx = flag.x + chx * lookAhead + crx * state.camPanX, lz = flag.z + chz * lookAhead + crz * state.camPanX;
+  let lookY = 2 + state.camPanY;
   let fitD = camZ;
   for(let it = 0; it < 12; it++){
     const tY = camY * (fitD / camZ) + Math.tan(orbEl) * fitD + Math.sin(state.t * 0.5) * 0.4;
@@ -3745,9 +3993,33 @@ function updateCamera(dt){
   if(state.camZoom < 1) state.camZfSm = camZ; // v10.4: a stored fit pull-back must not defeat a close zoom
   const camZf = Math.max(camZ, state.camZfSm);
   const camYf = camY * (camZf / camZ);
-  const tx = flag.x - ohx * camZf * Math.cos(a) + orx * camZf * Math.sin(a) * 0.55;
-  const ty = camYf + Math.tan(orbEl) * camZf + Math.sin(state.t * 0.5) * 0.4;
-  const tz = flag.z - ohz * camZf * Math.cos(a) + orz * camZf * Math.sin(a) * 0.55;
+  let tx = flag.x - ohx * camZf * Math.cos(a) + orx * camZf * Math.sin(a) * 0.55;
+  let ty = camYf + Math.tan(orbEl) * camZf + Math.sin(state.t * 0.5) * 0.4;
+  let tz = flag.z - ohz * camZf * Math.cos(a) + orz * camZf * Math.sin(a) * 0.55;
+  // v11.14: the underwater / hull-inspection camera (U). When it is on, the
+  // camera dives below the surface near the flagship (about 5 below the
+  // local sea surface, clamped 2-12 below) and looks at her hull, so you can
+  // inspect the waterline, rudder and propellers and watch a sinking from
+  // below. The existing drag-orbit and zoom keep working there (the same
+  // orbit basis), and the helm is NOT locked. The dive position blends with
+  // the chase position by diveBlend, so the transition is a smooth
+  // submersion, not a cut. Gated on running/over so the start-screen
+  // attract camera never dives.
+  if(state.diveBlend > 0.001 && (state.running || state.over)){
+    const b = state.diveBlend;
+    const diveDist = 28 * state.camZoom;
+    const seaH = getOceanDataAt(flag.x, flag.z, state.t).height;
+    const diveY = seaH - 5;
+    const dtx = flag.x - ohx * diveDist;
+    const dtz = flag.z - ohz * diveDist;
+    const dty = Math.max(seaH - 12, Math.min(seaH - 2, diveY + Math.tan(orbEl) * diveDist));
+    tx = tx + (dtx - tx) * b;
+    ty = ty + (dty - ty) * b;
+    tz = tz + (dtz - tz) * b;
+    lx = lx + (flag.x - lx) * b;
+    lookY = lookY + (-2 - lookY) * b;
+    lz = lz + (flag.z - lz) * b;
+  }
   // stiff follow: faster along the direction of travel, softer sideways,
   // so the camera keeps up at speed without snapping in a turn — and
   // stiffer once the turn ends, so it settles behind the stern promptly
@@ -3831,21 +4103,73 @@ function idleUpdate(dt){
 // renders from below — the shader's Fresnel makes it mostly sky-coloured
 // from below, a bright ceiling, which reads as the surface. Called every
 // frame in loop(), after updateCamera, so it uses the camera's final position.
-function updateUnderwater(){
+// v11.14: fog objects for the underwater switch — dense exponential
+// abyssal fog (#031e30) when submerged, the normal linear fog when surfaced.
+const underFog = new THREE.FogExp2(0x031e30, 0.08);
+let surfaceFog = null;
+let prevUs = 0;
+function updateUnderwater(dt){
+  dt = dt || 0.016;
+  // v11.14: the submersion check is wave-aware — the camera is underwater
+  // when it is below the actual sea surface at its own position (so a wave
+  // washing over the lens submerges it smoothly, no hard cut).
+  const seaH = getOceanDataAt(camera.position.x, camera.position.z, state.t).height;
   const cy = camera.position.y;
-  const u = THREE.MathUtils.clamp((1 - cy) / 6, 0, 1); // 0 at y>=1, 1 at y<=-5
+  const u = THREE.MathUtils.clamp((seaH + 1 - cy) / 6, 0, 1); // 0 when 1 above the surface, 1 when 5 below
   const us = u * u * (3 - 2 * u); // smoothstep, so the surface crossing is gentle
-  // v11.8: the murk is back (the fog closes in underwater), but above
-  // water the far is 5000, so there is no distance fog.
-  scene.fog.color.lerpColors(stageBase.sky, UNDER_COL, us);
-  scene.fog.near = 60 + (2 - 60) * us;
-  scene.fog.far = 5000 + (55 - 5000) * us;
+  if(!surfaceFog) surfaceFog = scene.fog;
+  // v11.14: dense exponential abyssal fog (#031e30) when submerged; the
+  // normal linear fog when surfaced. The switch is at us > 0.5 so it only
+  // happens once per dive/surface (a fog-type change recompiles the
+  // fog-using materials — a one-time transition cost).
+  if(us > 0.5){
+    if(scene.fog !== underFog) scene.fog = underFog;
+    underFog.density = 0.02 + (us - 0.5) * 0.12; // 0.02 at the surface, 0.08 fully under
+  } else {
+    if(scene.fog !== surfaceFog) scene.fog = surfaceFog;
+    surfaceFog.color.lerpColors(stageBase.sky, UNDER_COL, us);
+    surfaceFog.near = 60 + (2 - 60) * us;
+    surfaceFog.far = 5000 + (55 - 5000) * us;
+  }
   scene.background.lerpColors(stageBase.sky, UNDER_COL, us);
   sun.intensity = stageBase.sunI + (0.25 - stageBase.sunI) * us;
   hemi.intensity = 0.9 + (0.45 - 0.9) * us;
   oceanUniforms.uSunI.value = stageBase.sunI + (0.2 - stageBase.sunI) * us;
   skyDome.visible = us < 0.5;
   $('waterTint').style.opacity = (us * 0.32).toFixed(2);
+  // v11.14: the underwater post pass fades in with the submersion
+  if(underPass){ underPass.uniforms.uUnder.value = us; underPass.uniforms.uTime.value = state.t; }
+  // v11.14: god rays + marine snow follow the camera, visible underwater
+  godRays.visible = us > 0.05;
+  if(godRays.visible){
+    godRays.position.set(camera.position.x, 0, camera.position.z);
+    for(let i = 0; i < godRayMats.length; i++){
+      godRayMats[i].opacity = us * (0.30 + 0.12 * Math.sin(state.t * 0.7 + i * 1.3));
+    }
+  }
+  snowPoints.visible = us > 0.05;
+  if(snowPoints.visible){
+    snowPoints.position.set(camera.position.x, camera.position.y, camera.position.z);
+    for(let i = 0; i < SNOW_N; i++){
+      snowPos[i * 3 + 1] -= snowVel[i] * dt;
+      snowPos[i * 3] += Math.sin(state.t * 0.3 + i * 1.7) * 0.3 * dt;
+      if(snowPos[i * 3 + 1] < -20) snowPos[i * 3 + 1] = 20;
+    }
+    snowGeo.attributes.position.needsUpdate = true;
+  }
+  // v11.14: surfacing — when the camera crosses back above the surface,
+  // the lens droplets run off over 1.5 s.
+  if(prevUs > 0.5 && us <= 0.5) state.dropletT = 1.5;
+  prevUs = us;
+  if(state.dropletT > 0){
+    state.dropletT = Math.max(0, state.dropletT - dt);
+    const f = state.dropletT / 1.5;
+    const el = $('lensDroplets');
+    el.style.opacity = (f * 0.85).toFixed(2);
+    el.style.transform = 'translateY(' + ((1 - f) * 24).toFixed(1) + 'px)';
+  } else {
+    $('lensDroplets').style.opacity = 0;
+  }
 }
 function loop(){
   requestAnimationFrame(loop);
@@ -3860,9 +4184,25 @@ function loop(){
   const steps = Math.max(1, Math.min(6, Math.ceil(rawDt / 0.05)));
   const dt = rawDt / steps;
   updateOcean(state.t);
+  // v11.14: ship positions/headings/speeds + wind for the ocean shader
+  // (hull foam, Kelvin wake, storm streaks) — updated every frame.
+  for(let i = 0; i < 7; i++){
+    const s = fleet[i];
+    if(s && s.alive){
+      oceanUniforms.uShips.value[i].set(s.x, s.z, s.heading, s.motion ? s.motion.forwardSpeed : 0);
+      const ms = MODEL_SPEC[s.type] || {len: 40, wid: 8};
+      oceanUniforms.uShipSize.value[i].set(ms.len, ms.wid);
+    } else {
+      oceanUniforms.uShips.value[i].set(0, 0, 0, 0);
+      oceanUniforms.uShipSize.value[i].set(0, 0);
+    }
+  }
+  oceanUniforms.uWind.value.set(Math.sin(state.windDir), -Math.cos(state.windDir));
+  oceanUniforms.uWindStr.value = STAGES[state.stage].wind / 20;
   if(state.running && !state.paused && !state.over){
     for(let si = 0; si < steps; si++) update(dt);
     updateCamera(dt);
+    emitPropBubbles(rawDt);
   } else if(!state.running && !state.over){
     idleUpdate(rawDt);
     updateHud(); // v11.6: the HUD (fleet count, integrity, minimap) must
@@ -3880,7 +4220,7 @@ function loop(){
   if(state.freakWave) $('freakWarn').classList.remove('hidden');
   else $('freakWarn').classList.add('hidden');
   updateFreakCrest(); // v11.10: the visible wall follows the freak wave
-  updateUnderwater();
+  updateUnderwater(rawDt);
   skyDome.position.copy(camera.position);
   if(composer) composer.render(); else renderer.render(scene, camera);
 }
