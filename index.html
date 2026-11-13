@@ -136,6 +136,7 @@
   #spectateBtn{display:block;width:100%;margin-top:8px;background:transparent;color:#ffd166;border:1px solid rgba(255,209,102,.6);border-radius:999px;padding:10px;font-size:14px;font-weight:800;cursor:pointer}
   #spectateBtn:active{transform:scale(.97)}
   #spectateBar{position:fixed;left:50%;top:calc(64px + env(safe-area-inset-top));transform:translateX(-50%);z-index:9;max-width:calc(100vw - 24px);background:rgba(6,18,30,.88);border:1px solid rgba(255,209,102,.6);color:#ffd166;border-radius:999px;padding:8px 16px;font-size:13px;font-weight:700;pointer-events:none;text-align:center}
+  #freakWarn{position:fixed;left:50%;top:calc(112px + env(safe-area-inset-top));transform:translateX(-50%);z-index:9;max-width:calc(100vw - 24px);background:rgba(48,6,6,.9);border:1px solid rgba(255,90,78,.8);color:#ffb3ad;border-radius:999px;padding:8px 16px;font-size:13px;font-weight:700;pointer-events:none;text-align:center}
   /* v11.5: the underwater wash. A fullscreen tint that fades in as the
      camera goes under (opacity set by updateUnderwater); the gradient is
      darker at the edges so the deep reads as a volume, not a flat colour. */
@@ -197,6 +198,7 @@
     <div id="integrityBar"><div id="integrityFill"></div></div>
     <div id="stageBar"><div id="stageFill"></div></div></div>
   <div id="spectateBar" class="hidden"></div>
+  <div id="freakWarn" class="hidden">⚠️ FREAK WAVE — a wall of water is coming! Turn into it (bow-on) or be rolled!</div>
   <div id="waterTint"></div>
   <div class="pill">⭐ <b id="score">0</b></div>
   <button class="iconBtn" id="soundBtn" title="Sound on/off">🔊</button>
@@ -272,7 +274,7 @@
     </div>
     <button class="ghostBtn" id="camBtnStart">🎥 Camera</button><br>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.8</div>
+    <div class="ver">v11.9</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -667,7 +669,9 @@ function gerstner(x, z, t){
   // Huge waves only). It is added to the Gerstner field, so the ocean
   // surface shows it (updateOcean uses gerstner) and the ships ride it
   // (sampleWaves uses waveHeight, which is gerstner). A single bump, not
-  // a ridge: a wall of water, ~5.5 units high and ~56 across.
+  // a ridge: a wall of water. v11.9: amp 8, radius 22 (was 5.5/28) — the
+  // v11.8 crest blended into the Huge-wave swells, so it is now clearly
+  // taller than them and sharp enough to show foam on its face.
   if(state.freakWave){
     const fw = state.freakWave;
     const fdx = x - fw.x, fdz = z - fw.z;
@@ -2602,23 +2606,35 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
 
 // ---------- buoyancy sampling (4-6 points per hull; long hulls average out swell) ----------
 // ---------- update ----------
-// v11.8: spawn a freak wave. It appears at a random bearing around the
-// flagship, 180-250 units out, and travels toward the fleet, so it will
-// meet the ships. Speed 18 u/s (faster than the fleet's 14 at FLANK in a
-// Hurricane, so it catches up). One at a time.
+// v11.8: spawn a freak wave. It appears ahead of or to the side of the
+// fleet, 180-250 units out, and travels in to meet the ships. Speed
+// 18 u/s (faster than the fleet's 14 at FLANK in a Hurricane, so it
+// catches up). One at a time.
+// v11.9: intercept aim + spawn bearing. The wave is aimed at the
+// flagship's PREDICTED position (where she will be when the wave
+// arrives, using her motion velocity), not her current position — the
+// v11.8 aim let the fleet sail on past, so the wave arrived behind the
+// fleet and the strikes were biased head-on. And the spawn bearing is
+// within +-90 deg of the fleet's forward (ahead or to the side, never
+// directly behind, where the wave could not catch up), so the strikes
+// are a mix of head-on and beam-on instead of mostly head-on.
 function spawnFreakWave(){
   const flag = flagship() || fleet[0];
-  const ang = Math.random() * Math.PI * 2;
+  const rel = (Math.random() * 2 - 1) * Math.PI / 2; // -90..+90 deg off the fleet's forward
   const dist = 180 + Math.random() * 70;
-  const sx = flag.x + Math.sin(ang) * dist;
-  const sz = flag.z + Math.cos(ang) * dist;
-  const toX = flag.x - sx, toZ = flag.z - sz;
+  const sx = flag.x + Math.sin(flag.heading + rel) * dist;
+  const sz = flag.z - Math.cos(flag.heading + rel) * dist;
+  const fm = flag.motion;
+  const tArrive = dist / 18;
+  const tx = flag.x + (fm ? fm.vx : 0) * tArrive;
+  const tz = flag.z + (fm ? fm.vz : 0) * tArrive;
+  const toX = tx - sx, toZ = tz - sz;
   const tl = Math.hypot(toX, toZ) || 1;
   state.freakId++;
   state.freakWave = {
     id: state.freakId, x: sx, z: sz,
     dirX: toX / tl, dirZ: toZ / tl,
-    amp: 5.5, radius: 28, speed: 18, age: 0, life: 30,
+    amp: 8, radius: 22, speed: 18, age: 0, life: 30,
   };
   toast('⚠️ FREAK WAVE', 'a wall of water is coming — turn into it (bow-on) or be rolled!');
 }
@@ -2918,13 +2934,22 @@ function update(dt){
     // cuts its motor.
     let thrustIn;
     if(holding){
-      // v11.8: the v11.6 check found the fleet colliding at rest (100% ->
-      // 84% with no input) — the holding gain (/2) was too weak to counter
-      // the current, and the settled cut (1.5/0.5) let escorts go slack
-      // and drift into each other. Stronger gain (/1) and a tighter cut
-      // (0.8/0.3), so a resting escort holds its slot firmly.
-      thrustIn = Math.max(-1, Math.min(1, (desSpeed - m.forwardSpeed) / 1));
-      if(distToSlot < 0.8 && Math.abs(m.forwardSpeed) < 0.3) thrustIn = 0;
+      // v11.9: at rest — ALL STOP ordered (telegraph 5) and the fleet
+      // nearly stopped — the escorts stop fighting for their slots and
+      // simply drift with the current, like the flagship (thrust 0, rudder
+      // 0). The v11.8 stronger holding made it WORSE (34% lost, 4 ships,
+      // twice): the escorts responded more aggressively, overshot and
+      // collided. The current is uniform, so a drifting formation holds
+      // together; the collisions came from the escorts actively thrusting
+      // and overshooting. The active hold (telegraph not ALL STOP) reverts
+      // to the v11.6 gain (/2) and settled cut (1.5/0.5).
+      if(flag.telegraph === 5){
+        thrustIn = 0;
+        rudderIn = 0;
+      } else {
+        thrustIn = Math.max(-1, Math.min(1, (desSpeed - m.forwardSpeed) / 2));
+        if(distToSlot < 1.5 && Math.abs(m.forwardSpeed) < 0.5) thrustIn = 0;
+      }
     } else {
       // v11.2: escorts may brake underway. The old [0,1] clamp meant an
       // escort faster than its desired speed could only coast down on drag
@@ -3880,6 +3905,11 @@ function loop(){
     const f = flagship();
     $('spectateBar').textContent = '👁 SPECTATING · ' + state.spectateShip.name + ' is going down — press C or Esc to return to the helm' + (f ? ' (' + f.name + ')' : '');
   }
+  // v11.9: the freak-wave warning is a persistent banner (not just a
+  // toast, which the v11.8 check missed) — it stays up while a freak
+  // wave is active, so the player always sees it coming.
+  if(state.freakWave) $('freakWarn').classList.remove('hidden');
+  else $('freakWarn').classList.add('hidden');
   updateUnderwater();
   skyDome.position.copy(camera.position);
   if(composer) composer.render(); else renderer.render(scene, camera);
