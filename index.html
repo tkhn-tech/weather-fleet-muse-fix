@@ -33,8 +33,8 @@
   #stageToast.show{opacity:1}
   #stageToast h2{font-size:30px;letter-spacing:.14em;text-transform:uppercase;text-shadow:0 2px 18px rgba(0,0,0,.7)}
   #stageToast p{font-size:14px;color:#bcd6e6;margin-top:4px;text-shadow:0 1px 8px rgba(0,0,0,.7)}
-  /* v11.0: Engine Order Telegraph panel — right side, above the minimap */
-  #telegraphPanel{position:fixed;right:12px;bottom:236px;z-index:6;width:158px;
+  /* v11.16: Engine Order Telegraph panel — right BOTTOM corner (was right side, above the minimap). The rudder joystick is bottom-left, so the telegraph sits bottom-right with no collision. */
+  #telegraphPanel{position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:6;width:158px;
     background:rgba(6,18,30,.78);border:1px solid rgba(140,190,230,.35);border-radius:16px;
     padding:10px 10px 12px;backdrop-filter:blur(8px)}
   #telegraphPanel .teleHead{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#ffd166;
@@ -65,19 +65,15 @@
   .fleetRow.on{background:rgba(255,209,102,.16);border-color:rgba(255,209,102,.6);color:#ffd166}
   .fleetRow.watch{border-color:rgba(120,200,255,.7);color:#9fd4e8} /* v11.15: the sinking ship the camera is following */
   .fleetRow.sunk{opacity:.35;cursor:default}
-  #enemyPanel{position:fixed;right:12px;top:calc(64px + env(safe-area-inset-top));z-index:6;width:186px;background:rgba(8,20,32,.72);border:1px solid rgba(255,120,90,.35);border-radius:10px;padding:8px 10px;font-size:11px;color:#ffd9c9}
-  #enemyPanel .enemyHead{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#ff9a7a;margin-bottom:4px}
-  #enemyPanel .enemyRow{display:flex;gap:6px;justify-content:space-between}
-  #enemyPanel .enemyRow .nm{font-weight:700}
-  #enemyPanel .enemyRow .rg{color:#c9a89a}
-  #enemyPanel .enemyRow .hp{font-weight:800}
-  @media (max-width:560px){ #telegraphPanel{bottom:212px;width:138px} #fleetPanel{width:112px} }
+  /* v11.16: the enemy roster panel is gone — enemies are tracked on the minimap (red diamonds + health bars) instead of in a list. */
+  @media (max-width:560px){ #telegraphPanel{bottom:calc(8px + env(safe-area-inset-bottom));width:138px} #fleetPanel{width:112px} } /* v11.16: telegraph stays bottom-right on phones */
   #hint{position:fixed;left:158px;bottom:calc(26px + env(safe-area-inset-bottom));z-index:6;pointer-events:none;
     font-size:12.5px;color:#9db8cc;line-height:1.5;text-shadow:0 1px 6px rgba(0,0,0,.8);transition:opacity 1s ease}
   #hint.fade{opacity:0}
-  #miniMap{position:fixed;right:12px;bottom:100px;z-index:5;border:1px solid rgba(140,190,230,.35);border-radius:12px;overflow:hidden;background:rgba(6,18,30,.6);pointer-events:none}
+  /* v11.16: minimap moves to the TOP RIGHT corner (was bottom-right, below the telegraph) — below the top bar, opposite the fleet panel (top-left). */
+  #miniMap{position:fixed;right:12px;top:calc(64px + env(safe-area-inset-top));z-index:5;border:1px solid rgba(140,190,230,.35);border-radius:12px;overflow:hidden;background:rgba(6,18,30,.6);pointer-events:none}
   #miniCv{display:block}
-  @media (max-width:560px){ #miniMap{right:8px;bottom:96px} #miniCv{width:100px;height:100px} }
+  @media (max-width:560px){ #miniMap{right:8px;top:calc(56px + env(safe-area-inset-top))} #miniCv{width:100px;height:100px} } /* v11.16: minimap stays top-right on phones */
   /* v11.0: the helm is a horizontal rudder track — the stick only swings left/right */
   #joy{position:fixed;left:18px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:6;width:216px;height:62px;border-radius:32px;
     background:rgba(6,18,30,.45);border:1px solid rgba(140,190,230,.35);backdrop-filter:blur(4px);touch-action:none}
@@ -138,7 +134,7 @@
   /* v11.1: the helm adapts to phone screens — the telegraph was too big
      in portrait and ran off the top of the screen in landscape */
   @media (max-width:560px){
-    #telegraphPanel{right:8px;bottom:204px;width:128px;padding:8px 8px 10px}
+    #telegraphPanel{right:8px;bottom:calc(8px + env(safe-area-inset-bottom));width:128px;padding:8px 8px 10px}
     #telegraphPanel .teleHead{font-size:10px;margin-bottom:6px}
     .teleBtns{display:grid;grid-template-columns:1fr 1fr;gap:4px}
     .teleBtn{padding:7px 2px;font-size:10.5px}
@@ -157,7 +153,7 @@
     #integrityWrap{max-width:190px;padding:6px 9px}
     .iconBtn{width:32px;height:32px;font-size:14px}
     #stageToast h2{font-size:22px}
-    #telegraphPanel{right:8px;bottom:100px;width:132px;padding:8px 8px 10px}
+    #telegraphPanel{right:8px;bottom:calc(8px + env(safe-area-inset-bottom));width:132px;padding:8px 8px 10px}
     #telegraphPanel .teleHead{font-size:10px;margin-bottom:6px}
     .teleBtns{display:grid;grid-template-columns:1fr 1fr;gap:4px}
     .teleBtn{padding:6px 2px;font-size:10.5px}
@@ -165,7 +161,7 @@
     #teleReadout{font-size:10.5px;margin-top:4px}
     #fleetPanel{left:8px;top:calc(56px + env(safe-area-inset-top));width:120px;padding:6px}
     .fleetRow{padding:4px 5px;font-size:11px}
-    #miniMap{right:8px;bottom:12px}
+    #miniMap{right:8px;top:calc(56px + env(safe-area-inset-top))}
     #miniCv{width:84px;height:84px}
     #joy{left:12px;bottom:calc(12px + env(safe-area-inset-bottom));width:190px;height:52px}
     #joyKnob{width:40px;height:40px;margin:-20px 0 0 -20px}
@@ -217,7 +213,6 @@
   <div id="teleReadout"><b id="teleOrder">ALL STOP</b><br>target <b id="teleTarget">0</b> kn · actual <b id="teleActual">0</b> kn</div>
 </div>
 <div id="fleetPanel"></div>
-<div id="enemyPanel" class="hidden"></div>
 
 <!-- v11.12: the camera panel is gone. Touch controls the camera now:
      drag the sea to orbit, pinch to zoom, the HUD ↺ button (or R)
@@ -269,9 +264,11 @@
         <button data-v="line">Line Ahead</button><button data-v="echelon">Echelon</button><button data-v="flank">Flanking</button></div></div>
       <div class="seaRow"><span class="lab">AI skill</span><div class="seg" id="segEnemySkill">
         <button data-v="cadet">Cadet</button><button data-v="veteran">Veteran</button><button data-v="elite">Elite</button></div></div>
+      <div class="seaRow"><span class="lab">Starting proximity</span><div class="seg" id="segEnemyProx">
+        <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.15</div>
+    <div class="ver">v11.16</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -542,6 +539,7 @@ const settings = {
   enemyQty: savedSettings.enemyQty ?? 3,
   enemyForm: savedSettings.enemyForm ?? 'line',
   enemySkill: savedSettings.enemySkill ?? 'veteran',
+  enemyProx: savedSettings.enemyProx ?? 'medium', // v11.16: starting proximity of the enemy fleet (close/medium/far)
   fleetSel: (Array.isArray(savedSettings.fleetSel) ? savedSettings.fleetSel : null) ?? ['carrier', 'bb1', 'bb2', 'dd1', 'dd2', 'dd3', 'dd4'],
   camZoom: Math.max(0.35, Math.min(2.5, savedSettings.camZoom ?? 1)),
   camPanX: Math.max(-30, Math.min(30, savedSettings.camPanX ?? 0)),
@@ -566,6 +564,7 @@ wireSeg('segEnemyClass', 'enemyClass', v => v);
 wireSeg('segEnemyQty', 'enemyQty', v => parseInt(v, 10));
 wireSeg('segEnemyForm', 'enemyForm', v => v);
 wireSeg('segEnemySkill', 'enemySkill', v => v);
+wireSeg('segEnemyProx', 'enemyProx', v => v); // v11.16: starting proximity picker
 // v11.4: the fleet picker — toggle hulls in or out of the next round.
 // At least one ship must sail; the count, the panel and the backdrop
 // update at once. (Only settings + DOM here — fleet/roster are defined
@@ -2094,13 +2093,17 @@ function burst(x, y, z, n, col, spd, up){
       0.6 + Math.random() * 0.7, col[0], col[1], col[2], -3);
   }
 }
-// v10.8: a hit leaves a charred mark pinned to the hull where it landed,
-// so damage stays visible after the fireball fades. The mark lives in the
-// ship's local frame (bow -Z), fades over ~30 s, max 6 per ship.
-function addScorch(sh, wx, wz){
+// v11.16: a hit leaves a HOLE — a dark crater with a charred edge, pinned
+// to the hull where it landed (Atlantic Fleet: damage is painted on). The
+// mark lives in the ship's local frame (bow -Z) and is PERSISTENT for the
+// rest of the round (no fade — the old 30 s fade made a battered ship look
+// clean again), max 12 per ship so a heavily-hit ship accumulates damage.
+// hy is the local height: low (0.6) for a below-waterline hit, higher (2.5)
+// for a topside hit; it defaults to 1.4 (the old waterline mark).
+function addScorch(sh, wx, wz, hy){
   if(!sh.group) return;
   sh.scorches = sh.scorches || [];
-  if(sh.scorches.length >= 6){
+  if(sh.scorches.length >= 12){
     const old = sh.scorches.shift();
     sh.group.remove(old.sp);
   }
@@ -2108,12 +2111,12 @@ function addScorch(sh, wx, wz){
   const ch = Math.cos(sh.heading), sn = Math.sin(sh.heading);
   const lx = dx * ch + dz * sn;
   const lz = -dx * sn + dz * ch;
-  const mat = new THREE.SpriteMaterial({map: softTex, color: 0x161616, transparent: true, opacity: 0.75, depthWrite: false});
+  const mat = new THREE.SpriteMaterial({map: softTex, color: 0x0a0a0a, transparent: true, opacity: 0.9, depthWrite: false});
   const sp = new THREE.Sprite(mat);
-  sp.position.set(lx, 1.4, lz);
-  sp.scale.set(5 + Math.random() * 2, 5 + Math.random() * 2, 1);
+  sp.position.set(lx, hy !== undefined ? hy : 1.4, lz);
+  sp.scale.set(6 + Math.random() * 3, 6 + Math.random() * 3, 1);
   sh.group.add(sp);
-  sh.scorches.push({sp, life: 30});
+  sh.scorches.push({sp, life: 1e9});
 }
 function updateParticles(dt){
   for(let i = 0; i < P_MAX; i++){
@@ -2569,6 +2572,7 @@ function reset(){
     s.dx = s.slotDx0; s.dz = s.slotDz0; // v11.0: restore canonical slots (switching swaps them)
     s.telegraph = 5; s.spoolSpeed = 0; s.rudderDeg = 0; s.rudderTargetDeg = 0; s.propToasted = false;
     if(s.scorches){ s.scorches.forEach(d => s.group.remove(d.sp)); s.scorches = []; }
+    if(s.fireGlow){ s.group.remove(s.fireGlow); s.fireGlow = null; } // v11.16: no fire glow carries into a new round
     s.x = s.dx; s.z = s.dz; s.heading = 0; s.y = 0;
     const mo = s.motion;
     mo.x = s.dx; mo.z = s.dz; mo.heading = 0;
@@ -2674,6 +2678,34 @@ function drawMinimap(){
     ctx.strokeStyle = '#8fc7e8'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(pp[0], pp[1]);
     ctx.lineTo(pp[0] + Math.sin(s.heading) * 7, pp[1] - Math.cos(s.heading) * 7); ctx.stroke();
+  });
+  // v11.16: enemies on the minimap (the roster panel is gone) — a red-orange
+  // diamond, clearly different from the player ships' blue dots, with a
+  // small health bar above it (green -> amber -> red by hp%). Enemies
+  // beyond the 400-unit range are clamped to the edge, so the player still
+  // sees the direction of an off-map enemy. A sinking enemy is drawn
+  // dimmed; a sunk one is not drawn at all.
+  enemies.forEach(e => {
+    if(e.sinkT >= 1) return;
+    const dx = e.x - f.x, dz = e.z - f.z;
+    const d = Math.hypot(dx, dz) || 1;
+    let ex = dx, ez = dz;
+    if(d > range){ ex = dx / d * range; ez = dz / d * range; }
+    const mx = C + ex * sc, my = C + ez * sc;
+    const dim = e.alive ? 1 : 0.45;
+    const r = 4.5;
+    ctx.globalAlpha = dim;
+    ctx.fillStyle = '#ff7a2e';
+    ctx.beginPath();
+    ctx.moveTo(mx, my - r); ctx.lineTo(mx + r, my); ctx.lineTo(mx, my + r); ctx.lineTo(mx - r, my);
+    ctx.closePath(); ctx.fill();
+    const hpF = Math.max(0, e.hp / e.maxHp);
+    const bw = 10, bh = 2.5;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(mx - bw / 2 - 0.5, my - r - 5.5, bw + 1, bh + 1);
+    ctx.fillStyle = hpF > 0.6 ? '#58d68d' : hpF > 0.3 ? '#ffb347' : '#ff5a4e';
+    ctx.fillRect(mx - bw / 2, my - r - 5, bw * hpF, bh);
+    ctx.globalAlpha = 1;
   });
   // the fleet: white dot + gold heading tick, centre
   ctx.fillStyle = '#ffffff';
@@ -2806,6 +2838,7 @@ function sinkShip(ship, mode){
   if(!ship.alive) return;
   ship.alive = false;
   ship.sinkT = 0;
+  if(ship.fireGlow){ ship.group.remove(ship.fireGlow); ship.fireGlow = null; } // v11.16: the fire dies with her — no glow sprite on the wreck
   ship.sinkMode = mode || 'settle';
   // propulsion is gone: the ship stops dead in the water and goes down
   // where she is, instead of coasting on
@@ -2821,7 +2854,18 @@ function sinkShip(ship, mode){
   }
   if(ship.sinkMode === 'breakup'){
     ship.breakParts = splitShip(ship);
+    // v11.16: the magazine secondary is a distinct, violent event
+    // (Atlantic Fleet's CreateMagazineExplosion) — a bigger flash, a tall
+    // fireball, more hot debris, and a large shockwave ring, on top of the
+    // existing bursts. This is the dramatic detonation, not just big damage.
+    boomLight.position.set(ship.x, 6, ship.z);
+    boomLight.intensity = 14;
+    const mfb = spawnSprite(ship.x, 8, ship.z, 0.9, 16, 16, 2.0, 0xff8822, 0.95);
+    mfb.vy = 4;
+    const msw = spawnSprite(ship.x, 3, ship.z, 0.6, 8, 8, 8, 0xffffff, 0.6);
+    msw.vy = 1;
     burst(ship.x, 6, ship.z, 60, [1, 0.8, 0.4], 9, 6); // secondary explosion
+    burst(ship.x, 4, ship.z, 40, [1, 0.7, 0.25], 10, 7); // hot debris thrown outward
     burst(ship.x, 3, ship.z, 30, [0.3, 0.3, 0.3], 5, 5);
     state.shake = Math.min(18, state.shake + 14);
     toast('💥 ' + ship.label + ' broke in two', 'magazine detonation');
@@ -2881,7 +2925,7 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
   ship.hp -= dmg;
   state.shake = Math.min(18, state.shake + 10);
   boomLight.position.set(ship.x, 4, ship.z);
-  boomLight.intensity = 6;
+  boomLight.intensity = 6 + Math.min(8, dmg * 0.4); // v11.16: the flash scales with the hit energy
   explosion();
   // the blast physically rocks the ship (and her neighbours)
   blastImpulse(hx, hz, 2 + dmg * 0.15);
@@ -2906,6 +2950,25 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
   }
   burst(ship.x, 2, ship.z, 22, [1, 0.9, 0.7], 4, 2);
   burst(ship.x, 2, ship.z, 12, [1, 0.6, 0.2], 3, 3);
+  // v11.16: the impact itself is vivid — a fireball that blooms and fades,
+  // a fast-expanding shockwave ring, and hot debris flying outward, all
+  // scaled with the hit energy (dmg). This is the explosion on every hit.
+  const fbScale = 6 + dmg * 0.35;
+  const fb = spawnSprite(hx, 3, hz, 0.5, fbScale, fbScale, 2.5, 0xff7722, 0.9);
+  fb.vy = 2;
+  const sw = spawnSprite(hx, 2, hz, 0.4, 4, 4, 6, 0xffffff, 0.5);
+  sw.vy = 1;
+  burst(hx, 3, hz, Math.min(30, 10 + Math.floor(dmg)), [1, 0.75, 0.3], 6 + dmg * 0.15, 5);
+  // v11.16: the hit leaves a HOLE at the actual hit point (Atlantic Fleet:
+  // damage is painted on), and the fire — if one starts — is pinned to
+  // that spot (stored in the ship's local frame, so it rides with her).
+  addScorch(ship, hx, hz, belowWaterline ? 0.6 : 2.5);
+  {
+    const dx = hx - ship.x, dz = hz - ship.z;
+    const ch = Math.cos(ship.heading), sn = Math.sin(ship.heading);
+    ship.fireLx = dx * ch + dz * sn;
+    ship.fireLz = -dx * sn + dz * ch;
+  }
   const s = spawnSprite(ship.x, 3, ship.z, 0.9, 10, 10, 0.4, 0x666666, 0.55);
   s.vy = 4;
   const side = Math.sign(hx - ship.x) || 1;
@@ -3508,25 +3571,49 @@ function update(dt){
       if(s.fire > 0){
         s.hp -= s.fire * dt * 1.5;
         s.fireT = (s.fireT || 0) + dt;
+        // v11.16: VISIBLE flames at the hit location. The fire's local
+        // position was stored when the hit landed (ship.fireLx / fireLz);
+        // fall back to a random deck spot if it was set another way.
+        const fch = Math.cos(s.heading), fsn = Math.sin(s.heading);
+        const fLx = (s.fireLx !== undefined) ? s.fireLx : (Math.random() - 0.5) * s.group.userData.wid;
+        const fLz = (s.fireLz !== undefined) ? s.fireLz : (Math.random() - 0.5) * s.group.userData.len * 0.5;
         if(s.fireT > 0.15){
           s.fireT = 0;
-          const fx = s.x + (Math.random() - 0.5) * s.group.userData.wid;
-          const fz = s.z + (Math.random() - 0.5) * s.group.userData.len * 0.5;
-          spawnParticle(fx, s.y + 2, fz, (Math.random() - 0.5), 2 + Math.random() * 2, (Math.random() - 0.5),
-            0.5, 1, 0.55, 0.15, -0.5);
+          const nFl = 1 + Math.floor(s.fire * 2);
+          for(let fi = 0; fi < nFl; fi++){
+            const fx = s.x + fLx * fch - fLz * fsn + (Math.random() - 0.5) * 1.5;
+            const fz = s.z + fLx * fsn + fLz * fch + (Math.random() - 0.5) * 1.5;
+            spawnParticle(fx, s.y + 2.5, fz, (Math.random() - 0.5), 2 + Math.random() * 2.5, (Math.random() - 0.5),
+              0.6, 1, 0.65, 0.2, -0.5);
+          }
+        }
+        // fire glow: a persistent flickering sprite on the hull at the fire,
+        // so the fire reads at a distance and in poor light
+        if(!s.fireGlow){
+          const gm = new THREE.SpriteMaterial({map: softTex, color: 0xff7711, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending});
+          s.fireGlow = new THREE.Sprite(gm);
+          s.fireGlow.position.set(fLx, 3.2, fLz);
+          s.group.add(s.fireGlow);
+        }
+        const fl = 0.7 + 0.3 * Math.sin(state.t * 11 + s.x) + 0.2 * Math.sin(state.t * 17 + s.z);
+        const gScale = (4 + s.fire * 4) * (0.85 + 0.3 * fl);
+        s.fireGlow.scale.set(gScale, gScale * 1.3, 1);
+        s.fireGlow.material.opacity = Math.max(0.15, Math.min(0.95, 0.5 + 0.3 * fl + s.fire * 0.15));
+        s.fireGlow.position.set(fLx, 3.2, fLz);
+        // thick black smoke column from the fire, drifting with the wind
+        s.fireSmokeT = (s.fireSmokeT || 0) + dt;
+        if(s.fireSmokeT > 0.3){
+          s.fireSmokeT = 0;
+          const sm = spawnSprite(s.x + fLx * fch - fLz * fsn, s.y + 4, s.z + fLx * fsn + fLz * fch, 2.5, 5 + s.fire * 2, 5 + s.fire * 2, 1.0, 0x141414, 0.8);
+          sm.vy = 3; sm.vx = Math.sin(state.windDir) * 1.2; sm.vz = -Math.cos(state.windDir) * 1.2;
         }
         s.fire = Math.max(0, s.fire - dt * (s.floodTotal > 0.4 ? 0.12 : 0.04));
+        if(s.fire <= 0 && s.fireGlow){ s.group.remove(s.fireGlow); s.fireGlow = null; }
         if(s.hp <= 0) sinkShip(s, pickSinkMode(s, 25));
       }
-      // v10.8: scorch decals fade out over ~30 s
-      if(s.scorches){
-        s.scorches = s.scorches.filter(d => {
-          d.life -= dt;
-          d.sp.material.opacity = Math.max(0, 0.75 * d.life / 30);
-          if(d.life <= 0){ s.group.remove(d.sp); return false; }
-          return true;
-        });
-      }
+      // v11.16: hull holes are persistent — no fade. A hit leaves a dark
+      // crater for the rest of the round (Atlantic Fleet: damage is painted
+      // on). The decals are cleared on reset; nothing to do per frame.
       // v10.8: a hurt ship shows it — below 70% hull she trails thin dark
       // smoke, below 40% it thickens and throws embers, even when no fire
       // is burning. The worse the damage, the darker and faster the smoke.
@@ -3557,13 +3644,18 @@ function update(dt){
           const bz = s.z + Math.sin(s.heading) * side * s.group.userData.wid * 0.5;
           spawnParticle(bx, s.y + 0.3, bz, (Math.random() - 0.5), 0.8 + Math.random(), (Math.random() - 0.5),
             1.2, 0.85, 0.92, 0.95, -1.5);
+          // v11.16: white water washing over the deck at the flooded
+          // waterline — the flooding reads from the surface, not just as a
+          // list. A pale wash sprite on the flooded side, at the waterline.
+          const wsm = spawnSprite(bx, s.y + 0.8, bz, 1.2, 3.5, 2, 0.8, 0xdfe9ee, 0.7);
+          wsm.vy = 0.5;
         }
       }
       // counter-flooding: list straightens, but draft and weight grow
       const cf = Math.abs(s.floodSide) > 0.45 ? 0.5 : 1;
       s.list = s.floodSide * 0.18 * cf;
       s.trim = s.floodEnd * 0.10;
-      s.draft = (cf < 1 ? 0.25 : 0) + s.floodTotal * 0.3;
+      s.draft = (cf < 1 ? 0.25 : 0) + s.floodTotal * 0.7; // v11.16: 0.3 -> 0.7 — flooding visibly lowers the ship, so a battered ship sits low in the water
       s.speedFactor = 1 - 0.12 * s.floodTotal;
       // capsize: list past ~35-45 deg or flooding past ~90% of buoyancy
       if(Math.abs(s.floodSide) > 0.92 || s.floodTotal > 0.9){
@@ -3728,9 +3820,9 @@ function update(dt){
       // (per unit of game time), not per substep, so the rate does not
       // depend on the frame rate.
       s.bubSinkT = (s.bubSinkT || 0) + dt;
-      if(s.bubSinkT > 0.12){
+      if(s.bubSinkT > 0.08){ // v11.16: 0.12 -> 0.08 s — a denser plume
         s.bubSinkT = 0;
-        const nBub = 2 + Math.floor(f * 2);
+        const nBub = 4 + Math.floor(f * 4); // v11.16: 2 + f*2 -> 4 + f*4 — twice the bubbles, more as she goes deeper
         const side = Math.sign(s.floodSide || s.listDir);
         for(let bi = 0; bi < nBub; bi++){
           spawnParticle(
@@ -3738,7 +3830,7 @@ function update(dt){
             s.y + 0.5,
             s.z + (Math.random() - 0.5) * s.group.userData.len * 0.4 + Math.sin(s.heading) * side * s.group.userData.wid * 0.3,
             (Math.random() - 0.5) * 0.4, 2.5 + Math.random() * 1.5, (Math.random() - 0.5) * 0.4,
-            3.5, 0.85, 0.95, 1, 2);
+            3.5, 0.95, 1.0, 1.0, 2); // v11.16: brighter bubbles so the column reads underwater
         }
       }
       if(s.fire > 0 && s.y < -1){
@@ -4100,7 +4192,7 @@ function updateCamera(dt){
   // attract camera never dives.
   if(state.diveBlend > 0.001 && (state.running || state.over)){
     const b = state.diveBlend;
-    const diveDist = 28 * state.camZoom;
+    const diveDist = (state.camFollowShip ? 22 : 28) * state.camZoom; // v11.16: closer (22) when watching a sinking ship, so she fills the frame underwater; 28 otherwise
     const seaH = getOceanDataAt(flag.x, flag.z, state.t).height;
     const diveY = seaH - 5;
     const dtx = flag.x - ohx * diveDist;
@@ -4175,7 +4267,7 @@ const ENEMY_SKILL = {
 const enemies = [];
 let shells = []; // glowing shell arcs in flight
 let torps = [];  // enemy torpedoes running below the surface
-let enemyPanelT = 0; // the roster panel only re-renders 4x a second (it rebuilds DOM)
+// v11.16: the enemy roster panel is gone (enemies are on the minimap now) — no more 4x-a-second DOM rebuild.
 
 function nearestPlayerShip(e){
   let best = null, bd = Infinity;
@@ -4234,12 +4326,17 @@ function spawnEnemies(){
   const form = settings.enemyForm || 'line';
   const flag = flagship() || fleet[0];
   if(!flag) return;
-  // spawn ahead of the fleet (so they are met head-on), 380 out, facing back
-  // toward the flagship; the formation offsets use the player slot frame
-  // (dx = starboard, dz = astern).
+  // v11.16: spawn ahead of the fleet (so they are met head-on), at the
+  // chosen starting proximity, facing back toward the flagship; the
+  // formation offsets use the player slot frame (dx = starboard, dz = astern).
+  // Close 150 is inside gun range (immediate action); Medium 300 is just
+  // outside it (the enemy closes to its optimal range, 170-240); Far 500 is
+  // beyond the minimap's 400-unit range, so the enemy appears clamped to
+  // the minimap edge and sails in.
+  const proxDist = {close: 150, medium: 300, far: 500}[settings.enemyProx] || 300;
   const brg = flag.heading + (Math.random() - 0.5) * 0.8;
-  const cx = flag.x + Math.sin(brg) * 380;
-  const cz = flag.z - Math.cos(brg) * 380;
+  const cx = flag.x + Math.sin(brg) * proxDist;
+  const cz = flag.z - Math.cos(brg) * proxDist;
   const fh = brg + Math.PI;
   const c = Math.cos(fh), sn = Math.sin(fh);
   for(let i = 0; i < n; i++){
@@ -4262,7 +4359,6 @@ function clearEnemies(){
   shells.length = 0; // shells are particles only — nothing to remove
   torps.forEach(tp => { if(tp.mesh) scene.remove(tp.mesh); });
   torps.length = 0;
-  syncEnemyPanel();
 }
 function updateEnemies(dt){
   if(!state.running || state.paused || state.over) return;
@@ -4330,8 +4426,6 @@ function updateEnemies(dt){
   }
   updateShells(dt);
   updateTorpedoes(dt);
-  enemyPanelT += dt;
-  if(enemyPanelT > 0.25){ enemyPanelT = 0; syncEnemyPanel(); }
 }
 function updateEnemySinking(e, dt){
   // the player cannot shoot, so an enemy only sinks if something else gets
@@ -4511,31 +4605,9 @@ function detonateTorpedo(tp, ship){
   damageShip(ship, tp.dmg, tp.x, tp.z, true);
   toast('💥 Torpedo hit — ' + ship.name, 'below the waterline, flooding fast');
 }
-function syncEnemyPanel(){
-  const el = $('enemyPanel');
-  if(!el) return;
-  const alive = enemies.filter(e => e.alive);
-  if(!enemies.length || !state.running){
-    el.classList.add('hidden');
-    return;
-  }
-  el.classList.remove('hidden');
-  const flag = flagship() || fleet[0];
-  let html = '<div class="enemyHead">⚔️ Enemy — ' + alive.length + ' afloat</div>';
-  enemies.forEach(e => {
-    let rng = '—';
-    if(flag){
-      const dx = e.x - flag.x, dz = e.z - flag.z;
-      const d = Math.hypot(dx, dz);
-      let b = Math.atan2(dx, -dz) * 180 / Math.PI;
-      b = ((b % 360) + 360) % 360;
-      rng = Math.round(d * 4) + ' m · ' + String(Math.round(b)).padStart(3, '0') + '°';
-    }
-    const st = !e.alive ? (e.sinkT < 1 ? '💥 sinking' : '⚓ sunk') : Math.round(e.hp / e.maxHp * 100) + '%';
-    html += '<div class="enemyRow"><span class="nm">' + e.label + '</span><span class="rg">' + rng + '</span><span class="hp">' + st + '</span></div>';
-  });
-  el.innerHTML = html;
-}
+// v11.16: the enemy roster panel is gone — enemies are tracked on the
+// minimap (red diamonds + health bars), not in a DOM list. syncEnemyPanel
+// is deleted; nothing calls it.
 
 // ---------- idle attract mode ----------
 function idleUpdate(dt){
@@ -4581,7 +4653,7 @@ function idleUpdate(dt){
 // frame in loop(), after updateCamera, so it uses the camera's final position.
 // v11.14: fog objects for the underwater switch — dense exponential
 // abyssal fog (#031e30) when submerged, the normal linear fog when surfaced.
-const underFog = new THREE.FogExp2(0x031e30, 0.08);
+const underFog = new THREE.FogExp2(0x031e30, 0.03); // v11.16: 0.08 -> 0.03 — the dense fog hid sinking ships; Cold Waters keeps ships at combat range clearly distinguishable
 let surfaceFog = null;
 let prevUs = 0;
 function updateUnderwater(dt){
@@ -4600,7 +4672,7 @@ function updateUnderwater(dt){
   // fog-using materials — a one-time transition cost).
   if(us > 0.5){
     if(scene.fog !== underFog) scene.fog = underFog;
-    underFog.density = 0.02 + (us - 0.5) * 0.12; // 0.02 at the surface, 0.08 fully under
+    underFog.density = 0.02 + (us - 0.5) * 0.02; // v11.16: 0.02 at the surface, 0.03 fully under (was 0.08) — at 0.03 a ship at 20 units is only ~30% fogged and clearly readable, at 30 units ~56%; distant ships still fade into the murk
   } else {
     if(scene.fog !== surfaceFog) scene.fog = surfaceFog;
     surfaceFog.color.lerpColors(stageBase.sky, UNDER_COL, us);
@@ -4608,8 +4680,8 @@ function updateUnderwater(dt){
     surfaceFog.far = 5000 + (55 - 5000) * us;
   }
   scene.background.lerpColors(stageBase.sky, UNDER_COL, us);
-  sun.intensity = stageBase.sunI + (0.25 - stageBase.sunI) * us;
-  hemi.intensity = 0.9 + (0.45 - 0.9) * us;
+  sun.intensity = stageBase.sunI + (0.45 - stageBase.sunI) * us; // v11.16: 0.25 -> 0.45 — hulls read as pure black silhouettes at 0.25; the sun must give the hull readable detail underwater
+  hemi.intensity = 0.9 + (0.6 - 0.9) * us; // v11.16: 0.45 -> 0.6 — same reason: the ambient must lift the hull out of pure black
   oceanUniforms.uSunI.value = stageBase.sunI + (0.2 - stageBase.sunI) * us;
   skyDome.visible = us < 0.5;
   $('waterTint').style.opacity = (us * 0.32).toFixed(2);
