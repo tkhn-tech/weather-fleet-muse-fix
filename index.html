@@ -133,6 +133,9 @@
   #camPanel .camBtns input{flex:1}
   #camResetBtn{display:block;width:100%;margin-top:12px;background:#ffd166;color:#1a2a1a;border:none;border-radius:999px;padding:10px;font-size:14px;font-weight:800;cursor:pointer}
   #camResetBtn:active{transform:scale(.97)}
+  #spectateBtn{display:block;width:100%;margin-top:8px;background:transparent;color:#ffd166;border:1px solid rgba(255,209,102,.6);border-radius:999px;padding:10px;font-size:14px;font-weight:800;cursor:pointer}
+  #spectateBtn:active{transform:scale(.97)}
+  #spectateBar{position:fixed;left:50%;top:calc(64px + env(safe-area-inset-top));transform:translateX(-50%);z-index:9;max-width:calc(100vw - 24px);background:rgba(6,18,30,.88);border:1px solid rgba(255,209,102,.6);color:#ffd166;border-radius:999px;padding:8px 16px;font-size:13px;font-weight:700;pointer-events:none;text-align:center}
   @media (max-width:560px){ #camPanel{right:8px;left:8px;width:auto;top:calc(58px + env(safe-area-inset-top))} }
   /* v11.1: the helm adapts to phone screens — the telegraph was too big
      in portrait and ran off the top of the screen in landscape */
@@ -189,6 +192,7 @@
   <div id="integrityWrap"><div class="lbl">Fleet integrity <span id="intPct">100%</span> · <span id="aliveCount">🚢×7</span></div>
     <div id="integrityBar"><div id="integrityFill"></div></div>
     <div id="stageBar"><div id="stageFill"></div></div></div>
+  <div id="spectateBar" class="hidden"></div>
   <div class="pill">⭐ <b id="score">0</b></div>
   <button class="iconBtn" id="soundBtn" title="Sound on/off">🔊</button>
   <button class="iconBtn" id="restartBtn" title="Restart round">↻</button>
@@ -223,6 +227,7 @@
   <div class="camRow"><span class="lab">Look ↑ ↓</span><span class="val" id="camPanYVal">0</span></div>
   <input type="range" id="camPanYSlider" min="-12" max="18" step="1" value="0">
   <button id="camResetBtn">↺ Reset camera</button>
+  <button id="spectateBtn">📷 Watch her sink</button>
   <p class="camNote">Wheel zooms too · R resets</p>
 </div>
 
@@ -244,7 +249,7 @@
       rudder, port to starboard. Take command of any ship with Tab or the fleet
       panel, and the rest follow as escorts. Waves pitch and roll every hull.
       A wrecked ship lists, floods and sinks beneath the waves, and the next one
-      takes command. Lose all seven and the round ends.</p>
+      takes command. Lose them all and the round ends.</p>
     <div id="loadErr"></div>
     <div class="seaBox">
       <h3>⚙️ Customise the sea</h3>
@@ -253,14 +258,21 @@
       <div class="seaRow"><span class="lab">Wave height</span><div class="seg" id="segWave">
         <button data-v="0.7">Low</button><button data-v="1">Normal</button><button data-v="1.6">Huge</button></div></div>
     </div>
+    <div class="seaBox">
+      <h3>🚢 Choose your fleet</h3>
+      <div class="seaRow"><span class="lab" id="fleetCount">7 ships</span><div class="seg" id="fleetPicker">
+        <button data-k="carrier">Carrier</button><button data-k="bb1">Battleship 1</button><button data-k="bb2">Battleship 2</button></div></div>
+      <div class="seaRow"><span class="lab"></span><div class="seg" id="fleetPicker2">
+        <button data-k="dd1">Destroyer 1</button><button data-k="dd2">Destroyer 2</button><button data-k="dd3">Destroyer 3</button><button data-k="dd4">Destroyer 4</button></div></div>
+    </div>
     <button class="ghostBtn" id="camBtnStart">🎥 Camera</button><br>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.3</div>
+    <div class="ver">v11.4</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
     </div>
-    <p class="keys">Rudder: joystick (left/right), drag, or ← → / A D — release to return to midships &nbsp;·&nbsp; Telegraph: W / S or ↑ ↓, click the panel, or keys 1–8 &nbsp;·&nbsp; Command: Tab or the fleet panel &nbsp;·&nbsp; Pause: P<br>
+    <p class="keys">Rudder: joystick (left/right), drag, or ← → / A D — release to return to midships &nbsp;·&nbsp; Telegraph: W / S or ↑ ↓, click the panel, or keys 1–8 &nbsp;·&nbsp; Command: Tab or the fleet panel &nbsp;·&nbsp; Pause: P &nbsp;·&nbsp; Watch a sinking ship: C<br>
       Wheel: zoom &nbsp;·&nbsp; Right-drag: free look &nbsp;·&nbsp; 🎥 Camera panel: zoom &amp; look in any direction, R resets the camera, ✕ closes it</p>
   </div>
 </div>
@@ -465,6 +477,7 @@ const savedSettings = JSON.parse(localStorage.getItem('hurricane_fleet_settings'
 const settings = {
   startStage: savedSettings.startStage ?? 0,
   wave: savedSettings.wave ?? 1,
+  fleetSel: (Array.isArray(savedSettings.fleetSel) ? savedSettings.fleetSel : null) ?? ['carrier', 'bb1', 'bb2', 'dd1', 'dd2', 'dd3', 'dd4'],
   camZoom: Math.max(0.35, Math.min(2.5, savedSettings.camZoom ?? 1)),
   camPanX: Math.max(-30, Math.min(30, savedSettings.camPanX ?? 0)),
   camPanY: Math.max(-12, Math.min(18, savedSettings.camPanY ?? 0)),
@@ -482,6 +495,38 @@ function wireSeg(id, key, parse){
 }
 wireSeg('segStart', 'startStage', v => parseInt(v, 10));
 wireSeg('segWave', 'wave', v => parseFloat(v));
+// v11.4: the fleet picker — toggle hulls in or out of the next round.
+// At least one ship must sail; the count, the panel and the backdrop
+// update at once. (Only settings + DOM here — fleet/roster are defined
+// further down, so the click handler does the applying.)
+function wireFleetPicker(){
+  const btns = document.querySelectorAll('#fleetPicker button, #fleetPicker2 button');
+  const count = $('fleetCount');
+  if(!settings.fleetSel.length) settings.fleetSel = ['carrier', 'bb1', 'bb2', 'dd1', 'dd2', 'dd3', 'dd4'];
+  const sync = () => {
+    btns.forEach(b => b.classList.toggle('on', settings.fleetSel.includes(b.dataset.k)));
+    const n = settings.fleetSel.length;
+    count.textContent = n + (n === 1 ? ' ship' : ' ships');
+  };
+  btns.forEach(b => {
+    b.addEventListener('click', () => {
+      const k = b.dataset.k;
+      const i = settings.fleetSel.indexOf(k);
+      if(i >= 0){
+        if(settings.fleetSel.length <= 1) return; // at least one ship must sail
+        settings.fleetSel.splice(i, 1);
+      } else {
+        settings.fleetSel.push(k);
+      }
+      localStorage.setItem('hurricane_fleet_settings', JSON.stringify(settings));
+      sync();
+      applyFleetSelection();
+      buildFleetPanel(); syncFleetPanel();
+    });
+  });
+  sync();
+}
+wireFleetPicker();
 
 const store = JSON.parse(localStorage.getItem('hurricane_fleet_v1') || '{}');
 let best = {dist: store.bestDist || 0, score: store.bestScore || 0};
@@ -1488,20 +1533,38 @@ function fitModel(type){
   return wrap;
 }
 
-const fleet = [
+const roster = [
   // Carrier Strike Group screen (v9.9): carrier centre; the two battleships
   // are the cruiser equivalents on the flanks, slightly ahead; four Burke
   // destroyers screen it — two forward pickets, two on the aft quarters.
-  {type:'carrier',    label:'Carrier',    dx:0,     dz:0,    hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4, freeboard:2.2},
-  {type:'battleship', label:'Battleship', dx:-30,   dz:-8,   hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:2.0},
-  {type:'battleship', label:'Battleship', dx:30,    dz:-8,   hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:2.0},
-  {type:'destroyer',  label:'Destroyer',  dx:-44,   dz:-48,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.8},
-  {type:'destroyer',  label:'Destroyer',  dx:44,    dz:-48,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.8},
-  {type:'destroyer',  label:'Destroyer',  dx:-40,   dz:30,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.8},
-  {type:'destroyer',  label:'Destroyer',  dx:40,    dz:30,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.8},
+  // v11.4: each hull has a key, so the start-of-run fleet picker can name it.
+  {key:'carrier', type:'carrier',    label:'Carrier',    dx:0,     dz:0,    hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4, freeboard:2.2},
+  {key:'bb1',     type:'battleship', label:'Battleship', dx:-30,   dz:-8,   hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:2.0},
+  {key:'bb2',     type:'battleship', label:'Battleship', dx:30,    dz:-8,   hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:2.0},
+  {key:'dd1',     type:'destroyer',  label:'Destroyer',  dx:-44,   dz:-48,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.8},
+  {key:'dd2',     type:'destroyer',  label:'Destroyer',  dx:44,    dz:-48,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.8},
+  {key:'dd3',     type:'destroyer',  label:'Destroyer',  dx:-40,   dz:30,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:1.8},
+  {key:'dd4',     type:'destroyer',  label:'Destroyer',  dx:40,    dz:30,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:1.8},
 ];
+// v11.4: the fleet for a round is the roster filtered by the player's
+// start-of-run selection (settings.fleetSel). `fleet` stays the name every
+// system iterates (escorts, collisions, minimap, panel, HUD), so a smaller
+// fleet just works: the unselected hulls are not in the array, their groups
+// are hidden, and the round ends when the selected ships are gone. The
+// roster objects persist across rounds, so a ship sunk in one round is
+// restored by reset() when she is picked again.
+const fleet = [];
+const FLEET_KEYS = ['carrier', 'bb1', 'bb2', 'dd1', 'dd2', 'dd3', 'dd4'];
+function applyFleetSelection(){
+  const sel = (settings.fleetSel && settings.fleetSel.length ? settings.fleetSel : FLEET_KEYS).filter(k => FLEET_KEYS.includes(k));
+  const use = sel.length ? sel : FLEET_KEYS;
+  fleet.length = 0;
+  roster.forEach(s => { if(use.includes(s.key)) fleet.push(s); });
+  if(!fleet.length) fleet.push(roster[0]);
+  roster.forEach(s => { if(s.group) s.group.visible = fleet.includes(s); });
+}
 const _nameCount = {};
-fleet.forEach(s => {
+roster.forEach(s => {
   // v11.0: a command name per hull (the panel and helm show which ship you have)
   _nameCount[s.type] = (_nameCount[s.type] || 0) + 1;
   s.name = s.type === 'carrier' ? 'Carrier' : s.label + ' ' + _nameCount[s.type];
@@ -1576,6 +1639,7 @@ function telegraphTarget(ship, st){
   return frac * st.speed * capFrac;
 }
 function setTelegraph(i){
+  if(state.spectateShip) return; // v11.4: the helm is locked while spectating
   const f = flagship();
   if(!f || !state.running) return;
   if(propulsionDead(f)){ f.telegraph = 5; syncHelmUI(); return; }
@@ -1605,6 +1669,7 @@ function rederiveSlots(newFlag){
   });
 }
 function switchShip(idx){
+  if(state.spectateShip) return; // v11.4: the helm is locked while spectating (Atlantic Fleet Spec layout)
   const next = fleet[idx];
   if(!next || !next.alive || idx === state.playerIdx || !state.running) return;
   const old = fleet[state.playerIdx];
@@ -1624,6 +1689,37 @@ function switchShip(idx){
   next.rudderTargetDeg = next.rudderDeg;
   syncHelmUI(); syncFleetPanel();
   toast('🚢 You have command of the ' + next.name, old.name + ' follows as escort');
+}
+// v11.4: spectate a sinking ship. Atlantic Fleet's reference, from the APK
+// survey: (1) `HUD Layout Spec` — a dedicated spectating layout, the helm
+// present but not actionable while you watch; (2) `sinknotice` — a sinking
+// is announced with a UI notice, never left silent; (3) `targetinfo` — a
+// zoomed camera mode framing the target. So: the sinking is announced with
+// a "press C to watch" notice, C (or the camera panel button, or the
+// sinking ship's fleet-panel row) frames her and follows her down, the
+// helm is locked while you watch, and the flagship sails on under her last
+// orders. The round ends when the last sinking finishes, not the moment
+// she is lost (see update()).
+function latestSinking(){
+  let best = null;
+  fleet.forEach(s => { if(!s.alive && s.sinkT < 1 && (!best || s.sinkT < best.sinkT)) best = s; });
+  return best;
+}
+function enterSpectate(ship){
+  if(!ship || ship.alive || ship.sinkT >= 1 || !state.running) return;
+  state.spectateShip = ship;
+  const f = flagship();
+  $('spectateBar').textContent = '👁 SPECTATING · ' + ship.name + ' is going down — press C or Esc to return to the helm' + (f ? ' (' + f.name + ')' : '');
+  $('spectateBar').classList.remove('hidden');
+  syncHelmUI(); syncFleetPanel();
+}
+function exitSpectate(announce){
+  if(!state.spectateShip) return;
+  const gone = state.spectateShip;
+  state.spectateShip = null;
+  $('spectateBar').classList.add('hidden');
+  if(announce) toast('👁 ' + gone.name + ' is gone', 'back to the helm');
+  syncHelmUI(); syncFleetPanel();
 }
 function cycleShip(dir){
   for(let k = 1; k <= fleet.length; k++){
@@ -1808,6 +1904,7 @@ const state = {
   boltT: 0, flashT: 0,
   speedLoss: 1, kickT: 99, prevRudder: 0,
   playerIdx: 0,
+  spectateShip: null, // v11.4: the sinking ship being watched (null = on the helm)
   camZoom: settings.camZoom ?? 1, freeLook: 0, freeLookActive: false,
   camPanX: settings.camPanX ?? 0, camPanY: settings.camPanY ?? 0,
   capT: 0,
@@ -1940,6 +2037,10 @@ $('teleUp').addEventListener('click', () => stepTelegraph(1));
 $('teleDown').addEventListener('click', () => stepTelegraph(-1));
 $('camBtnStart').addEventListener('click', toggleCamPanel);
 $('camResetBtn').addEventListener('click', resetCamera);
+$('spectateBtn').addEventListener('click', () => {
+    if(state.spectateShip) exitSpectate();
+    else { const sh = latestSinking(); if(sh) enterSpectate(sh); else toast('👁 Nothing sinking', 'no ship is going down right now'); }
+  });
 $('camZoomSlider').addEventListener('input', e => { state.camZoom = 1 / parseFloat(e.target.value); saveCamera(); syncCameraUI(); });
 $('camPanXSlider').addEventListener('input', e => { state.camPanX = parseFloat(e.target.value); saveCamera(); syncCameraUI(); });
 $('camPanYSlider').addEventListener('input', e => { state.camPanY = parseFloat(e.target.value); saveCamera(); syncCameraUI(); });
@@ -1956,6 +2057,7 @@ function joyRadius(){
   return Math.max(30, r.width / 2 - 24);
 }
 function joySet(e){
+  if(state.spectateShip) return; // v11.4: the helm is locked while spectating
   const r = joyEl.getBoundingClientRect();
   const jr = joyRadius();
   let dx = e.clientX - (r.left + r.width / 2);
@@ -1971,6 +2073,21 @@ joyEl.addEventListener('pointerup', joyEnd);
 joyEl.addEventListener('pointercancel', joyEnd);
 window.addEventListener('keydown', e => {
   state.keys[e.key] = true;
+  // v11.4: C toggles the spectate camera (watch a sinking ship); while
+  // spectating the helm is locked (Atlantic Fleet Spec layout) — only
+  // pause, camera reset and the spectate keys themselves still work
+  if(e.key === 'c' || e.key === 'C'){
+    if(state.spectateShip) exitSpectate();
+    else { const sh = latestSinking(); if(sh) enterSpectate(sh); else if(state.running) toast('👁 Nothing sinking', 'no ship is going down right now'); }
+    return;
+  }
+  if(e.key === 'Escape'){ if(state.spectateShip) exitSpectate(); $('camPanel').classList.add('hidden'); return; }
+  if(state.spectateShip){
+    if(e.key === 'r' || e.key === 'R'){ exitSpectate(); resetCamera(); }
+    if(e.key === 'p' || e.key === 'P') togglePause();
+    if(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ', 'Tab'].includes(e.key)) e.preventDefault();
+    return;
+  }
   // v11.0: W/S or Up/Down step the telegraph one notch (hold to keep
   // stepping — keydown auto-repeats); 1-8 jump straight to a notch
   if(e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') stepTelegraph(1);
@@ -2031,6 +2148,12 @@ function clearWorld(){
 // ---------- reset / start / game over ----------
 function reset(){
   state.t = 0; state.score = 0; state.lost = 0; state.speed = 0;
+  // v11.4: the round's fleet is the player's selection (roster filtered
+  // by settings.fleetSel); unselected hulls are hidden, and any spectate
+  // from the last round is cleared
+  applyFleetSelection();
+  state.spectateShip = null;
+  $('spectateBar').classList.add('hidden');
   state.stage = settings.startStage;
   state.dist = STAGE_AT[state.stage];
   state.shake = 0; state.over = false; state.paused = false;
@@ -2082,10 +2205,11 @@ function startGame(){
 function gameOver(){
   if(state.over) return;
   state.over = true; state.running = false;
+  state.spectateShip = null; $('spectateBar').classList.add('hidden'); // v11.4: no spectating past the round
   $('finalDist').textContent = Math.floor(state.dist) + ' nm';
   $('finalScore').textContent = state.score;
   $('finalStage').textContent = STAGES[state.stage].name;
-  $('finalLost').textContent = state.lost + ' / 5';
+  $('finalLost').textContent = state.lost + ' / ' + fleet.length; // v11.4: the denominator is the fleet that sailed (was a stale / 5)
   $('overText').textContent = state.dist >= STAGE_AT[3]
     ? 'The fleet reached the hurricane — and held together through the worst of it.'
     : 'Every ship has been wrecked. The round is over.';
@@ -2179,7 +2303,14 @@ function buildFleetPanel(){
     '<button class="fleetRow" data-i="' + i + '"><span class="nm">' + s.name + '</span><span class="hp"></span></button>'
   ).join('');
   el.querySelectorAll('.fleetRow').forEach(b => {
-    b.addEventListener('click', () => switchShip(parseInt(b.dataset.i, 10)));
+    b.addEventListener('click', () => {
+      // v11.4: a sinking ship's row is the spectate control (Atlantic
+      // Fleet's roster is where you pick a ship to look at); a live
+      // ship's row still takes command
+      const s = fleet[parseInt(b.dataset.i, 10)];
+      if(s && !s.alive && s.sinkT < 1){ enterSpectate(s); return; }
+      switchShip(parseInt(b.dataset.i, 10));
+    });
   });
 }
 function syncFleetPanel(){
@@ -2190,9 +2321,10 @@ function syncFleetPanel(){
     if(!s) return;
     b.classList.toggle('on', parseInt(b.dataset.i, 10) === state.playerIdx);
     b.classList.toggle('sunk', !s.alive);
-    b.querySelector('.hp').textContent = Math.max(0, Math.round(s.hp / s.maxHp * 100)) + '%';
+    b.querySelector('.hp').textContent = (!s.alive && s.sinkT < 1) ? '💥 sinking' : Math.max(0, Math.round(s.hp / s.maxHp * 100)) + '%';
   });
 }
+applyFleetSelection();
 buildFleetPanel();
 
 function updateHud(){
@@ -2274,12 +2406,17 @@ function sinkShip(ship, mode){
     burst(ship.x, 6, ship.z, 60, [1, 0.8, 0.4], 9, 6); // secondary explosion
     burst(ship.x, 3, ship.z, 30, [0.3, 0.3, 0.3], 5, 5);
     state.shake = Math.min(18, state.shake + 14);
-    toast('💥 ' + ship.label + ' broke in two', 'magazine detonation — she is gone');
+    toast('💥 ' + ship.label + ' broke in two', 'magazine detonation — press C to watch her go down');
   }
   const wasPlayer = (ship === fleet[state.playerIdx]);
   const next = flagship();
-  if(next && ship.sinkMode !== 'breakup'){
-    toast('⚠️ ' + ship.label + ' is going down', next.label + ' takes command — ' + aliveCount() + ' ships left');
+  if(ship.sinkMode !== 'breakup'){
+    // v11.4: the sinking is announced with the spectate offer (Atlantic
+    // Fleet `sinknotice`). The last ship gets her own notice too — before
+    // this she sank silently, with no flagship left to take command.
+    toast('⚠️ ' + ship.label + ' is going down', next
+      ? next.label + ' takes command — ' + aliveCount() + ' ships left · press C to watch her sink'
+      : 'the last ship — press C to watch her sink');
   }
   // v11.1: if the player ship went down, the new flagship's helm syncs to
   // her own speed — no lurch, no reset — and inherits the lost ship's
@@ -2388,7 +2525,13 @@ function update(dt){
   // stops and hydrodynamic drag coasts the ship to a halt; FULL ASTERN is
   // the brake as well as reverse (Atlantic Fleet rule).
   const flag = flagship();
-  if(!flag){ gameOver(); return; }
+  // v11.4: the last ship is going down — let her sink before the round
+  // ends, so she can be watched (Atlantic Fleet announces a sinking and
+  // lets it play out; the round ends when she is gone, not the moment she
+  // is lost). While no flagship is left, only the sinking animation, the
+  // ambience and the HUD run; the helm, escorts and collisions are moot.
+  if(!flag && !fleet.some(s => !s.alive && s.sinkT < 1)){ gameOver(); return; }
+  if(flag){
   const dead = propulsionDead(flag);
   if(dead && !flag.propToasted){
     flag.propToasted = true;
@@ -2453,6 +2596,7 @@ function update(dt){
   if(keyRudder !== 0) rudderTarget = keyRudder * RUDDER_MAX;
   else if(state.joyActive && Math.abs(state.joyX) > 0.08) rudderTarget = state.joyX * RUDDER_MAX;
   else if(state.dragSteer) rudderTarget = state.rudder * RUDDER_MAX;
+  if(state.spectateShip) rudderTarget = 0; // v11.4: the helm is locked while spectating — the flagship holds her course
   flag.rudderTargetDeg = rudderTarget;
   const rs = flag.rudderSlew;
   flag.rudderDeg += Math.max(-rs * dt, Math.min(rs * dt, rudderTarget - flag.rudderDeg));
@@ -2530,17 +2674,24 @@ function update(dt){
     const holding = state.speed < 1;
     const desired = m.arrive({ x: tx, z: tz }, holding ? 12 : 30, Math.max(6, state.speed + 2));
     let desSpeed = Math.hypot(desired.x, desired.z);
-    // v11.3: traffic speed limit — an escort closing on a neighbour creeps
-    // instead of charging. The v11.2 coast-down lost three destroyers
-    // because escorts far from their slots ran at state.speed+5 (+4
-    // catch-up) toward moving slots with whisker avoidance skipped within
-    // 12 units of their own slot: they crossed the formation at 13-17 u/s.
-    // A limit tied to the nearest ship means even a touch is a slow one
-    // (the collision guards already ignore closing speeds under 1.5), and
-    // it steers nothing, so it cannot re-introduce a wedge.
-    let nearestOther = Infinity;
-    fleet.forEach(o => { if(o !== s && o.alive) nearestOther = Math.min(nearestOther, Math.hypot(o.x - m.x, o.z - m.z)); });
-    if(nearestOther < 20) desSpeed = Math.min(desSpeed, Math.max(1, nearestOther - 12));
+    // v11.4: traffic speed limit, now size-aware. v11.3's fixed 20-unit
+    // threshold was size-blind: it only engaged once the hull circles
+    // already overlapped (two destroyers touch at 26 units centre to
+    // centre; a carrier's bow is 29 from her centre), so the v11.3 check
+    // still lost ships on re-acceleration and in the turn. The limit now
+    // engages at hull-circle touch + 8, using the same circle radius the
+    // collision system uses (max(wid*1.5, len*0.25)+4), so an escort
+    // creeps BEFORE contact instead of after it. It still steers nothing.
+    const hullR = sh => Math.max(sh.group.userData.wid * 1.5, sh.group.userData.len * 0.25) + 4;
+    let trafficCap = Infinity;
+    fleet.forEach(o => {
+      if(o !== s && o.alive){
+        const d = Math.hypot(o.x - m.x, o.z - m.z);
+        const touch = hullR(s) + hullR(o);
+        if(d < touch + 8) trafficCap = Math.min(trafficCap, Math.max(1, d - touch));
+      }
+    });
+    if(trafficCap < Infinity) desSpeed = Math.min(desSpeed, trafficCap);
     const distToSlot = Math.hypot(tx - m.x, tz - m.z);
     // v11.2: cap the approach angle. A ship can only move along its
     // heading, so closing a sideways gap REQUIRES pointing at the slot —
@@ -2799,6 +2950,7 @@ function update(dt){
 
 
   shipInteractions(dt);
+  } // v11.4: end of the flagship-dependent section — see the if(flag) above
 
   // per-ship physics: buoyancy, flooding, list/trim, smoke, fire, wakes
   fleet.forEach(s => {
@@ -3118,13 +3270,16 @@ function update(dt){
     }
   });
 
+  // v11.4: when the last ship is going down there is no flagship — the
+  // ambient foam, clouds and whitecaps anchor on the sinking ship instead
+  const ref = flag || latestSinking() || {x: 0, z: 0};
   // crest foam: whitecaps where the sea is actually steepening, drifting downwind
   // v10.6: Monahan's law — foam chance scales with wind^3.41, and foam only
   // sits on real crests (height above 0.6 x Hs). Calm: a rare fleck.
   const foamChance = Math.min(0.9, 0.02 + 3.84e-6 * Math.pow(st.wind, 3.41) * 7);
   if(Math.random() < foamChance){
-    const fx = flag.x + (Math.random() - 0.5) * 120;
-    const fz = flag.z - 120 + Math.random() * 150;
+    const fx = ref.x + (Math.random() - 0.5) * 120;
+    const fz = ref.z - 120 + Math.random() * 150;
     if(waveHeight(fx, fz, state.t) > HS_CUR * 0.6){
       const f = spawnSprite(fx, waveHeight(fx, fz, state.t) + 0.1, fz, 5 + Math.random() * 3, 4 + Math.random() * 4, 2, 0.3, 0xffffff, 0.3);
       f.vx = Math.sin(state.windDir) * 0.8; f.vz = -Math.cos(state.windDir) * 0.8;
@@ -3134,8 +3289,8 @@ function update(dt){
   // lightning, clouds
   clouds.forEach(c => {
     c.position.x += 0.6 * dt;
-    if(c.position.x - flag.x > 200) c.position.x -= 400;
-    if(c.position.x - flag.x < -200) c.position.x += 400;
+    if(c.position.x - ref.x > 200) c.position.x -= 400;
+    if(c.position.x - ref.x < -200) c.position.x += 400;
   });
   // v10.6: whitecaps from Monahan's law (W = 3.84e-6 * U^3.41), not a timer:
   // foam spawns where the sea is actually steep (local slope past ~0.28,
@@ -3145,8 +3300,8 @@ function update(dt){
   state.capT += dt;
   if(state.capT > 0.12){
     state.capT = 0;
-    const cx = flag.x + (Math.random() - 0.5) * 320;
-    const cz = flag.z + (Math.random() - 0.5) * 320;
+    const cx = ref.x + (Math.random() - 0.5) * 320;
+    const cz = ref.z + (Math.random() - 0.5) * 320;
     const d = getOceanDataAt(cx, cz, state.t);
     const steep = Math.hypot(d.slopeX, d.slopeZ);
     const wFrac = 3.84e-6 * Math.pow(st.wind, 3.41);
@@ -3183,7 +3338,9 @@ function update(dt){
   if(state.shake > 0) state.shake *= Math.pow(0.02, dt);
 
   updateHud();
-  if(aliveCount() === 0) gameOver();
+  // v11.4: the round ends when no ship is alive AND none is still going
+  // down — the last sinking plays out (and can be watched) first
+  if(aliveCount() === 0 && !fleet.some(s => !s.alive && s.sinkT < 1)) gameOver();
 }
 
 // frustum fit test: does every alive ship fit inside the real camera frustum
@@ -3236,6 +3393,27 @@ function fleetFits(tx, ty, tz, lx, ly, lz, tanH, tanV){
 // ---------- camera (Asphalt action-mode chase: rigidly behind the flagship's
 // stern in the fleet's frame; custom zoom + look pan + RMB free-look, WoWS style) ----------
 function updateCamera(dt){
+  // v11.4: spectate — frame the sinking ship and follow her down
+  // (Atlantic Fleet's targetinfo optics: a zoomed camera on the target).
+  // The helm is locked while spectating; the flagship sails on. When she
+  // is gone (sinkT 1), hand the camera back to the flagship.
+  if(state.spectateShip){
+    const sh = state.spectateShip;
+    if(sh.sinkT >= 1){
+      exitSpectate('she is gone — back to the helm');
+    } else {
+      const shx = Math.sin(sh.heading), shz = -Math.cos(sh.heading);
+      const dist = 55 * state.camZoom;
+      const tx = sh.x - shx * dist, tz = sh.z - shz * dist;
+      const ty = Math.max(8, sh.y + 22);
+      const k = 1 - Math.exp(-dt * 3.5);
+      camera.position.x += (tx - camera.position.x) * k;
+      camera.position.y += (ty - camera.position.y) * k;
+      camera.position.z += (tz - camera.position.z) * k;
+      camera.lookAt(sh.x, sh.y + 2, sh.z);
+      return;
+    }
+  }
   const flag = flagship() || fleet[0];
   const aspect = window.innerWidth / window.innerHeight;
   const camZ0 = aspect < 0.75 ? 80 : aspect < 1.1 ? 70 : 60;
