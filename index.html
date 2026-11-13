@@ -274,7 +274,7 @@
     </div>
     <button class="ghostBtn" id="camBtnStart">🎥 Camera</button><br>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.9</div>
+    <div class="ver">v11.10</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -973,6 +973,47 @@ const oceanMat = new THREE.ShaderMaterial({
 const ocean = new THREE.Mesh(oceanGeo, oceanMat);
 ocean.position.set(0, 0, 0);
 scene.add(ocean);
+// v11.10: the freak-wave crest — a dedicated "wall of water" mesh. The
+// Gerstner bump (v11.8/v11.9) drives the ships but is a smooth dome that
+// blends into the Huge-wave swells from the low chase camera (the v11.9
+// check never saw a distinct crest across six-plus approaches), and the
+// ocean mesh is too coarse where the wave spawns to resolve it. This
+// mesh is the visible wall: a tall, curved face (60 wide, 16 high) with
+// a white foam crest and the top curling forward (a breaking face), that
+// stands at the freak wave's position and faces the fleet. It is purely
+// visual — the Gerstner bump still does the physics. Created once
+// (hidden); updateFreakCrest() positions it every frame in loop().
+const freakCrestGeo = new THREE.PlaneGeometry(60, 16, 24, 4);
+{
+  const cg = freakCrestGeo.attributes.position;
+  const ccol = new Float32Array(cg.count * 3);
+  for(let i = 0; i < cg.count; i++){
+    const y = cg.getY(i); // -8..8 (the plane is centred)
+    const t = (y + 8) / 16; // 0 at the base, 1 at the crest
+    // the top curls forward (toward +Z, the face the fleet sees)
+    cg.setZ(i, Math.pow(t, 2) * 6);
+    // vertex colours: deep blue at the base, white foam at the crest
+    ccol[i * 3] = 0.05 + t * 0.85;
+    ccol[i * 3 + 1] = 0.25 + t * 0.65;
+    ccol[i * 3 + 2] = 0.45 + t * 0.5;
+  }
+  freakCrestGeo.setAttribute('color', new THREE.BufferAttribute(ccol, 3));
+}
+const freakCrestMat = new THREE.MeshBasicMaterial({vertexColors: true, transparent: true, opacity: 0.88, side: THREE.DoubleSide, fog: true});
+const freakCrest = new THREE.Mesh(freakCrestGeo, freakCrestMat);
+freakCrest.visible = false;
+scene.add(freakCrest);
+function updateFreakCrest(){
+  const fw = state.freakWave;
+  if(!fw){ freakCrest.visible = false; return; }
+  freakCrest.visible = true;
+  // the base at sea level (y=0), the top at y=16 — a wall rising above
+  // the bump (which is ~8 high), so it reads as a wall from the chase
+  // camera. The +Z face (the curl) points along the wave's travel
+  // direction, so the fleet sees the breaking face coming at it.
+  freakCrest.position.set(fw.x, 8, fw.z);
+  freakCrest.rotation.y = Math.atan2(fw.dirX, fw.dirZ);
+}
 // sea colours, set per stage: troughs dark, crests pale, foam a grey-white
 // (fresh foam reflects ~40-55%, never pure white)
 let seaDeep = [0, 0, 0], seaBase = [0, 0, 0], seaCrest = [0, 0, 0];
@@ -3321,8 +3362,11 @@ function update(dt){
           const fx = Math.sin(s.heading), fz = -Math.cos(s.heading);
           const cosA = Math.abs(fw.dirX * fx + fw.dirZ * fz);
           if(cosA < 0.5){
-            toast('💥 FREAK WAVE', s.name + ' took it beam-on and rolled over!');
+            // v11.10: sinkShip first, then the toast — the v11.9 check
+            // never saw the "FREAK WAVE" toast because sinkShip's own
+            // "IS GOING DOWN" toast overwrote it (it was called after).
             sinkShip(s, 'capsize');
+            toast('💥 FREAK WAVE', s.name + ' took it beam-on and rolled over!');
           } else {
             s.floodTotal = Math.min(1, (s.floodTotal || 0) + 0.3);
             s.hp = Math.max(1, s.hp - 8);
@@ -3910,6 +3954,7 @@ function loop(){
   // wave is active, so the player always sees it coming.
   if(state.freakWave) $('freakWarn').classList.remove('hidden');
   else $('freakWarn').classList.add('hidden');
+  updateFreakCrest(); // v11.10: the visible wall follows the freak wave
   updateUnderwater();
   skyDome.position.copy(camera.position);
   if(composer) composer.render(); else renderer.render(scene, camera);
