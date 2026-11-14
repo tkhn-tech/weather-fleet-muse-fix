@@ -66,6 +66,21 @@
   .fleetRow.watch{border-color:rgba(120,200,255,.7);color:#9fd4e8} /* v11.15: the sinking ship the camera is following */
   .fleetRow.sunk{opacity:.35;cursor:default}
   /* v11.16: the enemy roster panel is gone — enemies are tracked on the minimap (red diamonds + health bars) instead of in a list. */
+  /* v11.18: compact telegraph for narrow viewports (up to 700px) — the
+     560px breakpoint missed some phones (in-app browsers / display scaling
+     report a wider viewport), so the tall single-column telegraph rendered
+     and overlapped the minimap. The 2-column grid + short labels (see
+     fitTelegraph) keep the panel ~180px tall, well clear of the minimap. */
+  @media (max-width:700px){
+    #telegraphPanel{width:140px;padding:6px 6px 8px}
+    #telegraphPanel .teleHead{font-size:10px;margin-bottom:4px}
+    .teleBtns{display:grid;grid-template-columns:1fr 1fr;gap:3px}
+    .teleBtn{padding:5px 2px;font-size:10px}
+    .teleStep{margin-top:4px}
+    .teleStep button{padding:5px 0}
+    #teleReadout{font-size:10px;margin-top:4px}
+    #teleReadout br{display:none}
+  }
   @media (max-width:560px){ #telegraphPanel{bottom:calc(8px + env(safe-area-inset-bottom));width:138px} #fleetPanel{width:112px} } /* v11.16: telegraph stays bottom-right on phones */
   #hint{position:fixed;left:158px;bottom:calc(26px + env(safe-area-inset-bottom));z-index:6;pointer-events:none;
     font-size:12.5px;color:#9db8cc;line-height:1.5;text-shadow:0 1px 6px rgba(0,0,0,.8);transition:opacity 1s ease}
@@ -134,12 +149,14 @@
   /* v11.1: the helm adapts to phone screens — the telegraph was too big
      in portrait and ran off the top of the screen in landscape */
   @media (max-width:560px){
-    #telegraphPanel{right:8px;bottom:calc(8px + env(safe-area-inset-bottom));width:128px;padding:8px 8px 10px}
-    #telegraphPanel .teleHead{font-size:10px;margin-bottom:6px}
-    .teleBtns{display:grid;grid-template-columns:1fr 1fr;gap:4px}
-    .teleBtn{padding:7px 2px;font-size:10.5px}
-    .teleStep button{padding:7px 0}
-    #teleReadout{font-size:11px}
+    #telegraphPanel{right:8px;bottom:calc(8px + env(safe-area-inset-bottom));width:132px;padding:6px 6px 8px} /* v11.18: compact telegraph — the tall panel overlapped the minimap on portrait phones */
+    #telegraphPanel .teleHead{font-size:9.5px;margin-bottom:4px}
+    .teleBtns{display:grid;grid-template-columns:1fr 1fr;gap:3px}
+    .teleBtn{padding:4px 1px;font-size:9.5px}
+    .teleStep{margin-top:4px}
+    .teleStep button{padding:5px 0;font-size:12px}
+    #teleReadout{font-size:10px;margin-top:4px}
+    #teleReadout br{display:none} /* v11.18: one-line readout on phones */
     #fleetPanel{width:112px}
     .fleetRow{padding:4px 5px;font-size:11px}
     #joy{left:12px;bottom:calc(14px + env(safe-area-inset-bottom));width:180px;height:56px}
@@ -268,7 +285,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.17</div>
+    <div class="ver">v11.18</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -2465,6 +2482,22 @@ function toggleDiveCam(){
 document.querySelectorAll('.teleBtn').forEach(b => {
   b.addEventListener('click', () => setTelegraph(parseInt(b.dataset.i, 10)));
 });
+// v11.18: compact telegraph labels on narrow/short screens — the full
+// orders ("STANDARD AHEAD") wrap to two lines in the 2-column grid and
+// make the panel tall enough to overlap the minimap on portrait phones.
+// Short labels keep every button on one line (~180px panel). Functionality
+// is by data-i, so the text is only a label. Runs on load and on resize.
+const TELE_SHORT = ['FLANK', 'FULL', 'STANDARD', 'HALF', 'SLOW', 'STOP', 'HALF ASTN', 'FULL ASTN'];
+const TELE_FULL = ['FLANK AHEAD', 'FULL AHEAD', 'STANDARD AHEAD', 'HALF AHEAD', 'SLOW AHEAD', 'ALL STOP', 'HALF ASTERN', 'FULL ASTERN'];
+function fitTelegraph(){
+  const compact = window.innerWidth <= 700 || window.innerHeight <= 500;
+  document.querySelectorAll('.teleBtn').forEach(b => {
+    const i = parseInt(b.dataset.i, 10);
+    b.textContent = compact ? TELE_SHORT[i] : TELE_FULL[i];
+  });
+}
+fitTelegraph();
+window.addEventListener('resize', fitTelegraph);
 $('teleUp').addEventListener('click', () => stepTelegraph(1));
 $('teleDown').addEventListener('click', () => stepTelegraph(-1));
 // v11.0: the helm is horizontal-only — X is the rudder, vertical drag is
@@ -2585,6 +2618,7 @@ function reset(){
     s.pitchVel = 0; s.rollVel = 0; // v10.1: spring-damper at rest
     s.list = 0; s.trim = 0; s.draft = 0; s.speedFactor = 1; s.capsize = false;
     s.sinkMode = 'settle'; s.fire = 0;
+    s.gunT = 1 + Math.random() * 2; // v11.18: player guns start staggered, not all firing at once
     if(s.breakParts){ scene.remove(s.breakParts.bow); scene.remove(s.breakParts.stern); s.breakParts = null; }
     s.group.visible = true;
     s.group.position.set(s.dx, 0, s.dz);
@@ -2609,14 +2643,18 @@ function startGame(){
   showStage(state.stage);
   try{ ac().resume(); }catch(e){}
 }
-function gameOver(){
+function gameOver(won){
   if(state.over) return;
   state.over = true; state.running = false;
   $('finalDist').textContent = Math.floor(state.dist) + ' nm';
   $('finalScore').textContent = state.score;
   $('finalStage').textContent = STAGES[state.stage].name;
   $('finalLost').textContent = state.lost + ' / ' + fleet.length; // v11.4: the denominator is the fleet that sailed (was a stale / 5)
-  $('overText').textContent = state.dist >= STAGE_AT[3]
+  // v11.18: victory — all enemies sunk. The end screen shows the victory
+  // text instead of the loss text; distance/score/lost still report.
+  $('overText').textContent = won
+    ? 'ALL ENEMIES SUNK — the fleet holds the sea.'
+    : state.dist >= STAGE_AT[3]
     ? 'The fleet reached the hurricane — and held together through the worst of it.'
     : 'Every ship has been wrecked. The round is over.';
   if(Math.floor(state.dist) > best.dist) best.dist = Math.floor(state.dist);
@@ -4032,6 +4070,7 @@ function update(dt){
   if(state.shake > 0) state.shake *= Math.pow(0.02, dt);
 
   updateEnemies(dt); // v11.15: the enemy fleet (AI, gunnery, torpedoes)
+  updatePlayerGuns(dt); // v11.18: the fleet fires back, autonomously
   updateHud();
   // v11.4: the round ends when no ship is alive AND none is still going
   // down — the last sinking plays out (and can be watched) first
@@ -4293,7 +4332,7 @@ function makeEnemy(cls, i, x, z, heading){
   wrap.userData.len = spec.len;
   wrap.userData.wid = spec.wid;
   const e = {
-    type: cls.type, label: cls.label + ' ' + (i + 1),
+    type: cls.type, label: cls.label + ' ' + (i + 1), isEnemy: true, // v11.18: marks enemy hulls for player-shell hits
     x, z, heading, y: 0,
     hp: cls.hp, maxHp: cls.hp, alive: true, sinkT: 0,
     telegraph: 2, spoolSpeed: 0, // STANDARD AHEAD to start
@@ -4335,14 +4374,16 @@ function spawnEnemies(){
   const form = settings.enemyForm || 'line';
   const flag = flagship() || fleet[0];
   if(!flag) return;
-  // v11.16: spawn ahead of the fleet (so they are met head-on), at the
+  // v11.18: spawn ahead of the fleet (so they are met head-on), at the
   // chosen starting proximity, facing back toward the flagship; the
   // formation offsets use the player slot frame (dx = starboard, dz = astern).
-  // Close 150 is inside gun range (immediate action); Medium 300 is just
-  // outside it (the enemy closes to its optimal range, 170-240); Far 500 is
-  // beyond the minimap's 400-unit range, so the enemy appears clamped to
-  // the minimap edge and sails in.
-  const proxDist = {close: 150, medium: 300, far: 500}[settings.enemyProx] || 300;
+  // All three distances grew (Nicholas: the enemy fleet should start
+  // generally further away). Close 250 is just outside the enemy destroyer
+  // gun range (220) — still "close" but not instantly under fire; Medium 450
+  // is well outside gun range (a clear approach); Far 700 is well beyond the
+  // minimap's 400-unit range, so the enemy appears clamped to the minimap
+  // edge and sails in.
+  const proxDist = {close: 250, medium: 450, far: 700}[settings.enemyProx] || 450;
   const brg = flag.heading + (Math.random() - 0.5) * 0.8;
   const cx = flag.x + Math.sin(brg) * proxDist;
   const cz = flag.z - Math.cos(brg) * proxDist;
@@ -4435,11 +4476,16 @@ function updateEnemies(dt){
   }
   updateShells(dt);
   updateTorpedoes(dt);
+  // v11.18: victory — every enemy sunk and gone under (sinkT >= 1, so the
+  // sinking plays out first). One enemy fleet per round, no new waves.
+  if(settings.enemyOn && enemies.length && !state.over && enemies.every(e => !e.alive && e.sinkT >= 1)){
+    gameOver(true);
+  }
 }
 function updateEnemySinking(e, dt){
-  // the player cannot shoot, so an enemy only sinks if something else gets
-  // her — but the lifecycle is complete: she capsizes, streams air, and
-  // goes down to -20 like a player ship.
+  // v11.18: the player CAN shoot now — damageEnemy sets alive=false and
+  // this lifecycle plays out: she capsizes, streams air, and goes down
+  // to -20 like a player ship.
   e.sinkT += dt / 30;
   const f = Math.min(1, e.sinkT);
   e.motion.sampleWaves(state.t);
@@ -4492,6 +4538,92 @@ function fireGuns(e, tgt, skill){
   });
   blip(140, 0.25, 'square', 0.05); // a faint report so the player hears the incoming fire
 }
+// v11.18: PLAYER GUNS — the fleet fires back, autonomously. Each player
+// ship independently picks the nearest live enemy and fires on her own
+// cooldown when it is inside her gun range. No manual controls, no fire
+// button, no aim UI — the guns do it themselves. The ballistics reuse the
+// enemy shell system (predictive lead, dispersion, glowing parabolic arcs
+// in the shared `shells` array, resolved by resolveShellHit), so player
+// shells read exactly like enemy shells.
+const PLAYER_GUNS = {
+  battleship: {range: 320, dmg: 12, cd: 4.2},
+  destroyer:  {range: 260, dmg: 7,  cd: 3.2},
+  carrier:    {range: 240, dmg: 5,  cd: 5.0},
+};
+function firePlayerGuns(s, tgt){
+  // ballistic lead, same as the enemy guns — predict where the target will
+  // be when the shell arrives, then disperse like a Veteran crew
+  const d = Math.hypot(tgt.x - s.x, tgt.z - s.z);
+  const shellSpeed = 55; // u/s
+  const tof = d / shellSpeed;
+  const tvx = tgt.motion ? tgt.motion.vx : 0;
+  const tvz = tgt.motion ? tgt.motion.vz : 0;
+  const px = tgt.x + tvx * tof * 0.85;
+  const pz = tgt.z + tvz * tof * 0.85;
+  const spread = (6 + state.stage * 4) * 1.0;
+  const ix = px + (Math.random() - 0.5) * 2 * spread;
+  const iz = pz + (Math.random() - 0.5) * 2 * spread;
+  // muzzle flash + smoke at the firing ship's bow turrets
+  const spec = MODEL_SPEC[s.type];
+  const mx = s.x + Math.sin(s.heading) * (spec.len * 0.4);
+  const mz = s.z - Math.cos(s.heading) * (spec.len * 0.4);
+  burst(mx, 3, mz, 10, [1, 0.8, 0.4], 4, 3);
+  const sm = spawnSprite(mx, 4, mz, 1.2, 8, 8, 0.6, 0x888888, 0.5);
+  sm.vy = 2;
+  s.motion.headingRate += (Math.random() - 0.5) * 0.02;
+  // a glowing shell arc, identical in kind to the enemy's
+  shells.push({
+    sx: mx, sy: 4, sz: mz, x: mx, y: 4, z: mz,
+    tx: ix, ty: 0, tz: iz,
+    t: 0, tof, arc: 20 + d * 0.06,
+    tgt, dmg: PLAYER_GUNS[s.type].dmg, label: s.name,
+  });
+  blip(190, 0.18, 'square', 0.04); // own guns: a slightly higher report than the enemy's
+}
+function updatePlayerGuns(dt){
+  if(!state.running || state.paused || state.over) return;
+  if(!settings.enemyOn || !enemies.length) return; // nothing to shoot at
+  for(const s of fleet){
+    if(!s.alive) continue; // a sinking or dead ship does not fire
+    if(propulsionDead(s)) continue; // Engine Room flooded out — no power for the guns
+    const guns = PLAYER_GUNS[s.type];
+    if(!guns) continue;
+    s.gunT = (s.gunT === undefined ? 1 + Math.random() * 2 : s.gunT) - dt;
+    if(s.gunT > 0) continue;
+    // autonomous targeting: the nearest live enemy; fire only in range
+    let best = null, bd = Infinity;
+    for(const e of enemies){
+      if(!e.alive) continue;
+      const d = Math.hypot(e.x - s.x, e.z - s.z);
+      if(d < bd){ bd = d; best = e; }
+    }
+    if(!best || bd > guns.range) continue;
+    firePlayerGuns(s, best);
+    s.gunT = guns.cd * (0.85 + Math.random() * 0.3);
+  }
+}
+// v11.18: damage to an ENEMY ship. The player damage path (damageShip) is
+// for player hulls only — compartments, fires, sinkShip with command
+// transfer — so enemies get their own lighter path: hp, a hit flash and
+// fireball, and when hp reaches 0 she goes down through the existing enemy
+// sinking presentation (updateEnemySinking: capsize, air bubbles, -20).
+function damageEnemy(e, dmg, hx, hz){
+  if(!e.alive) return;
+  e.hp -= dmg;
+  boomLight.position.set(e.x, 4, e.z);
+  boomLight.intensity = 6 + Math.min(8, dmg * 0.4);
+  const fb = spawnSprite(hx, 3, hz, 0.5, 6 + dmg * 0.35, 6 + dmg * 0.35, 2.5, 0xff7722, 0.9);
+  fb.vy = 2;
+  burst(hx, 3, hz, Math.min(30, 10 + Math.floor(dmg)), [1, 0.75, 0.3], 6 + dmg * 0.15, 5);
+  if(e.hp <= 0){
+    e.hp = 0;
+    e.alive = false;
+    e.sinkT = 0;
+    e.listDir = Math.random() < 0.5 ? -1 : 1; // capsize one way or the other
+    burst(e.x, 2, e.z, 40, [1, 0.55, 0.15], 7, 4);
+    toast('💥 Enemy ' + e.label + ' sunk', 'the fleet holds the sea a little longer');
+  }
+}
 function updateShells(dt){
   for(let i = shells.length - 1; i >= 0; i--){
     const sh = shells[i];
@@ -4517,8 +4649,14 @@ function resolveShellHit(sh){
     const L = tgt.group.userData.len, W = tgt.group.userData.wid;
     if(Math.abs(along) < L * 0.55 && Math.abs(across) < W * 0.75){
       // a shell hit on the deck/superstructure (above the waterline)
-      damageShip(tgt, sh.dmg, sh.tx, sh.tz, false);
-      toast('💥 ' + tgt.name + ' hit', 'shell from the enemy ' + sh.label);
+      if(tgt.isEnemy){
+        // v11.18: a PLAYER shell hit an enemy — the enemy damage path
+        damageEnemy(tgt, sh.dmg, sh.tx, sh.tz);
+        toast('💥 Enemy ' + tgt.label + ' hit', 'shell from ' + sh.label);
+      } else {
+        damageShip(tgt, sh.dmg, sh.tx, sh.tz, false);
+        toast('💥 ' + tgt.name + ' hit', 'shell from the enemy ' + sh.label);
+      }
       return;
     }
   }
