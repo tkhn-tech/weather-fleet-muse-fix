@@ -148,6 +148,14 @@
   .seg button{flex:1;min-width:56px;background:rgba(255,255,255,.07);border:1px solid rgba(140,190,230,.25);
     color:#cfe2ef;border-radius:999px;padding:7px 6px;font-size:12.5px;font-weight:700;cursor:pointer}
   .seg button.on{background:#ffd166;color:#1a2a1a;border-color:#ffd166}
+  /* v11.26: per-type enemy quantity steppers (mixed fleet) */
+  .stepper{display:flex;gap:6px;align-items:center;flex:1}
+  .stepper button{width:34px;height:30px;background:rgba(255,255,255,.07);border:1px solid rgba(140,190,230,.25);
+    color:#cfe2ef;border-radius:999px;font-size:16px;font-weight:700;cursor:pointer;line-height:1}
+  .stepper button:disabled{opacity:.3;cursor:default}
+  .stepVal{min-width:26px;text-align:center;font-size:14px;font-weight:700;color:#ffd166}
+  .enemyTotal{font-size:13px;font-weight:700;color:#cfe2ef}
+  .enemyTotal.full{color:#ffd166}
   #loadErr{color:#ff8a7a;font-size:13px;margin-top:10px;min-height:18px}
   @media (max-width:560px){
     .hud{gap:6px;padding-left:8px;padding-right:calc(130px + env(safe-area-inset-right))} /* v11.20: reserve the 112px phone minimap (8 + 114 + 8) */
@@ -295,10 +303,13 @@
       <h3>⚔️ Enemy fleet</h3>
       <div class="seaRow"><span class="lab">Enemies</span><div class="seg" id="segEnemyOn">
         <button data-v="1">On</button><button data-v="0">Off</button></div></div>
-      <div class="seaRow"><span class="lab">Warship class</span><div class="seg" id="segEnemyClass">
-        <button data-v="dd">Destroyer</button><button data-v="cl">Light Cruiser</button><button data-v="bb">Heavy Cruiser</button></div></div>
-      <div class="seaRow"><span class="lab">Quantity</span><div class="seg" id="segEnemyQty">
-        <button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button><button data-v="5">5</button><button data-v="6">6</button><button data-v="7">7</button><button data-v="8">8</button></div></div>
+      <div class="seaRow"><span class="lab">Destroyers</span><div class="stepper" id="stepEnemyDd">
+        <button data-d="-1">−</button><span class="stepVal" id="stepEnemyDdVal">3</span><button data-d="1">+</button></div></div>
+      <div class="seaRow"><span class="lab">Light Cruisers</span><div class="stepper" id="stepEnemyCl">
+        <button data-d="-1">−</button><span class="stepVal" id="stepEnemyClVal">2</span><button data-d="1">+</button></div></div>
+      <div class="seaRow"><span class="lab">Heavy Cruisers</span><div class="stepper" id="stepEnemyBb">
+        <button data-d="-1">−</button><span class="stepVal" id="stepEnemyBbVal">1</span><button data-d="1">+</button></div></div>
+      <div class="seaRow"><span class="lab">Total</span><span class="enemyTotal" id="enemyTotal">6 / 8</span></div>
       <div class="seaRow"><span class="lab">Formation</span><div class="seg" id="segEnemyForm">
         <button data-v="line">Line Ahead</button><button data-v="echelon">Echelon</button><button data-v="flank">Flanking</button></div></div>
       <div class="seaRow"><span class="lab">AI skill</span><div class="seg" id="segEnemySkill">
@@ -307,7 +318,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.25</div>
+    <div class="ver">v11.26</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -571,12 +582,32 @@ const stageBase = {sky: new THREE.Color(0x9fc3d8), sunI: 1.15}; // v11.7: fogFar
 const UNDER_COL = new THREE.Color(0x0a3542); // deep blue-green, 20 units down
 
 const savedSettings = JSON.parse(localStorage.getItem('hurricane_fleet_settings') || '{}');
+// v11.26: per-type enemy counts (replaces the single enemyClass/enemyQty).
+// Migration: an old single-type setting becomes that type's count, the other
+// two get 0; a missing/invalid setting uses the default mix (dd 3, cl 2, bb 1).
+const _ec = savedSettings.enemyCounts;
+const _oldClass = savedSettings.enemyClass, _oldQty = savedSettings.enemyQty;
+let _counts;
+if(_ec && typeof _ec === 'object' && ['dd', 'cl', 'bb'].every(k => Number.isInteger(_ec[k]))){
+  _counts = {dd: _ec.dd, cl: _ec.cl, bb: _ec.bb};
+} else if(['dd', 'cl', 'bb'].includes(_oldClass) && Number.isInteger(_oldQty)){
+  _counts = {dd: 0, cl: 0, bb: 0};
+  _counts[_oldClass] = _oldQty;
+} else {
+  _counts = {dd: 3, cl: 2, bb: 1};
+}
+// clamp each count to 0..8, and the total to 8 (trim the largest first)
+['dd', 'cl', 'bb'].forEach(k => { _counts[k] = Math.max(0, Math.min(8, _counts[k] | 0)); });
+let _tot = _counts.dd + _counts.cl + _counts.bb;
+while(_tot > 8){
+  const k = ['dd', 'cl', 'bb'].reduce((a, b) => _counts[a] >= _counts[b] ? a : b);
+  _counts[k]--; _tot--;
+}
 const settings = {
   startStage: savedSettings.startStage ?? 0,
   wave: savedSettings.wave ?? 1,
   enemyOn: savedSettings.enemyOn ?? 1,
-  enemyClass: savedSettings.enemyClass ?? 'dd',
-  enemyQty: savedSettings.enemyQty ?? 3,
+  enemyCounts: _counts, // v11.26: per-type enemy counts {dd, cl, bb} — a mixed fleet, total capped at 8
   enemyForm: savedSettings.enemyForm ?? 'line',
   enemySkill: savedSettings.enemySkill ?? 'veteran',
   enemyProx: savedSettings.enemyProx ?? 'medium', // v11.16: starting proximity of the enemy fleet (close/medium/far)
@@ -605,8 +636,39 @@ wireSeg('segStart', 'startStage', v => parseInt(v, 10));
 wireSeg('segWave', 'wave', v => parseFloat(v));
 // v11.15: enemy spawner (same segmented-control style as the weather/stage/wave pickers)
 wireSeg('segEnemyOn', 'enemyOn', v => parseInt(v, 10));
-wireSeg('segEnemyClass', 'enemyClass', v => v);
-wireSeg('segEnemyQty', 'enemyQty', v => parseInt(v, 10));
+// v11.26: per-type enemy quantity steppers — a mixed fleet, total capped at 8.
+const ENEMY_TYPES = ['dd', 'cl', 'bb'];
+function enemyTotal(){ return ENEMY_TYPES.reduce((s, k) => s + (settings.enemyCounts[k] | 0), 0); }
+function syncEnemySteppers(){
+  const total = enemyTotal();
+  ENEMY_TYPES.forEach(k => {
+    const suf = k[0].toUpperCase() + k[1]; // dd -> Dd, cl -> Cl, bb -> Bb
+    const val = $('stepEnemy' + suf + 'Val');
+    if(val) val.textContent = settings.enemyCounts[k];
+    const box = $('stepEnemy' + suf);
+    if(box) box.querySelectorAll('button').forEach(b => {
+      const d = parseInt(b.dataset.d, 10);
+      b.disabled = (d < 0 && settings.enemyCounts[k] <= 0) || (d > 0 && (settings.enemyCounts[k] >= 8 || total >= 8));
+    });
+  });
+  const tot = $('enemyTotal');
+  if(tot){ tot.textContent = total + ' / 8'; tot.classList.toggle('full', total >= 8); }
+}
+ENEMY_TYPES.forEach(k => {
+  const suf = k[0].toUpperCase() + k[1];
+  const box = $('stepEnemy' + suf);
+  if(!box) return;
+  box.querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', () => {
+      const d = parseInt(b.dataset.d, 10);
+      if(d > 0 && enemyTotal() >= 8) return; // cap: the total never exceeds 8
+      settings.enemyCounts[k] = Math.max(0, Math.min(8, (settings.enemyCounts[k] | 0) + d));
+      localStorage.setItem('hurricane_fleet_settings', JSON.stringify(settings));
+      syncEnemySteppers();
+    });
+  });
+});
+syncEnemySteppers();
 wireSeg('segEnemyForm', 'enemyForm', v => v);
 wireSeg('segEnemySkill', 'enemySkill', v => v);
 wireSeg('segEnemyProx', 'enemyProx', v => v); // v11.16: starting proximity picker
@@ -4503,11 +4565,21 @@ function makeEnemy(cls, i, x, z, heading){
 function spawnEnemies(){
   clearEnemies();
   if(!settings.enemyOn) return;
-  const cls = ENEMY_CLASS[settings.enemyClass] || ENEMY_CLASS.dd;
-  const n = Math.max(1, Math.min(8, settings.enemyQty || 3));
   const form = settings.enemyForm || 'line';
   const flag = flagship() || fleet[0];
   if(!flag) return;
+  // v11.26: a MIXED enemy fleet — heaviest first (bb, cl, dd) so the
+  // formation's lead/centre positions go to the larger ships and the
+  // destroyers take the flanks/rear. The total is capped at 8 (the UI
+  // already enforces it; the trim below is a backstop).
+  const counts = settings.enemyCounts || {dd: 3, cl: 2, bb: 1};
+  const list = [];
+  ['bb', 'cl', 'dd'].forEach(k => {
+    const n = Math.max(0, Math.min(8, counts[k] | 0));
+    for(let j = 0; j < n; j++) list.push(k);
+  });
+  while(list.length > 8) list.pop(); // backstop: never spawn more than 8
+  if(!list.length) return;
   // v11.18: spawn ahead of the fleet (so they are met head-on), at the
   // chosen starting proximity, facing back toward the flagship; the
   // formation offsets use the player slot frame (dx = starboard, dz = astern).
@@ -4523,16 +4595,25 @@ function spawnEnemies(){
   const cz = flag.z - Math.cos(brg) * proxDist;
   const fh = brg + Math.PI;
   const c = Math.cos(fh), sn = Math.sin(fh);
-  for(let i = 0; i < n; i++){
+  const perType = {dd: 0, cl: 0, bb: 0}; // per-type label numbers (Destroyer 1, Light Cruiser 1, ...)
+  for(let i = 0; i < list.length; i++){
+    const k = list[i];
+    const cls = ENEMY_CLASS[k];
     let ox = 0, oz = 0;
     if(form === 'line'){ ox = 0; oz = i * 60; } // line ahead, each astern of the leader
     else if(form === 'echelon'){ ox = i * 45; oz = i * 45; } // diagonal, stepping to starboard and astern
-    else { ox = (i - (n - 1) / 2) * 90; oz = Math.abs(i - (n - 1) / 2) * 25; } // flanking wolfpack: a shallow arc across the front
+    else { ox = (i - (list.length - 1) / 2) * 90; oz = Math.abs(i - (list.length - 1) / 2) * 25; } // flanking wolfpack: a shallow arc across the front
     const x = cx + ox * c - oz * sn;
     const z = cz + ox * sn + oz * c;
-    enemies.push(makeEnemy(cls, i, x, z, fh));
+    enemies.push(makeEnemy(cls, perType[k]++, x, z, fh));
   }
-  if(enemies.length) toast('⚔️ Enemy ' + cls.label + 's sighted', enemies.length + ' ship' + (enemies.length > 1 ? 's' : '') + ' — ' + (settings.enemySkill || 'veteran') + ' crew, ' + form + ' formation');
+  if(enemies.length){
+    const spawned = {dd: 0, cl: 0, bb: 0};
+    list.forEach(k => spawned[k]++);
+    const parts = ['bb', 'cl', 'dd'].filter(k => spawned[k] > 0)
+      .map(k => spawned[k] + ' ' + ENEMY_CLASS[k].label + (spawned[k] > 1 ? 's' : ''));
+    toast('⚔️ Enemy fleet sighted', parts.join(' · ') + ' — ' + (settings.enemySkill || 'veteran') + ' crew, ' + form + ' formation');
+  }
 }
 function clearEnemies(){
   enemies.forEach(e => {
