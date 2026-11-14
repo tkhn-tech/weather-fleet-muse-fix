@@ -125,41 +125,51 @@
     background:rgba(4,10,18,.78);backdrop-filter:blur(4px);padding:20px;overflow-y:auto}
   #startScreen{background:linear-gradient(rgba(4,10,18,.55),rgba(4,10,18,.88)),
     url('images/media-generation-hurricane-fleet-title-0-b67d21d2-2a41-4633-b4ed-57ba2ca1fee0.jpg') center/cover no-repeat #0a1622}
-  .card{max-width:540px;width:100%;text-align:center;background:linear-gradient(180deg,rgba(16,39,58,.92),rgba(10,24,38,.94));
-    border:1px solid rgba(140,190,230,.3);border-radius:24px;padding:26px 22px;box-shadow:0 24px 60px rgba(0,0,0,.5)}
-  .card h1{font-size:34px;letter-spacing:.1em;text-transform:uppercase}
+  /* v11.29: Apple-like start menu — frosted glass, system font, compact */
+  .card{max-width:520px;width:100%;max-height:calc(100vh - 48px);max-height:calc(100dvh - 48px);overflow-y:auto;text-align:center;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:rgba(16,36,54,.72);-webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);
+    border:1px solid rgba(255,255,255,.16);border-radius:22px;padding:14px 16px 12px;box-shadow:0 20px 50px rgba(0,0,0,.45)}
+  .card h1{font-size:26px;letter-spacing:.06em;text-transform:uppercase;font-weight:800}
   .card h1 span{color:#ffd166}
-  .card .sub{color:#bcd6e6;font-size:14.5px;line-height:1.55;margin-top:10px}
-  .fleetLine{font-size:26px;letter-spacing:.2em;margin:14px 0 2px}
-  .bigBtn{display:inline-block;margin-top:18px;background:#ffd166;color:#1a2a1a;border:none;border-radius:999px;
-    padding:14px 34px;font-size:17px;font-weight:800;cursor:pointer;letter-spacing:.04em}
+  .card .sub{color:#c3d9e8;font-size:13px;line-height:1.5;margin-top:6px}
+  .bigBtn{display:inline-block;margin-top:12px;background:#007aff;color:#fff;border:none;border-radius:999px;
+    padding:13px 30px;font-size:16px;font-weight:700;cursor:pointer;letter-spacing:.02em}
   .bigBtn:active{transform:scale(.96)}
-  .ghostBtn{display:inline-block;margin-top:12px;background:transparent;color:#bcd6e6;border:1px solid rgba(140,190,230,.4);
-    border-radius:999px;padding:10px 22px;font-size:14px;font-weight:700;cursor:pointer}
-  .stats{display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap}
-  .stat{background:rgba(255,255,255,.06);border:1px solid rgba(140,190,230,.2);border-radius:14px;padding:10px 16px}
-  .stat .v{font-size:20px;font-weight:800}
-  .stat .k{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#9db8cc}
-  .keys{margin-top:14px;font-size:12.5px;color:#7d9bb0;line-height:1.7}
-  .ver{font-size:11px;color:#5f7a90;margin-top:10px;letter-spacing:.08em}
-  .seaBox{margin-top:18px;text-align:left;background:rgba(255,255,255,.05);border:1px solid rgba(140,190,230,.2);
-    border-radius:16px;padding:14px 16px}
-  .seaBox h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#ffd166;margin-bottom:10px;text-align:center}
-  .seaRow{display:flex;align-items:center;gap:8px;margin-top:8px}
-  .seaRow .lab{width:92px;font-size:12.5px;color:#9db8cc;font-weight:700;flex-shrink:0}
-  .seg{display:flex;gap:6px;flex:1;flex-wrap:wrap}
-  .seg button{flex:1;min-width:56px;background:rgba(255,255,255,.07);border:1px solid rgba(140,190,230,.25);
-    color:#cfe2ef;border-radius:999px;padding:7px 6px;font-size:12.5px;font-weight:700;cursor:pointer}
-  .seg button.on{background:#ffd166;color:#1a2a1a;border-color:#ffd166}
-  /* v11.26: per-type enemy quantity steppers (mixed fleet) */
+  .ghostBtn{display:inline-block;margin-top:12px;background:rgba(255,255,255,.1);color:#e8f1f8;border:1px solid rgba(255,255,255,.2);
+    border-radius:999px;padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer}
+  .btnRow{display:flex;gap:10px;align-items:center;justify-content:center;margin-top:12px}
+  .btnRow .bigBtn{margin-top:0;flex:1}
+  .btnRow .ghostBtn{margin-top:0;flex:0 0 auto}
+  #helpBtn{width:46px;height:46px;padding:0;border-radius:50%;font-size:18px;line-height:1}
+  .stats{display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap}
+  .stat{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:5px 10px}
+  .stat .v{font-size:15px;font-weight:800}
+  .stat .k{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#9db8cc}
+  .keys{font-size:13px;color:#c3d9e8;line-height:1.75;text-align:left}
+  .ver{font-size:10px;color:#7d9bb0;margin-top:6px;letter-spacing:.08em}
+  .seaBox{margin-top:10px;text-align:left;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+    border-radius:14px;padding:8px 12px}
+  .seaBox h3{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#ffd166;margin-bottom:6px;text-align:center}
+  .seaRow{display:flex;align-items:center;gap:8px;margin-top:5px}
+  .seaRow .lab{width:92px;font-size:12px;color:#a9c4d6;font-weight:600;flex-shrink:0}
+  .seg{display:flex;gap:5px;flex:1;flex-wrap:wrap}
+  .seg button{flex:1;min-width:52px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);
+    color:#dbe9f2;border-radius:999px;padding:5px;font-size:12px;font-weight:600;cursor:pointer}
+  .seg button.on{background:#007aff;color:#fff;border-color:#007aff}
   .stepper{display:flex;gap:6px;align-items:center;flex:1}
-  .stepper button{width:34px;height:30px;background:rgba(255,255,255,.07);border:1px solid rgba(140,190,230,.25);
-    color:#cfe2ef;border-radius:999px;font-size:16px;font-weight:700;cursor:pointer;line-height:1}
+  .stepper button{width:32px;height:26px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);
+    color:#dbe9f2;border-radius:999px;font-size:15px;font-weight:700;cursor:pointer;line-height:1}
   .stepper button:disabled{opacity:.3;cursor:default}
-  .stepVal{min-width:26px;text-align:center;font-size:14px;font-weight:700;color:#ffd166}
-  .enemyTotal{font-size:13px;font-weight:700;color:#cfe2ef}
+  .stepVal{min-width:24px;text-align:center;font-size:13px;font-weight:700;color:#ffd166}
+  .enemyTotal{font-size:12px;font-weight:700;color:#dbe9f2}
   .enemyTotal.full{color:#ffd166}
-  #loadErr{color:#ff8a7a;font-size:13px;margin-top:10px;min-height:18px}
+  #loadErr{color:#ff8a7a;font-size:12px;margin-top:8px}
+  /* v11.29: Help popup — same frosted card, scrollable controls list */
+  #helpScreen .card{text-align:left}
+  #helpScreen h2{font-size:20px;text-align:center;margin-bottom:10px}
+  #helpScreen .keys{max-height:calc(100vh - 190px);max-height:calc(100dvh - 190px);overflow-y:auto}
+  #helpScreen .bigBtn{display:block;width:100%}
   @media (max-width:560px){
     .hud{gap:6px;padding-left:8px;padding-right:calc(130px + env(safe-area-inset-right))} /* v11.20: reserve the 112px phone minimap (8 + 114 + 8) */
     .pill{padding:6px 9px;font-size:12px}
@@ -280,15 +290,9 @@
 <div class="overlay" id="startScreen">
   <div class="card">
     <h1>Hurricane <span>Fleet</span></h1>
-    <div class="fleetLine">🚢 🛳️ 🚢 🛳️ 🚢</div>
-    <p class="sub">The same fleet, one run, no cuts — now in full 3D. You have the helm of
-      the flagship as the carrier leads the battleships and destroyers through an
-      open ocean — steer anywhere, and the world sails with you. The Engine Order
-      Telegraph sets the speed and the ship spools up to it; the joystick is the
-      rudder, port to starboard. Take command of any ship with Tab or the fleet
-      panel, and the rest follow as escorts. Waves pitch and roll every hull.
-      A wrecked ship lists, floods and sinks beneath the waves, and the next one
-      takes command. Lose them all and the round ends.</p>
+    <p class="sub">Take the helm of the flagship and lead the carrier, battleships and
+      destroyers through an open ocean into the storm. A wrecked ship lists,
+      floods and sinks — lose them all and the round ends.</p>
     <div id="loadErr"></div>
     <div class="seaBox">
       <h3>⚙️ Customise the sea</h3>
@@ -322,14 +326,21 @@
       <div class="seaRow"><span class="lab">Starting proximity</span><div class="seg" id="segEnemyProx">
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
-    <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.28</div>
+    <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
+    <div class="ver">v11.29</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
     </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="helpScreen">
+  <div class="card">
+    <h2>Controls</h2>
     <p class="keys">Rudder: joystick (left/right) or ← → / A D — release to return to midships &nbsp;·&nbsp; Telegraph: W / S or ↑ ↓, click the panel, or keys 1–8 &nbsp;·&nbsp; Command: Tab or the fleet panel &nbsp;·&nbsp; Pause: P<br>
       Drag / swipe the sea: orbit the camera round the fleet &nbsp;·&nbsp; Wheel / pinch: zoom &nbsp;·&nbsp; Right-drag: free look &nbsp;·&nbsp; ↺ (or R) resets the camera &nbsp;·&nbsp; U: dive below the surface &nbsp;·&nbsp; Click a sinking ship's row to watch her go down &nbsp;·&nbsp; Air Ops: the panel launches flights &nbsp;·&nbsp; C: follow a jet / weapon &nbsp;·&nbsp; N: radar north-up / heading-up &nbsp;·&nbsp; Esc: back to the fleet</p>
+    <button class="bigBtn" id="helpCloseBtn">Done</button>
   </div>
 </div>
 
@@ -2668,6 +2679,7 @@ window.addEventListener('keydown', e => {
   if((e.key === 'n' || e.key === 'N') && !e.repeat){ if(tacticalRadar) tacticalRadar.toggleHeadingUp(); }
   if((e.key === 'c' || e.key === 'C') && !e.repeat){ if(airCam) airCam.cycle(); }
   if(e.key === 'Escape' || e.key === ' '){ if(airCam) airCam.cancel(); }
+  if(e.key === 'Escape') closeHelp(); // v11.29: Esc closes the Help popup
   if(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ', 'Tab'].includes(e.key)) e.preventDefault();
 });
 window.addEventListener('keyup', e => {
@@ -2689,6 +2701,12 @@ $('pauseSeaBtn').addEventListener('click', () => {
   $('startScreen').classList.remove('hidden');
 });
 $('startBtn').addEventListener('click', startGame);
+// v11.29: Help popup — the controls list lives here, not in the menu body
+function openHelp(){ $('helpScreen').classList.remove('hidden'); }
+function closeHelp(){ $('helpScreen').classList.add('hidden'); }
+$('helpBtn').addEventListener('click', openHelp);
+$('helpCloseBtn').addEventListener('click', closeHelp);
+$('helpScreen').addEventListener('click', e => { if(e.target === $('helpScreen')) closeHelp(); });
 $('againBtn').addEventListener('click', startGame);
 $('againSeaBtn').addEventListener('click', () => {
   $('overScreen').classList.add('hidden');
