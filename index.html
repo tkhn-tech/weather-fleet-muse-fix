@@ -284,7 +284,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.22</div>
+    <div class="ver">v11.23</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -306,7 +306,7 @@
 
 <div class="overlay hidden" id="overScreen">
   <div class="card">
-    <h1>Fleet <span>Lost</span></h1>
+    <h1 id="overTitle">Fleet <span>Lost</span></h1>
     <p class="sub" id="overText">Every ship has been wrecked. The round is over.</p>
     <div class="stats">
       <div class="stat"><div class="v" id="finalDist">0 nm</div><div class="k">Distance</div></div>
@@ -1915,13 +1915,17 @@ const roster = [
   // holding formation (the aft destroyer-battleship gap was only ~7).
   // The wider slots give a ~13 gap; the fit cap rises to 2.2 so the
   // whole formation still fits in frame.
+  // v11.23: the carrier starts FURTHER BACK for extra protection (Nicholas) —
+  // she is now the rearmost ship (0,0) and every escort sits ahead of her
+  // (dz < 0): battleships at dz -55, inner destroyers at dz -25, forward
+  // destroyers at dz -110. Min centre-to-centre separation ~46 (bb-dd).
   {key:'carrier', type:'carrier',    label:'Carrier',    dx:0,     dz:0,    hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4, freeboard:3.3},
-  {key:'bb1',     type:'battleship', label:'Battleship', dx:-48,   dz:-13,  hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:3.0},
-  {key:'bb2',     type:'battleship', label:'Battleship', dx:48,    dz:-13,  hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:3.0},
-  {key:'dd1',     type:'destroyer',  label:'Destroyer',  dx:-70,   dz:-77,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:2.7},
-  {key:'dd2',     type:'destroyer',  label:'Destroyer',  dx:70,    dz:-77,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:2.7},
-  {key:'dd3',     type:'destroyer',  label:'Destroyer',  dx:-64,   dz:48,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:2.7},
-  {key:'dd4',     type:'destroyer',  label:'Destroyer',  dx:64,    dz:48,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:2.7},
+  {key:'bb1',     type:'battleship', label:'Battleship', dx:-50,   dz:-55,  hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:3.0},
+  {key:'bb2',     type:'battleship', label:'Battleship', dx:50,    dz:-55,  hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:3.0},
+  {key:'dd1',     type:'destroyer',  label:'Destroyer',  dx:-85,   dz:-110,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:2.7},
+  {key:'dd2',     type:'destroyer',  label:'Destroyer',  dx:85,    dz:-110,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:2.7},
+  {key:'dd3',     type:'destroyer',  label:'Destroyer',  dx:-85,   dz:-25,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:2.7},
+  {key:'dd4',     type:'destroyer',  label:'Destroyer',  dx:85,    dz:-25,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:2.7},
 ];
 // v11.4: the fleet for a round is the roster filtered by the player's
 // start-of-run selection (settings.fleetSel). `fleet` stays the name every
@@ -2663,9 +2667,14 @@ function gameOver(won){
   $('finalLost').textContent = state.lost + ' / ' + fleet.length; // v11.4: the denominator is the fleet that sailed (was a stale / 5)
   // v11.18: victory — all enemies sunk. The end screen shows the victory
   // text instead of the loss text; distance/score/lost still report.
+  // v11.23: the heading follows the outcome too — VICTORY on a win (the
+  // v11.17 check found it always read FLEET LOST, even on a win). The
+  // Hurricane consolation text is gated on the loss not being total, so it
+  // can no longer claim the fleet "held together" when 7/7 ships are lost.
+  $('overTitle').innerHTML = won ? '<span>Victory</span>' : 'Fleet <span>Lost</span>';
   $('overText').textContent = won
     ? 'ALL ENEMIES SUNK — the fleet holds the sea.'
-    : state.dist >= STAGE_AT[3]
+    : state.dist >= STAGE_AT[3] && state.lost < fleet.length
     ? 'The fleet reached the hurricane — and held together through the worst of it.'
     : 'Every ship has been wrecked. The round is over.';
   if(Math.floor(state.dist) > best.dist) best.dist = Math.floor(state.dist);
