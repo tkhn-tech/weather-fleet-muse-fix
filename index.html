@@ -11,8 +11,15 @@
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#e8f1f8;
     -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
   #game{position:fixed;inset:0;display:block;touch-action:none}
+  /* v11.20: the HUD reserves the minimap's corner on the right, so no pill —
+     especially the fleet integrity bar — can run under the minimap. The
+     minimap is 146px wide (144px canvas + border) at right:12px, so the
+     reservation is 12 + 146 + 8 gap = 166px. This is BASE css (not a
+     max-width breakpoint) because some in-app browsers report a wider
+     viewport than the phone really is — a breakpoint-only fix would not
+     apply there. */
   .hud{position:fixed;left:0;right:0;top:0;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;
-    padding:calc(10px + env(safe-area-inset-top)) 12px 0;pointer-events:none;z-index:5}
+    padding:calc(10px + env(safe-area-inset-top)) calc(166px + env(safe-area-inset-right)) 0 12px;pointer-events:none;z-index:5}
   .pill{background:rgba(6,18,30,.72);border:1px solid rgba(140,190,230,.25);border-radius:999px;
     padding:7px 12px;font-size:13px;font-weight:650;backdrop-filter:blur(6px);white-space:nowrap}
   .pill b{color:#ffd166}
@@ -38,8 +45,9 @@
      so it never overlaps the minimap on phones — the compact layout used to
      depend on a max-width breakpoint, but some in-app browsers report a wider
      viewport, so the tall single-column panel rendered and covered the minimap.
-     The tall single-column layout is restored only on large desktop screens
-     (min-width:901px, below). */
+     v11.20: compact EVERYWHERE now (PC included) — the tall desktop layout
+     reached up toward the minimap on PC too, so the min-width:901px restore
+     is gone. */
   #telegraphPanel{position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:6;width:128px;
     background:rgba(6,18,30,.78);border:1px solid rgba(140,190,230,.35);border-radius:16px;
     padding:5px 5px 6px;backdrop-filter:blur(8px)}
@@ -73,27 +81,22 @@
   .fleetRow.watch{border-color:rgba(120,200,255,.7);color:#9fd4e8} /* v11.15: the sinking ship the camera is following */
   .fleetRow.sunk{opacity:.35;cursor:default}
   /* v11.16: the enemy roster panel is gone — enemies are tracked on the minimap (red diamonds + health bars) instead of in a list. */
-  /* v11.19: tall single-column telegraph, restored ONLY on large desktop
-     screens. Everywhere else the compact 2-column default (above) applies,
-     so the panel can never overlap the minimap on a phone. */
-  @media (min-width:901px){
-    #telegraphPanel{width:158px;padding:10px 10px 12px}
-    #telegraphPanel .teleHead{font-size:11px;margin-bottom:8px}
-    .teleBtns{display:flex;flex-direction:column;gap:4px}
-    .teleBtn{padding:6px 4px;font-size:11.5px}
-    .teleStep{margin-top:6px}
-    .teleStep button{padding:6px 0;font-size:14px}
-    #teleReadout{font-size:11.5px;margin-top:8px}
-    #teleReadout br{display:inline}
-  }
+  /* v11.20: no tall desktop telegraph any more — the compact 2-column panel
+     (above) is used on PC and mobile alike, so it can never reach up toward
+     the minimap. */
   @media (max-width:560px){ #telegraphPanel{bottom:calc(8px + env(safe-area-inset-bottom));width:138px} #fleetPanel{width:112px} } /* v11.16: telegraph stays bottom-right on phones */
   #hint{position:fixed;left:158px;bottom:calc(26px + env(safe-area-inset-bottom));z-index:6;pointer-events:none;
     font-size:12.5px;color:#9db8cc;line-height:1.5;text-shadow:0 1px 6px rgba(0,0,0,.8);transition:opacity 1s ease}
   #hint.fade{opacity:0}
   /* v11.16: minimap moves to the TOP RIGHT corner (was bottom-right, below the telegraph) — below the top bar, opposite the fleet panel (top-left). */
   #miniMap{position:fixed;right:12px;top:calc(8px + env(safe-area-inset-top));z-index:5;border:1px solid rgba(140,190,230,.35);border-radius:12px;overflow:hidden;background:rgba(6,18,30,.6);pointer-events:none}
-  #miniCv{display:block}
-  @media (max-width:560px){ #miniMap{right:8px;top:calc(8px + env(safe-area-inset-top))} #miniCv{width:100px;height:100px} } /* v11.19: minimap pushed to the very top-right corner */
+  #miniCv{display:block;width:144px;height:144px}
+  /* v11.20: fleet health lives inside the minimap too — integrity % (gold,
+     red when low) and ship count, synced with the top bar by updateHud(). */
+  #miniStats{font-size:10px;color:#9db8cc;text-align:center;padding:3px 4px 4px;white-space:nowrap}
+  #miniStats b{color:#ffd166}
+  #miniStats b.low{color:#ff5a5a}
+  @media (max-width:560px){ #miniMap{right:8px;top:calc(8px + env(safe-area-inset-top))} #miniCv{width:112px;height:112px} } /* v11.20: minimap slightly bigger for the fleet stats row */
   /* v11.0: the helm is a horizontal rudder track — the stick only swings left/right */
   #joy{position:fixed;left:18px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:6;width:216px;height:62px;border-radius:32px;
     background:rgba(6,18,30,.45);border:1px solid rgba(140,190,230,.35);backdrop-filter:blur(4px);touch-action:none}
@@ -136,7 +139,7 @@
   .seg button.on{background:#ffd166;color:#1a2a1a;border-color:#ffd166}
   #loadErr{color:#ff8a7a;font-size:13px;margin-top:10px;min-height:18px}
   @media (max-width:560px){
-    .hud{gap:6px;padding-left:8px;padding-right:8px}
+    .hud{gap:6px;padding-left:8px;padding-right:calc(130px + env(safe-area-inset-right))} /* v11.20: reserve the 112px phone minimap (8 + 114 + 8) */
     .pill{padding:6px 9px;font-size:12px}
     #integrityWrap{max-width:170px;padding:6px 9px}
     .iconBtn{width:34px;height:34px;font-size:15px}
@@ -170,7 +173,7 @@
     #hint{display:none}
   }
   @media (max-height:500px){
-    .hud{gap:6px;padding-left:8px;padding-right:8px}
+    .hud{gap:6px;padding-left:8px;padding-right:calc(114px + env(safe-area-inset-right))} /* v11.20: reserve the 96px landscape minimap (8 + 98 + 8) */
     .pill{padding:6px 9px;font-size:12px}
     #integrityWrap{max-width:190px;padding:6px 9px}
     .iconBtn{width:32px;height:32px;font-size:14px}
@@ -184,7 +187,7 @@
     #fleetPanel{left:8px;top:calc(56px + env(safe-area-inset-top));width:120px;padding:6px}
     .fleetRow{padding:4px 5px;font-size:11px}
     #miniMap{right:8px;top:calc(8px + env(safe-area-inset-top))}
-    #miniCv{width:84px;height:84px}
+    #miniCv{width:96px;height:96px}
     #joy{left:12px;bottom:calc(12px + env(safe-area-inset-bottom));width:190px;height:52px}
     #joyKnob{width:40px;height:40px;margin:-20px 0 0 -20px}
     #rudderReadout{left:12px;bottom:calc(72px + env(safe-area-inset-bottom))}
@@ -240,7 +243,7 @@
      drag the sea to orbit, pinch to zoom, the HUD ↺ button (or R)
      resets it. The wheel still zooms on mouse. -->
 
-<div id="miniMap"><canvas id="miniCv" width="128" height="128"></canvas></div>
+<div id="miniMap"><canvas id="miniCv" width="144" height="144"></canvas><div id="miniStats">FLEET <b id="miniPct">100%</b> · <span id="miniShips">🚢×7</span></div></div>
 
 <div id="stageToast"><h2 id="stageName">Calm Seas</h2><p id="stageDesc">The fleet sails out. Hold formation.</p></div>
 <div id="hint">Telegraph (W/S or ↑ ↓) sets speed — the ship spools up to the order<br>Joystick / ← → / A D is the rudder — release and it returns to midships · Tab switches ship<br>Drag the sea to orbit the camera · pinch to zoom · ↺ (or R) resets it · U dives below the surface</div>
@@ -290,7 +293,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.19</div>
+    <div class="ver">v11.20</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -2494,11 +2497,13 @@ document.querySelectorAll('.teleBtn').forEach(b => {
 // is by data-i, so the text is only a label. Runs on load and on resize.
 const TELE_SHORT = ['FLANK', 'FULL', 'STANDARD', 'HALF', 'SLOW', 'STOP', 'HALF ASTN', 'FULL ASTN'];
 const TELE_FULL = ['FLANK AHEAD', 'FULL AHEAD', 'STANDARD AHEAD', 'HALF AHEAD', 'SLOW AHEAD', 'ALL STOP', 'HALF ASTERN', 'FULL ASTERN'];
+ // v11.20: the telegraph is compact on every screen (PC and mobile alike),
+ // so the short labels are always used — the full labels would wrap in the
+ // narrow 2-column grid.
 function fitTelegraph(){
-  const compact = window.innerWidth <= 900 || window.innerHeight <= 500;
   document.querySelectorAll('.teleBtn').forEach(b => {
     const i = parseInt(b.dataset.i, 10);
-    b.textContent = compact ? TELE_SHORT[i] : TELE_FULL[i];
+    b.textContent = TELE_SHORT[i];
   });
 }
 fitTelegraph();
@@ -2839,6 +2844,9 @@ function updateHud(){
   const pct = Math.round(fleetHp() / fleetMaxHp() * 100);
   $('intPct').textContent = pct + '%';
   $('aliveCount').textContent = '🚢×' + aliveCount();
+  $('miniPct').textContent = pct + '%'; // v11.20: fleet health inside the minimap too
+  $('miniPct').classList.toggle('low', pct <= 30);
+  $('miniShips').textContent = '🚢×' + aliveCount();
   const fill = $('integrityFill');
   fill.style.width = Math.max(0, pct) + '%';
   fill.classList.toggle('low', pct <= 30);
