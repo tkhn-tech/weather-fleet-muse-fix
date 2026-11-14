@@ -318,7 +318,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.26</div>
+    <div class="ver">v11.27</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -450,7 +450,7 @@ scene.add(sun);
 const flashLight = new THREE.DirectionalLight(0xdfeaff, 0);
 flashLight.position.set(-30, 80, -60);
 scene.add(flashLight);
-const boomLight = new THREE.PointLight(0xff8c2e, 0, 60);
+const boomLight = new THREE.PointLight(0xff8c2e, 0, 90); // v11.27: range 60 -> 90 — the bigger explosions light a wider area
 scene.add(boomLight);
 
 // v11.14: underwater post pass — a fullscreen shader that fades in when the
@@ -1924,14 +1924,20 @@ const MODEL_SPEC = {
   // so the sinking reads in greater detail — the real models have room
   // to show their detail. The waterline is in model units and is
   // multiplied by the fit scale, so it scales itself.
+  // v11.27: all ships 2x (carrier 174, battleship 144, destroyer 84;
+  // enemy dd 84, cl 110, bb 140) so more detail can be added and the
+  // carrier dwarfs the F-18 (174 vs 16, ~10.9:1 — a real Nimitz vs
+  // F-18 is ~18:1, but a full 18:1 would break the game geometry).
+  // The jet shrinks slightly (19 -> 16). Widths scale with length
+  // (uniform scale by len), and the waterlines scale via the fit scale.
   // Battleship rot is the original rotateX(-90) composed with a 180-deg turn
   // about the vertical (Y) axis: the NJ model stands on its bow, so -90 put
   // the bow astern; this flips the bow forward while keeping the ship
   // upright. (A plain rotateX(+90) is a reflection, det -1 — it mirrored the
   // model and left the battleships floating in the sky in v9.8.)
-  carrier:    {uri: KENNEDY_GLB, len: 87, wid: 18.9, waterline: 3.25, rot: null},
-  battleship: {uri: NJ_GLB,      len: 72, wid: 13.2, waterline: 7.4,  rot: [-1,0,0, 0,0,1, 0,1,0]},
-  destroyer:  {uri: DDG_GLB,     len: 42, wid: 8.7,  waterline: 627,  rot: [0,1,0, 0,0,1, 1,0,0]},
+  carrier:    {uri: KENNEDY_GLB, len: 174, wid: 37.8, waterline: 3.25, rot: null},
+  battleship: {uri: NJ_GLB,      len: 144, wid: 26.4, waterline: 7.4,  rot: [-1,0,0, 0,0,1, 0,1,0]},
+  destroyer:  {uri: DDG_GLB,     len: 84, wid: 17.4,  waterline: 627,  rot: [0,1,0, 0,0,1, 1,0,0]},
   // v11.15: enemy warships — DISTINCT models (Nicholas: do not reuse the player models).
   // Sovremenny (DD): bbox L 22.743 / beam 3.352 / H 5.262, bow +Z, up Y, keel -1.11.
   // Slava (CL): bbox L 5.634 / beam 0.731 / H 1.221, bow +Z, up Y, keel +0.04.
@@ -1940,13 +1946,13 @@ const MODEL_SPEC = {
   // ships (fitModel scales to spec.len and drops the waterline onto y = 0).
   // Waterlines are estimates from the bboxes — the browser check must confirm
   // the ships sit at the right height in the water.
-  enemy_dd:   {uri: ENEMY_DD_GLB, len: 42, wid: 6.2, waterline: 0.0, rot: [-1,0,0, 0,1,0, 0,0,-1]},
-  enemy_cl:   {uri: ENEMY_CL_GLB, len: 55, wid: 7.1, waterline: 0.3, rot: [-1,0,0, 0,1,0, 0,0,-1]},
-  enemy_bb:   {uri: ENEMY_BB_GLB, len: 70, wid: 9.5, waterline: 1.2, rot: null},
+  enemy_dd:   {uri: ENEMY_DD_GLB, len: 84, wid: 12.4, waterline: 0.0, rot: [-1,0,0, 0,1,0, 0,0,-1]},
+  enemy_cl:   {uri: ENEMY_CL_GLB, len: 110, wid: 14.2, waterline: 0.3, rot: [-1,0,0, 0,1,0, 0,0,-1]},
+  enemy_bb:   {uri: ENEMY_BB_GLB, len: 140, wid: 19.0, waterline: 1.2, rot: null},
   // v11.25: Super Hornet — 18.79 m long, 13.49 m span, 1:1 metres, Y-up,
   // nose +Z (like Sovremenny/Slava) so it takes the same 180-deg Y flip.
   // waterline 0: the jet's origin is its belly, which sits on the deck.
-  jet:        {uri: JET_GLB, len: 19, wid: 13.5, waterline: 0, rot: [-1,0,0, 0,1,0, 0,0,-1]},
+  jet:        {uri: JET_GLB, len: 16, wid: 11.4, waterline: 0, rot: [-1,0,0, 0,1,0, 0,0,-1]},
 };
 let GLTFLoader = null, MeshoptDecoder = null;
 try {
@@ -2014,13 +2020,16 @@ const roster = [
   // she is now the rearmost ship (0,0) and every escort sits ahead of her
   // (dz < 0): battleships at dz -55, inner destroyers at dz -25, forward
   // destroyers at dz -110. Min centre-to-centre separation ~46 (bb-dd).
+  // v11.27: slots scale 2x with the ships (bb ±100/-110, forward dd
+  // ±170/-220, inner dd ±170/-50) — min separation ~92 (bb-dd), so the
+  // bigger hulls keep the same relative spacing and do not overlap.
   {key:'carrier', type:'carrier',    label:'Carrier',    dx:0,     dz:0,    hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4, freeboard:3.3},
-  {key:'bb1',     type:'battleship', label:'Battleship', dx:-50,   dz:-55,  hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:3.0},
-  {key:'bb2',     type:'battleship', label:'Battleship', dx:50,    dz:-55,  hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:3.0},
-  {key:'dd1',     type:'destroyer',  label:'Destroyer',  dx:-85,   dz:-110,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:2.7},
-  {key:'dd2',     type:'destroyer',  label:'Destroyer',  dx:85,    dz:-110,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:2.7},
-  {key:'dd3',     type:'destroyer',  label:'Destroyer',  dx:-85,   dz:-25,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:2.7},
-  {key:'dd4',     type:'destroyer',  label:'Destroyer',  dx:85,    dz:-25,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:2.7},
+  {key:'bb1',     type:'battleship', label:'Battleship', dx:-100,  dz:-110,  hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:3.0},
+  {key:'bb2',     type:'battleship', label:'Battleship', dx:100,   dz:-110,  hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:3.0},
+  {key:'dd1',     type:'destroyer',  label:'Destroyer',  dx:-170,  dz:-220,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:2.7},
+  {key:'dd2',     type:'destroyer',  label:'Destroyer',  dx:170,   dz:-220,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:2.7},
+  {key:'dd3',     type:'destroyer',  label:'Destroyer',  dx:-170,  dz:-50,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:2.7},
+  {key:'dd4',     type:'destroyer',  label:'Destroyer',  dx:170,   dz:-50,   hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:1,  tau:0.7, freeboard:2.7},
 ];
 // v11.4: the fleet for a round is the roster filtered by the player's
 // start-of-run selection (settings.fleetSel). `fleet` stays the name every
@@ -2179,7 +2188,7 @@ function fleetMaxHp(){ return fleet.reduce((a, s) => a + s.maxHp, 0); }
 function aliveCount(){ return fleet.filter(s => s.alive).length; }
 
 // ---------- particles (additive points: spray, fire, sparks, bubbles) ----------
-const P_MAX = 420;
+const P_MAX = 600; // v11.27: 420 -> 600 — the bigger, denser explosions need more particles
 const pGeo = new THREE.BufferGeometry();
 const pPos = new Float32Array(P_MAX * 3);
 const pCol = new Float32Array(P_MAX * 3);
@@ -2212,13 +2221,14 @@ function burst(x, y, z, n, col, spd, up){
 // to the hull where it landed (Atlantic Fleet: damage is painted on). The
 // mark lives in the ship's local frame (bow -Z) and is PERSISTENT for the
 // rest of the round (no fade — the old 30 s fade made a battered ship look
-// clean again), max 12 per ship so a heavily-hit ship accumulates damage.
+// clean again), max 20 per ship so a heavily-hit ship accumulates damage
+// (v11.27: 12 -> 20).
 // hy is the local height: low (0.6) for a below-waterline hit, higher (2.5)
 // for a topside hit; it defaults to 1.4 (the old waterline mark).
 function addScorch(sh, wx, wz, hy){
   if(!sh.group) return;
   sh.scorches = sh.scorches || [];
-  if(sh.scorches.length >= 12){
+  if(sh.scorches.length >= 20){ // v11.27: 12 -> 20 — a heavily-hit ship accumulates more visible damage
     const old = sh.scorches.shift();
     sh.group.remove(old.sp);
   }
@@ -2226,10 +2236,10 @@ function addScorch(sh, wx, wz, hy){
   const ch = Math.cos(sh.heading), sn = Math.sin(sh.heading);
   const lx = dx * ch + dz * sn;
   const lz = -dx * sn + dz * ch;
-  const mat = new THREE.SpriteMaterial({map: softTex, color: 0x0a0a0a, transparent: true, opacity: 0.9, depthWrite: false});
+  const mat = new THREE.SpriteMaterial({map: softTex, color: 0x050505, transparent: true, opacity: 0.95, depthWrite: false}); // v11.27: darker (0x0a0a0a -> 0x050505) and more opaque, so the hole reads as a crater
   const sp = new THREE.Sprite(mat);
   sp.position.set(lx, hy !== undefined ? hy : 1.4, lz);
-  sp.scale.set(6 + Math.random() * 3, 6 + Math.random() * 3, 1);
+  sp.scale.set(12 + Math.random() * 6, 12 + Math.random() * 6, 1); // v11.27: 6-9 -> 12-18 — the 2x ships need bigger holes to read as craters from the chase camera
   sh.group.add(sp);
   sh.scorches.push({sp, life: 1e9});
 }
@@ -2272,7 +2282,7 @@ function emitPropBubbles(dt){
 
 // ---------- sprite pool (smoke, wakes, crest foam) ----------
 const spritePool = [];
-for(let i = 0; i < 90; i++){
+for(let i = 0; i < 120; i++){ // v11.27: 90 -> 120 — more smoke/fireball/shockwave/debris sprites for the bigger VFX
   const mat = new THREE.SpriteMaterial({map: softTex, transparent: true, opacity: 0, depthWrite: false});
   const sp = new THREE.Sprite(mat);
   sp.scale.set(4, 4, 1);
@@ -2888,12 +2898,12 @@ function drawMinimap(){
   fleet.forEach(s => {
     if(!s.alive || s === f) return;
     const pp = px(s.x, s.z);
-    const r = s.type === 'battleship' ? 3 : 2.5;
+    const r = s.type === 'battleship' ? 4 : 3.5; // v11.27: 3/2.5 -> 4/3.5 — the 2x ships get slightly bigger dots
     ctx.fillStyle = '#8fc7e8';
     ctx.beginPath(); ctx.arc(pp[0], pp[1], r, 0, 6.29); ctx.fill();
     ctx.strokeStyle = '#8fc7e8'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(pp[0], pp[1]);
-    ctx.lineTo(pp[0] + Math.sin(s.heading) * 7, pp[1] - Math.cos(s.heading) * 7); ctx.stroke();
+    ctx.lineTo(pp[0] + Math.sin(s.heading) * 8, pp[1] - Math.cos(s.heading) * 8); ctx.stroke(); // v11.27: 7 -> 8
   });
   // v11.16: enemies on the minimap (the roster panel is gone) — a red-orange
   // diamond, clearly different from the player ships' blue dots, with a
@@ -2909,7 +2919,7 @@ function drawMinimap(){
     if(d > range){ ex = dx / d * range; ez = dz / d * range; }
     const mx = C + ex * sc, my = C + ez * sc;
     const dim = e.alive ? 1 : 0.45;
-    const r = 4.5;
+    const r = 5.5; // v11.27: 4.5 -> 5.5 — the 2x enemies get a slightly bigger diamond
     // v11.25: storm clutter — in Storm/Hurricane the enemy contacts dim
     // and flicker, so the radar picture degrades with the weather.
     ctx.globalAlpha = dim * (state.stage >= 2 ? 0.55 + 0.25 * Math.sin(state.t * 2.3 + e.x * 0.013) : 1);
@@ -2927,10 +2937,10 @@ function drawMinimap(){
   });
   // the fleet: white dot + gold heading tick, centre
   ctx.fillStyle = '#ffffff';
-  ctx.beginPath(); ctx.arc(C, C, 3.5, 0, 6.29); ctx.fill();
+  ctx.beginPath(); ctx.arc(C, C, 4.5, 0, 6.29); ctx.fill(); // v11.27: 3.5 -> 4.5
   ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(C, C);
-  ctx.lineTo(C + Math.sin(f.heading) * 10, C - Math.cos(f.heading) * 10); ctx.stroke();
+  ctx.lineTo(C + Math.sin(f.heading) * 12, C - Math.cos(f.heading) * 12); ctx.stroke(); // v11.27: 10 -> 12
   // v11.25: restore the heading-up rotation, then the tactical layers
   // (sweep, ring labels, carrier/target/waypoint marks, air chevrons,
   // ordnance streaks) in true-north canvas space. Guarded: the radar
@@ -3069,10 +3079,12 @@ function sinkShip(ship, mode){
   ship.motion.headingRate = 0;
   ship.capsize = ship.sinkMode === 'capsize';
   state.lost++;
-  burst(ship.x, 2, ship.z, 40, [1, 0.55, 0.15], 7, 4);
-  burst(ship.x, 2, ship.z, 24, [1, 1, 0.9], 5, 5);
-  for(let i = 0; i < 4; i++){
-    const sm = spawnSprite(ship.x + (Math.random() - 0.5) * 6, 4 + i * 2, ship.z + (Math.random() - 0.5) * 6, 2.5, 12, 12, 0.5, 0x333333, 0.6);
+  // v11.27: the sinking explosion scales with the ship (szF as in damageShip).
+  const szF = Math.max(1, (ship.group.userData.len || 42) / 42);
+  burst(ship.x, 2, ship.z, Math.min(80, Math.round(40 * szF)), [1, 0.55, 0.15], 7, 4);
+  burst(ship.x, 2, ship.z, Math.min(60, Math.round(24 * szF)), [1, 1, 0.9], 5, 5);
+  for(let i = 0; i < 6; i++){ // v11.27: 4 -> 6 smoke columns
+    const sm = spawnSprite(ship.x + (Math.random() - 0.5) * 6 * szF, 4 + i * 2, ship.z + (Math.random() - 0.5) * 6 * szF, 2.5, 12 * szF, 12 * szF, 0.5, 0x333333, 0.6);
     sm.vy = 5;
   }
   if(ship.sinkMode === 'breakup'){
@@ -3083,13 +3095,13 @@ function sinkShip(ship, mode){
     // existing bursts. This is the dramatic detonation, not just big damage.
     boomLight.position.set(ship.x, 6, ship.z);
     boomLight.intensity = 14;
-    const mfb = spawnSprite(ship.x, 8, ship.z, 0.9, 16, 16, 2.0, 0xff8822, 0.95);
+    const mfb = spawnSprite(ship.x, 8, ship.z, 0.9, 16 * szF, 16 * szF, 2.0, 0xff8822, 0.95); // v11.27: magazine fireball x szF — the biggest explosion in the game
     mfb.vy = 4;
-    const msw = spawnSprite(ship.x, 3, ship.z, 0.6, 8, 8, 8, 0xffffff, 0.6);
+    const msw = spawnSprite(ship.x, 3, ship.z, 0.6, 8 * szF, 8 * szF, 8 * szF, 0xffffff, 0.6); // v11.27: shockwave x szF
     msw.vy = 1;
-    burst(ship.x, 6, ship.z, 60, [1, 0.8, 0.4], 9, 6); // secondary explosion
-    burst(ship.x, 4, ship.z, 40, [1, 0.7, 0.25], 10, 7); // hot debris thrown outward
-    burst(ship.x, 3, ship.z, 30, [0.3, 0.3, 0.3], 5, 5);
+    burst(ship.x, 6, ship.z, Math.min(100, Math.round(60 * szF)), [1, 0.8, 0.4], 9, 6); // secondary explosion
+    burst(ship.x, 4, ship.z, Math.min(80, Math.round(40 * szF)), [1, 0.7, 0.25], 10, 7); // hot debris thrown outward
+    burst(ship.x, 3, ship.z, Math.min(60, Math.round(30 * szF)), [0.3, 0.3, 0.3], 5, 5);
     state.shake = Math.min(18, state.shake + 14);
     toast('💥 ' + ship.label + ' broke in two', 'magazine detonation');
   }
@@ -3171,17 +3183,21 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
     const comp = ship.motion.compartments[ci];
     if(comp) comp.flood = Math.min(1, comp.flood + 0.3 + dmg * 0.01);
   }
-  burst(ship.x, 2, ship.z, 22, [1, 0.9, 0.7], 4, 2);
-  burst(ship.x, 2, ship.z, 12, [1, 0.6, 0.2], 3, 3);
+  // v11.27: explosions scale with the ship — a carrier's hit is far
+  // bigger than a destroyer's. szF is the ship's length relative to
+  // a (pre-scale) destroyer at 42: carrier 174 -> 4.1, destroyer 84 -> 2.
+  const szF = Math.max(1, (ship.group.userData.len || 42) / 42);
+  burst(ship.x, 2, ship.z, Math.min(60, Math.round(22 * szF)), [1, 0.9, 0.7], 4, 2);
+  burst(ship.x, 2, ship.z, Math.min(40, Math.round(12 * szF)), [1, 0.6, 0.2], 3, 3);
   // v11.16: the impact itself is vivid — a fireball that blooms and fades,
   // a fast-expanding shockwave ring, and hot debris flying outward, all
   // scaled with the hit energy (dmg). This is the explosion on every hit.
-  const fbScale = 6 + dmg * 0.35;
+  const fbScale = (6 + dmg * 0.35) * szF; // v11.27: x szF
   const fb = spawnSprite(hx, 3, hz, 0.5, fbScale, fbScale, 2.5, 0xff7722, 0.9);
   fb.vy = 2;
-  const sw = spawnSprite(hx, 2, hz, 0.4, 4, 4, 6, 0xffffff, 0.5);
+  const sw = spawnSprite(hx, 2, hz, 0.4, 4 * szF, 4 * szF, 6 * szF, 0xffffff, 0.5); // v11.27: shockwave x szF
   sw.vy = 1;
-  burst(hx, 3, hz, Math.min(30, 10 + Math.floor(dmg)), [1, 0.75, 0.3], 6 + dmg * 0.15, 5);
+  burst(hx, 3, hz, Math.min(60, Math.round(Math.min(30, 10 + Math.floor(dmg)) * szF)), [1, 0.75, 0.3], 6 + dmg * 0.15, 5);
   // v11.16: the hit leaves a HOLE at the actual hit point (Atlantic Fleet:
   // damage is painted on), and the fire — if one starts — is pinned to
   // that spot (stored in the ship's local frame, so it rides with her).
@@ -3192,7 +3208,7 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
     ship.fireLx = dx * ch + dz * sn;
     ship.fireLz = -dx * sn + dz * ch;
   }
-  const s = spawnSprite(ship.x, 3, ship.z, 0.9, 10, 10, 0.4, 0x666666, 0.55);
+  const s = spawnSprite(ship.x, 3, ship.z, 0.9, 10 * szF, 10 * szF, 0.4, 0x666666, 0.55); // v11.27: hit smoke x szF
   s.vy = 4;
   const side = Math.sign(hx - ship.x) || 1;
   const end = Math.sign(hz - ship.z) || 1;
@@ -3210,7 +3226,7 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
   // fire at the breached compartment, bent backward by speed (WoWS damage grammar)
   const fx = ship.x + side * ship.group.userData.wid * 0.3;
   const fz = ship.z + end * ship.group.userData.len * 0.3;
-  for(let i = 0; i < 8; i++){
+  for(let i = 0; i < Math.min(24, Math.round(8 * szF)); i++){ // v11.27: 8 -> 8 x szF (cap 24) — more fire-start embers on a big ship
     spawnParticle(fx + (Math.random() - 0.5) * 2, 2.5, fz + (Math.random() - 0.5) * 2,
       (Math.random() - 0.5) * 1.5, 2 + Math.random() * 2, state.speed * 0.25,
       0.7, 1, 0.6 + Math.random() * 0.3, 0.15, -0.5);
@@ -3792,8 +3808,9 @@ function update(dt){
       // her by flooding and list, not by breaking her in two — only a heavy
       // hit on the Forward Magazine does that (v10.11).
       if(s.fire > 0){
-        s.hp -= s.fire * dt * 1.5;
+        s.hp -= s.fire * dt * 1.0; // v11.27: 1.5 -> 1.0 — the fire now burns ~3x longer (see decay below), so the per-second damage comes down to keep the total fire damage in the same ballpark
         s.fireT = (s.fireT || 0) + dt;
+        const szF = Math.max(1, (s.group.userData.len || 42) / 42); // v11.27: fire/glow/smoke scale with the ship
         // v11.16: VISIBLE flames at the hit location. The fire's local
         // position was stored when the hit landed (ship.fireLx / fireLz);
         // fall back to a random deck spot if it was set another way.
@@ -3802,12 +3819,12 @@ function update(dt){
         const fLz = (s.fireLz !== undefined) ? s.fireLz : (Math.random() - 0.5) * s.group.userData.len * 0.5;
         if(s.fireT > 0.15){
           s.fireT = 0;
-          const nFl = 1 + Math.floor(s.fire * 2);
+          const nFl = 2 + Math.floor(s.fire * 4); // v11.27: 1+2x -> 2+4x — more visible flames
           for(let fi = 0; fi < nFl; fi++){
             const fx = s.x + fLx * fch - fLz * fsn + (Math.random() - 0.5) * 1.5;
             const fz = s.z + fLx * fsn + fLz * fch + (Math.random() - 0.5) * 1.5;
             spawnParticle(fx, s.y + 2.5, fz, (Math.random() - 0.5), 2 + Math.random() * 2.5, (Math.random() - 0.5),
-              0.6, 1, 0.65, 0.2, -0.5);
+              0.8, 1, 0.65, 0.2, -0.5); // v11.27: life 0.6 -> 0.8 — flames linger a touch longer
           }
         }
         // fire glow: a persistent flickering sprite on the hull at the fire,
@@ -3819,18 +3836,18 @@ function update(dt){
           s.group.add(s.fireGlow);
         }
         const fl = 0.7 + 0.3 * Math.sin(state.t * 11 + s.x) + 0.2 * Math.sin(state.t * 17 + s.z);
-        const gScale = (4 + s.fire * 4) * (0.85 + 0.3 * fl);
+        const gScale = (4 + s.fire * 4) * szF * (0.85 + 0.3 * fl); // v11.27: glow x szF
         s.fireGlow.scale.set(gScale, gScale * 1.3, 1);
         s.fireGlow.material.opacity = Math.max(0.15, Math.min(0.95, 0.5 + 0.3 * fl + s.fire * 0.15));
         s.fireGlow.position.set(fLx, 3.2, fLz);
         // thick black smoke column from the fire, drifting with the wind
         s.fireSmokeT = (s.fireSmokeT || 0) + dt;
-        if(s.fireSmokeT > 0.3){
+        if(s.fireSmokeT > 0.2){ // v11.27: 0.3 -> 0.2 s — the smoke column feeds faster
           s.fireSmokeT = 0;
-          const sm = spawnSprite(s.x + fLx * fch - fLz * fsn, s.y + 4, s.z + fLx * fsn + fLz * fch, 2.5, 5 + s.fire * 2, 5 + s.fire * 2, 1.0, 0x141414, 0.8);
+          const sm = spawnSprite(s.x + fLx * fch - fLz * fsn, s.y + 4, s.z + fLx * fsn + fLz * fch, 3.5, (5 + s.fire * 2) * szF, (5 + s.fire * 2) * szF, 1.0, 0x141414, 0.85); // v11.27: fire smoke bigger (x szF), longer-lived (2.5 -> 3.5 s), slightly more opaque — a thick black column
           sm.vy = 3; sm.vx = Math.sin(state.windDir) * 1.2; sm.vz = -Math.cos(state.windDir) * 1.2;
         }
-        s.fire = Math.max(0, s.fire - dt * (s.floodTotal > 0.4 ? 0.12 : 0.04));
+        s.fire = Math.max(0, s.fire - dt * (s.floodTotal > 0.4 ? 0.05 : 0.015)); // v11.27: 0.12/0.04 -> 0.05/0.015 — a fire now burns for ~1-2 minutes, not ~25 s, so a burning ship keeps burning until she floods out or sinks (the v11.17 check saw flames vanish within a minute)
         if(s.fire <= 0 && s.fireGlow){ s.group.remove(s.fireGlow); s.fireGlow = null; }
         if(s.hp <= 0) sinkShip(s, pickSinkMode(s, 25));
       }
@@ -3843,16 +3860,17 @@ function update(dt){
       const hpFrac = s.hp / s.maxHp;
       if(hpFrac < 0.7){
         s.smokeT = (s.smokeT || 0) + dt;
-        const smokeInt = hpFrac < 0.4 ? 0.35 : 0.6;
+        const smokeInt = hpFrac < 0.4 ? 0.3 : 0.45; // v11.27: 0.35/0.6 -> 0.3/0.45 — more frequent smoke
         if(s.smokeT > smokeInt){
           s.smokeT = 0;
           const sx = s.x + (Math.random() - 0.5) * s.group.userData.wid;
           const sz = s.z + (Math.random() - 0.5) * s.group.userData.len * 0.4;
-          const sm = spawnSprite(sx, s.y + 2.5, sz, 2.5, 3, 3, 1.2, 0x2a2a2a, hpFrac < 0.4 ? 0.65 : 0.4);
-          sm.vy = 1.5;
-          if(hpFrac < 0.4 && Math.random() < 0.5){
+          const szF = Math.max(1, (s.group.userData.len || 42) / 42); // v11.27: smoke scales with the ship
+          const sm = spawnSprite(sx, s.y + 2.5, sz, 3.5, 3 * szF, 3 * szF, 1.2, 0x1a1a1a, hpFrac < 0.4 ? 0.75 : 0.55); // v11.27: bigger (3 x szF), darker (0x2a2a2a -> 0x1a1a1a), more opaque, longer-lived — a thick black column, not small puffs
+          sm.vy = 2.5; // v11.27: 1.5 -> 2.5 — the column rises higher
+          if(hpFrac < 0.4 && Math.random() < 0.7){ // v11.27: 0.5 -> 0.7 — more embers below 40%
             spawnParticle(sx, s.y + 2, sz, (Math.random() - 0.5), 2 + Math.random() * 2, (Math.random() - 0.5),
-              0.4, 1, 0.6, 0.15, -0.5);
+              0.6, 1, 0.6, 0.15, -0.5); // v11.27: life 0.4 -> 0.6
           }
         }
       }
@@ -3860,25 +3878,28 @@ function update(dt){
       // on the flooded side while she is taking on water.
       if(s.floodTotal > 0.3){
         s.bubT = (s.bubT || 0) + dt;
-        if(s.bubT > 0.3){
+        if(s.bubT > 0.2){ // v11.27: 0.3 -> 0.2 s — more frequent leak bubbles
           s.bubT = 0;
           const side = Math.sign(s.floodSide || s.listDir);
           const bx = s.x + Math.cos(s.heading) * side * s.group.userData.wid * 0.5;
           const bz = s.z + Math.sin(s.heading) * side * s.group.userData.wid * 0.5;
-          spawnParticle(bx, s.y + 0.3, bz, (Math.random() - 0.5), 0.8 + Math.random(), (Math.random() - 0.5),
-            1.2, 0.85, 0.92, 0.95, -1.5);
+          for(let bi = 0; bi < 3; bi++){ // v11.27: 1 -> 3 bubbles per emission — a visible leak stream
+            spawnParticle(bx + (Math.random() - 0.5) * 2, s.y + 0.3, bz + (Math.random() - 0.5) * 2, (Math.random() - 0.5), 0.8 + Math.random(), (Math.random() - 0.5),
+              1.2, 0.85, 0.92, 0.95, -1.5);
+          }
           // v11.16: white water washing over the deck at the flooded
           // waterline — the flooding reads from the surface, not just as a
           // list. A pale wash sprite on the flooded side, at the waterline.
-          const wsm = spawnSprite(bx, s.y + 0.8, bz, 1.2, 3.5, 2, 0.8, 0xdfe9ee, 0.7);
+          const szF = Math.max(1, (s.group.userData.len || 42) / 42); // v11.27
+          const wsm = spawnSprite(bx, s.y + 0.8, bz, 1.5, 3.5 * szF, 2 * szF, 0.8, 0xdfe9ee, 0.75); // v11.27: bigger wash (x szF), longer-lived, more opaque
           wsm.vy = 0.5;
         }
       }
       // counter-flooding: list straightens, but draft and weight grow
       const cf = Math.abs(s.floodSide) > 0.45 ? 0.5 : 1;
-      s.list = s.floodSide * 0.18 * cf;
-      s.trim = s.floodEnd * 0.10;
-      s.draft = (cf < 1 ? 0.25 : 0) + s.floodTotal * 0.7; // v11.16: 0.3 -> 0.7 — flooding visibly lowers the ship, so a battered ship sits low in the water
+      s.list = s.floodSide * 0.28 * cf; // v11.27: 0.18 -> 0.28 — the list from flooding is more pronounced
+      s.trim = s.floodEnd * 0.16; // v11.27: 0.10 -> 0.16 — more pronounced trim
+      s.draft = (cf < 1 ? 0.4 : 0) + s.floodTotal * 1.2; // v11.27: 0.25/0.7 -> 0.4/1.2 — a flooded ship sits VISIBLY lower, the waterline rising on her hull (the v11.17 check saw flooded ships at their normal waterline)
       s.speedFactor = 1 - 0.12 * s.floodTotal;
       // capsize: list past ~35-45 deg or flooding past ~90% of buoyancy
       if(Math.abs(s.floodSide) > 0.92 || s.floodTotal > 0.9){
@@ -4025,10 +4046,12 @@ function update(dt){
           pl.normal.set(fx * sg, 0, fz * sg);
           pl.constant = -(fx * sg * half.position.x + fz * sg * half.position.z);
         }
-        if(Math.random() < 0.6){
-          spawnParticle(s.x + (Math.random() - 0.5) * 8, s.y + 1, s.z + (Math.random() - 0.5) * 8,
-            (Math.random() - 0.5) * 2, 1 + Math.random() * 2, (Math.random() - 0.5) * 2,
-            0.9, 0.4, 0.35, 0.3, 1.5); // debris from the break
+        if(Math.random() < 0.8){ // v11.27: 0.6 -> 0.8, and 2 particles — more debris from the break
+          for(let di = 0; di < 2; di++){
+            spawnParticle(s.x + (Math.random() - 0.5) * 8, s.y + 1, s.z + (Math.random() - 0.5) * 8,
+              (Math.random() - 0.5) * 2, 1 + Math.random() * 2, (Math.random() - 0.5) * 2,
+              0.9, 0.4, 0.35, 0.3, 1.5); // debris from the break
+          }
         }
       } else {
         s.group.position.set(s.x, s.y, s.z);
@@ -4043,9 +4066,9 @@ function update(dt){
       // (per unit of game time), not per substep, so the rate does not
       // depend on the frame rate.
       s.bubSinkT = (s.bubSinkT || 0) + dt;
-      if(s.bubSinkT > 0.08){ // v11.16: 0.12 -> 0.08 s — a denser plume
+      if(s.bubSinkT > 0.06){ // v11.27: 0.08 -> 0.06 s — a denser plume
         s.bubSinkT = 0;
-        const nBub = 4 + Math.floor(f * 4); // v11.16: 2 + f*2 -> 4 + f*4 — twice the bubbles, more as she goes deeper
+        const nBub = 6 + Math.floor(f * 8); // v11.27: 4 + f*4 -> 6 + f*8 — a thick, bright bubble column
         const side = Math.sign(s.floodSide || s.listDir);
         for(let bi = 0; bi < nBub; bi++){
           spawnParticle(
@@ -4053,12 +4076,12 @@ function update(dt){
             s.y + 0.5,
             s.z + (Math.random() - 0.5) * s.group.userData.len * 0.4 + Math.sin(s.heading) * side * s.group.userData.wid * 0.3,
             (Math.random() - 0.5) * 0.4, 2.5 + Math.random() * 1.5, (Math.random() - 0.5) * 0.4,
-            3.5, 0.95, 1.0, 1.0, 2); // v11.16: brighter bubbles so the column reads underwater
+            4.0, 0.95, 1.0, 1.0, 2); // v11.27: life 3.5 -> 4.0 — a taller bubble column
         }
       }
       if(s.fire > 0 && s.y < -1){
         // the engine room floods — pressurised white steam, then the fire dies
-        for(let i = 0; i < 4; i++){
+        for(let i = 0; i < 8; i++){ // v11.27: 4 -> 8 — a bigger steam burst as she goes under
           spawnParticle(s.x + (Math.random() - 0.5) * 4, s.y + 1, s.z + (Math.random() - 0.5) * 4,
             (Math.random() - 0.5), 3 + Math.random() * 2, (Math.random() - 0.5),
             1.0, 1, 1, 1, 1.0);
@@ -4070,24 +4093,27 @@ function update(dt){
       // below. A foam sprite every 0.4 s of game time while she is going
       // under (f 0.15-0.9); it drifts with the current.
       s.boilT = (s.boilT || 0) + dt;
-      if(s.boilT > 0.4 && f > 0.15 && f < 0.9){
+      if(s.boilT > 0.3 && f > 0.15 && f < 0.9){ // v11.27: 0.4 -> 0.3 s — a more continuous boil
         s.boilT = 0;
-        const bs = spawnSprite(s.x + (Math.random() - 0.5) * 4, 0.6, s.z + (Math.random() - 0.5) * 4, 2.5, 9, 9, 0.5, 0xdde8ee, 0.55);
+        const szF = Math.max(1, (s.group.userData.len || 42) / 42); // v11.27: the boil scales with the ship
+        const bs = spawnSprite(s.x + (Math.random() - 0.5) * 4 * szF, 0.6, s.z + (Math.random() - 0.5) * 4 * szF, 3.0, 9 * szF, 9 * szF, 0.5, 0xdde8ee, 0.65); // v11.27: bigger (9 x szF), longer-lived, more opaque — a real whirlpool/boil
         bs.vx = state.curX * 0.5; bs.vz = state.curZ * 0.5;
       }
       if(f >= 1){
         s.group.visible = false;
         if(s.breakParts){ s.breakParts.bow.visible = false; s.breakParts.stern.visible = false; }
         s.foam.visible = false;
-        burst(s.x, 1, s.z, 30, [0.9, 0.95, 1], 5, 3);
-        for(let i = 0; i < 3; i++){
-          const sm = spawnSprite(s.x + (Math.random() - 0.5) * 8, 3, s.z + (Math.random() - 0.5) * 8, 3, 14, 14, 0.4, 0x555555, 0.5);
+        const szF = Math.max(1, (s.group.userData.len || 42) / 42); // v11.27: the final burst scales with the ship
+        burst(s.x, 1, s.z, Math.min(60, Math.round(30 * szF)), [0.9, 0.95, 1], 5, 3); // v11.27: 30 -> 30 x szF — a big last bubble burst
+        for(let i = 0; i < 5; i++){ // v11.27: 3 -> 5 smoke columns
+          const sm = spawnSprite(s.x + (Math.random() - 0.5) * 8 * szF, 3, s.z + (Math.random() - 0.5) * 8 * szF, 4, 14 * szF, 14 * szF, 0.4, 0x555555, 0.5);
           sm.vy = 4;
         }
         // v11.5: wreckage that stays — dark debris rides the surface and
         // drifts with the current, the mark of where she went down.
-        for(let i = 0; i < 3; i++){
-          const db = spawnSprite(s.x + (Math.random() - 0.5) * 10, 0.3, s.z + (Math.random() - 0.5) * 10, 20, 3.5, 3.5, 0, 0x2a2a2a, 0.8);
+        // v11.27: 3 -> 6 pieces, bigger (3.5 x szF), lingering longer (20 -> 30 s).
+        for(let i = 0; i < 6; i++){
+          const db = spawnSprite(s.x + (Math.random() - 0.5) * 10 * szF, 0.3, s.z + (Math.random() - 0.5) * 10 * szF, 30, 3.5 * szF, 3.5 * szF, 0, 0x2a2a2a, 0.85);
           db.vx = state.curX * 0.5; db.vz = state.curZ * 0.5;
         }
       }
@@ -4397,7 +4423,9 @@ function updateCamera(dt){
     // check clipped the outer destroyers at 1.6.
     // v11.8: 2.6 — the v11.6 check still clipped the trailing destroyers
     // at 2.2, so the camera pulls back further at the default zoom.
-    const fitCap = state.camZoom < 1 ? camZ : camZ * 2.6;
+    // v11.27: 5.0 — the ships and slots are 2x (formation ~340 x 220),
+    // so the camera must pull back about twice as far to fit the fleet.
+    const fitCap = state.camZoom < 1 ? camZ : camZ * 5.0;
     if(fitD >= fitCap){ fitD = fitCap; break; }
   }
   // smooth the fit distance: snap out instantly when the fleet needs room,
@@ -4421,7 +4449,11 @@ function updateCamera(dt){
   // attract camera never dives.
   if(state.diveBlend > 0.001 && (state.running || state.over)){
     const b = state.diveBlend;
-    const diveDist = (state.camFollowShip ? 22 : 28) * state.camZoom; // v11.16: closer (22) when watching a sinking ship, so she fills the frame underwater; 28 otherwise
+    // v11.27: the dive distance scales with the flagship's length — the
+    // carrier is now 174 (was 87), so a fixed 28 would put the camera
+    // inside her hull. 0.32x len (28/87) normally, 0.25x when watching
+    // a sinking ship (was 22).
+    const diveDist = (state.camFollowShip ? 0.25 : 0.32) * (flag.group.userData.len || 87) * state.camZoom;
     const seaH = getOceanDataAt(flag.x, flag.z, state.t).height;
     const diveY = seaH - 5;
     const dtx = flag.x - ohx * diveDist;
@@ -4600,9 +4632,9 @@ function spawnEnemies(){
     const k = list[i];
     const cls = ENEMY_CLASS[k];
     let ox = 0, oz = 0;
-    if(form === 'line'){ ox = 0; oz = i * 60; } // line ahead, each astern of the leader
-    else if(form === 'echelon'){ ox = i * 45; oz = i * 45; } // diagonal, stepping to starboard and astern
-    else { ox = (i - (list.length - 1) / 2) * 90; oz = Math.abs(i - (list.length - 1) / 2) * 25; } // flanking wolfpack: a shallow arc across the front
+    if(form === 'line'){ ox = 0; oz = i * 150; } // line ahead, each astern of the leader (v11.27: 60 -> 150 — the 2x ships, incl. the 140-long BB, need room)
+    else if(form === 'echelon'){ ox = i * 110; oz = i * 110; } // diagonal, stepping to starboard and astern (v11.27: 45 -> 110)
+    else { ox = (i - (list.length - 1) / 2) * 200; oz = Math.abs(i - (list.length - 1) / 2) * 55; } // flanking wolfpack: a shallow arc across the front (v11.27: 90/25 -> 200/55)
     const x = cx + ox * c - oz * sn;
     const z = cz + ox * sn + oz * c;
     enemies.push(makeEnemy(cls, perType[k]++, x, z, fh));
@@ -4738,18 +4770,33 @@ function updateEnemySinking(e, dt){
   e.group.rotation.set(e.pitchSm + f * 0.1, -e.heading, e.rollSm + f * 1.5 * e.listDir);
   if(e.foam) e.foam.visible = f < 0.5;
   e.bubSinkT = (e.bubSinkT || 0) + dt;
-  if(e.bubSinkT > 0.12){
+  if(e.bubSinkT > 0.08){ // v11.27: 0.12 -> 0.08 s — a denser plume, matching the player sinking
     e.bubSinkT = 0;
-    for(let bi = 0; bi < 3; bi++){
+    const eszF = Math.max(1, (e.group.userData.len || 42) / 42); // v11.27
+    for(let bi = 0; bi < 5 + Math.floor(f * 4); bi++){ // v11.27: 3 -> 5 + f*4 — more bubbles, more as she goes deeper
       spawnParticle(e.x + (Math.random() - 0.5) * e.group.userData.wid, e.y + 0.5, e.z + (Math.random() - 0.5) * e.group.userData.len * 0.4,
         (Math.random() - 0.5), 1 + Math.random() * 2, (Math.random() - 0.5),
-        1.5, 0.85, 0.9, 0.95, 1.0);
+        2.5, 0.85, 0.9, 0.95, 1.0); // v11.27: life 1.5 -> 2.5 — a taller column
     }
+  }
+  // v11.27: a surface boil above a sinking enemy, like the player sinking — she reads from above as well as below.
+  e.boilT = (e.boilT || 0) + dt;
+  if(e.boilT > 0.3 && f > 0.15 && f < 0.9){
+    e.boilT = 0;
+    const eszF = Math.max(1, (e.group.userData.len || 42) / 42);
+    const bs = spawnSprite(e.x + (Math.random() - 0.5) * 4 * eszF, 0.6, e.z + (Math.random() - 0.5) * 4 * eszF, 3.0, 9 * eszF, 9 * eszF, 0.5, 0xdde8ee, 0.65);
+    bs.vx = state.curX * 0.5; bs.vz = state.curZ * 0.5;
   }
   if(f >= 1){
     e.group.visible = false;
     if(e.foam) e.foam.visible = false;
-    burst(e.x, 1, e.z, 20, [0.9, 0.95, 1], 4, 3);
+    const eszF = Math.max(1, (e.group.userData.len || 42) / 42); // v11.27
+    burst(e.x, 1, e.z, Math.min(50, Math.round(20 * eszF)), [0.9, 0.95, 1], 4, 3); // v11.27: 20 -> 20 x eszF
+    // v11.27: lingering wreckage, like the player sinking — dark debris rides the surface where she went down.
+    for(let i = 0; i < 4; i++){
+      const db = spawnSprite(e.x + (Math.random() - 0.5) * 10 * eszF, 0.3, e.z + (Math.random() - 0.5) * 10 * eszF, 30, 3.5 * eszF, 3.5 * eszF, 0, 0x2a2a2a, 0.85);
+      db.vx = state.curX * 0.5; db.vz = state.curZ * 0.5;
+    }
   }
 }
 function fireGuns(e, tgt, skill){
@@ -4861,15 +4908,16 @@ function damageEnemy(e, dmg, hx, hz){
   e.hp -= dmg;
   boomLight.position.set(e.x, 4, e.z);
   boomLight.intensity = 6 + Math.min(8, dmg * 0.4);
-  const fb = spawnSprite(hx, 3, hz, 0.5, 6 + dmg * 0.35, 6 + dmg * 0.35, 2.5, 0xff7722, 0.9);
+  const eszF = Math.max(1, (e.group.userData.len || 42) / 42); // v11.27: enemy hits scale with the ship, like player hits
+  const fb = spawnSprite(hx, 3, hz, 0.5, (6 + dmg * 0.35) * eszF, (6 + dmg * 0.35) * eszF, 2.5, 0xff7722, 0.9);
   fb.vy = 2;
-  burst(hx, 3, hz, Math.min(30, 10 + Math.floor(dmg)), [1, 0.75, 0.3], 6 + dmg * 0.15, 5);
+  burst(hx, 3, hz, Math.min(60, Math.round(Math.min(30, 10 + Math.floor(dmg)) * eszF)), [1, 0.75, 0.3], 6 + dmg * 0.15, 5);
   if(e.hp <= 0){
     e.hp = 0;
     e.alive = false;
     e.sinkT = 0;
     e.listDir = Math.random() < 0.5 ? -1 : 1; // capsize one way or the other
-    burst(e.x, 2, e.z, 40, [1, 0.55, 0.15], 7, 4);
+    burst(e.x, 2, e.z, Math.min(80, Math.round(40 * eszF)), [1, 0.55, 0.15], 7, 4); // v11.27: 40 -> 40 x eszF
     toast('💥 Enemy ' + e.label + ' sunk', 'the fleet holds the sea a little longer');
   }
 }
@@ -5062,13 +5110,13 @@ let prevUs = 0;
 // ============================================================================
 
 // --- carrier deck geometry (carrier-local: x = starboard+, z = forward-, y = up) ---
-const CARRIER_DECK_Y = 6.5; // flight-deck height above the waterline (estimate — verify visually)
+const CARRIER_DECK_Y = 13; // flight-deck height above the waterline (v11.27: 6.5 -> 13 — the carrier model is 2x taller now; estimate — verify visually)
 const CATAPULTS = [
-  {x: -5, z0: -6, z1: -42}, // bow catapult 1 (port)
-  {x: 3, z0: -6, z1: -42},  // bow catapult 2 (centre)
+  {x: -10, z0: -12, z1: -84}, // bow catapult 1 (port) — v11.27: 2x with the carrier (was -5, -6, -42)
+  {x: 6, z0: -12, z1: -84},  // bow catapult 2 (centre) — v11.27: 2x (was 3, -6, -42)
 ];
-const WIRE_POS = {x: -4, z: 26}; // arrestor wires, angled deck (port side)
-const DECK_PARK = [{x: -6, z: 38}, {x: 2, z: 38}, {x: -6, z: -8}, {x: 2, z: -8}];
+const WIRE_POS = {x: -8, z: 52}; // arrestor wires, angled deck (port side) — v11.27: 2x (was -4, 26)
+const DECK_PARK = [{x: -12, z: 76}, {x: 4, z: 76}, {x: -12, z: -16}, {x: 4, z: -16}]; // v11.27: 2x
 const JET_CRUISE_SPEED = 55, JET_ATTACK_SPEED = 70, JET_CATAPULT_SPEED = 68;
 const JET_MIN_ALT = 4; // minimum altitude above the ocean (units)
 const JET_MAX_ALT = 120; // ceiling (keeps jets in the playable sky)
