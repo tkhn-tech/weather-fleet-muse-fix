@@ -23,23 +23,20 @@
   .pill{background:rgba(6,18,30,.72);border:1px solid rgba(140,190,230,.25);border-radius:999px;
     padding:7px 12px;font-size:13px;font-weight:650;backdrop-filter:blur(6px);white-space:nowrap}
   .pill b{color:#ffd166}
-  #integrityWrap{flex:1;max-width:280px;background:rgba(6,18,30,.72);border:1px solid rgba(140,190,230,.25);
-    border-radius:999px;padding:7px 12px;backdrop-filter:blur(6px)}
-  #integrityWrap .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#9db8cc;font-weight:700}
-  #integrityBar,#stageBar{height:8px;border-radius:99px;background:rgba(255,255,255,.14);margin-top:5px;overflow:hidden}
-  #stageBar{height:4px;margin-top:4px}
-  #integrityFill{height:100%;width:100%;border-radius:99px;background:linear-gradient(90deg,#37d67a,#ffd166);
-    transition:width .25s ease}
-  #integrityFill.low{background:linear-gradient(90deg,#ff5a5a,#ff9a3d)}
-  #stageFill{height:100%;width:0%;border-radius:99px;background:linear-gradient(90deg,#5ab8ff,#bcd6e6)}
+  /* v11.22: the fleet-integrity pill (integrity + stage bars) is removed — fleet health lives in the minimap now. */
   .iconBtn{pointer-events:auto;background:rgba(6,18,30,.72);border:1px solid rgba(140,190,230,.25);color:#e8f1f8;
     border-radius:999px;width:38px;height:38px;font-size:17px;cursor:pointer;backdrop-filter:blur(6px)}
   .iconBtn:active{transform:scale(.94)}
-  #stageToast{position:fixed;left:50%;top:22%;transform:translateX(-50%);text-align:center;z-index:6;
+  /* v11.22: popups are compact by default (small, lower, shorter) — only the
+     freak-wave warning and stage announcements use the .big variant. */
+  #stageToast{position:fixed;left:50%;top:30%;transform:translateX(-50%);text-align:center;z-index:6;
     pointer-events:none;opacity:0;transition:opacity .4s ease}
   #stageToast.show{opacity:1}
-  #stageToast h2{font-size:30px;letter-spacing:.14em;text-transform:uppercase;text-shadow:0 2px 18px rgba(0,0,0,.7)}
-  #stageToast p{font-size:14px;color:#bcd6e6;margin-top:4px;text-shadow:0 1px 8px rgba(0,0,0,.7)}
+  #stageToast h2{font-size:18px;letter-spacing:.12em;text-transform:uppercase;text-shadow:0 2px 12px rgba(0,0,0,.7)}
+  #stageToast p{font-size:12px;color:#bcd6e6;margin-top:3px;text-shadow:0 1px 8px rgba(0,0,0,.7)}
+  #stageToast.big{top:22%}
+  #stageToast.big h2{font-size:30px;letter-spacing:.14em;text-shadow:0 2px 18px rgba(0,0,0,.7)}
+  #stageToast.big p{font-size:14px;margin-top:4px}
   /* v11.16: Engine Order Telegraph panel — right BOTTOM corner (was right side, above the minimap). The rudder joystick is bottom-left, so the telegraph sits bottom-right with no collision. */
   /* v11.19: the telegraph is COMPACT by default (2-column grid, small buttons)
      so it never overlaps the minimap on phones — the compact layout used to
@@ -141,9 +138,8 @@
   @media (max-width:560px){
     .hud{gap:6px;padding-left:8px;padding-right:calc(130px + env(safe-area-inset-right))} /* v11.20: reserve the 112px phone minimap (8 + 114 + 8) */
     .pill{padding:6px 9px;font-size:12px}
-    #integrityWrap{max-width:170px;padding:6px 9px}
     .iconBtn{width:34px;height:34px;font-size:15px}
-    #stageToast h2{font-size:24px}
+    #stageToast h2{font-size:16px} #stageToast.big h2{font-size:24px}
   }
   /* v11.12: the camera panel and the spectate bar are gone. */
   /* v11.5: the underwater wash. A fullscreen tint that fades in as the
@@ -174,9 +170,8 @@
   @media (max-height:500px){
     .hud{gap:6px;padding-left:8px;padding-right:calc(114px + env(safe-area-inset-right))} /* v11.20: reserve the 96px landscape minimap (8 + 98 + 8) */
     .pill{padding:6px 9px;font-size:12px}
-    #integrityWrap{max-width:190px;padding:6px 9px}
     .iconBtn{width:32px;height:32px;font-size:14px}
-    #stageToast h2{font-size:22px}
+    #stageToast h2{font-size:16px} #stageToast.big h2{font-size:22px}
     #telegraphPanel{right:8px;bottom:calc(8px + env(safe-area-inset-bottom));width:124px;padding:5px 5px 6px}
     #telegraphPanel .teleHead{font-size:10px;margin-bottom:6px}
     .teleBtns{display:grid;grid-template-columns:1fr 1fr;gap:4px}
@@ -207,9 +202,7 @@
 
 <div class="hud">
   <div class="pill">🚢 <b id="shipName">Carrier</b> · 🌊 <b id="dist">0</b> nm · <b id="speed">0</b> kn</div>
-  <div id="integrityWrap"><div class="lbl">Fleet integrity <span id="intPct">100%</span> · <span id="aliveCount">🚢×7</span></div>
-    <div id="integrityBar"><div id="integrityFill"></div></div>
-    <div id="stageBar"><div id="stageFill"></div></div></div>
+  <!-- v11.22: the fleet-integrity pill is gone — fleet health now lives inside the minimap (#miniStats) -->
   <div id="waterTint"></div>
   <div id="lensDroplets"></div>
   <div class="pill">⭐ <b id="score">0</b></div>
@@ -291,7 +284,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.21</div>
+    <div class="ver">v11.22</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -2306,15 +2299,25 @@ function stageFor(dist){
   for(let i = 0; i < STAGE_AT.length; i++) if(dist >= STAGE_AT[i]) s = i;
   return s;
 }
-function showStageToast(title, sub){
+function showStageToast(title, sub, big){
+  // v11.22: popups are compact by default (small, lower, shorter); only the
+  // freak-wave warning and stage announcements stay LARGE. Same-title spam
+  // is throttled (1.5 s) so rapid combat HIT messages cannot flip the popup.
+  if(!big){
+    const now = performance.now();
+    const cool = showStageToast._cool || (showStageToast._cool = {});
+    if(cool[title] && now - cool[title] < 1500) return;
+    cool[title] = now;
+  }
   $('stageName').textContent = title;
   $('stageDesc').textContent = sub || '';
   const el = $('stageToast');
+  el.classList.toggle('big', !!big);
   el.classList.add('show');
   clearTimeout(showStageToast._t);
-  showStageToast._t = setTimeout(() => el.classList.remove('show'), 2600);
+  showStageToast._t = setTimeout(() => el.classList.remove('show'), big ? 2600 : 1800);
 }
-function showStage(i){ showStageToast(STAGES[i].name, STAGES[i].desc); }
+function showStage(i){ showStageToast(STAGES[i].name, STAGES[i].desc, true); }
 function toast(title, sub){ showStageToast(title, sub); }
 
 function applyStage(i){
@@ -2840,16 +2843,9 @@ function updateHud(){
   syncFleetPanel();
   $('score').textContent = state.score;
   const pct = Math.round(fleetHp() / fleetMaxHp() * 100);
-  $('intPct').textContent = pct + '%';
-  $('aliveCount').textContent = '🚢×' + aliveCount();
-  $('miniPct').textContent = pct + '%'; // v11.20: fleet health inside the minimap too
+  $('miniPct').textContent = pct + '%'; // v11.20: fleet health inside the minimap (the top pill is gone since v11.22)
   $('miniPct').classList.toggle('low', pct <= 30);
   $('miniShips').textContent = '🚢×' + aliveCount();
-  const fill = $('integrityFill');
-  fill.style.width = Math.max(0, pct) + '%';
-  fill.classList.toggle('low', pct <= 30);
-  const nextAt = STAGE_AT[state.stage + 1];
-  $('stageFill').style.width = nextAt ? Math.min(100, (state.dist - STAGE_AT[state.stage]) / (nextAt - STAGE_AT[state.stage]) * 100) + '%' : '100%';
   drawMinimap();
 }
 
@@ -3093,7 +3089,7 @@ function spawnFreakWave(){
     // so a stern chase has time to close from 350 out.
     amp: 8, radius: 22, speed: 22, age: 0, life: 60,
   };
-  toast('⚠️ FREAK WAVE', 'a wall of water is coming — turn into it (bow-on) or be rolled!');
+  showStageToast('⚠️ FREAK WAVE', 'a wall of water is coming — turn into it (bow-on) or be rolled!', true); // v11.22: the warning stays LARGE
 }
 function update(dt){
   const st = STAGES[state.stage];
