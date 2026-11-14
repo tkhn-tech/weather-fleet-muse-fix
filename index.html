@@ -34,23 +34,30 @@
   #stageToast h2{font-size:30px;letter-spacing:.14em;text-transform:uppercase;text-shadow:0 2px 18px rgba(0,0,0,.7)}
   #stageToast p{font-size:14px;color:#bcd6e6;margin-top:4px;text-shadow:0 1px 8px rgba(0,0,0,.7)}
   /* v11.16: Engine Order Telegraph panel — right BOTTOM corner (was right side, above the minimap). The rudder joystick is bottom-left, so the telegraph sits bottom-right with no collision. */
-  #telegraphPanel{position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:6;width:158px;
+  /* v11.19: the telegraph is COMPACT by default (2-column grid, small buttons)
+     so it never overlaps the minimap on phones — the compact layout used to
+     depend on a max-width breakpoint, but some in-app browsers report a wider
+     viewport, so the tall single-column panel rendered and covered the minimap.
+     The tall single-column layout is restored only on large desktop screens
+     (min-width:901px, below). */
+  #telegraphPanel{position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:6;width:128px;
     background:rgba(6,18,30,.78);border:1px solid rgba(140,190,230,.35);border-radius:16px;
-    padding:10px 10px 12px;backdrop-filter:blur(8px)}
-  #telegraphPanel .teleHead{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#ffd166;
-    font-weight:800;text-align:center;margin-bottom:8px}
+    padding:5px 5px 6px;backdrop-filter:blur(8px)}
+  #telegraphPanel .teleHead{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#ffd166;
+    font-weight:800;text-align:center;margin-bottom:3px}
   #telegraphPanel .teleHead span{color:#e8f1f8}
-  .teleBtns{display:flex;flex-direction:column;gap:4px}
+  .teleBtns{display:grid;grid-template-columns:1fr 1fr;gap:3px}
   .teleBtn{background:rgba(255,255,255,.06);border:1px solid rgba(140,190,230,.25);color:#cfe2ef;
-    border-radius:8px;padding:6px 4px;font-size:11.5px;font-weight:700;letter-spacing:.04em;cursor:pointer}
+    border-radius:8px;padding:3px 1px;font-size:9px;font-weight:700;letter-spacing:.04em;cursor:pointer}
   .teleBtn.astern{color:#9db8cc}
   .teleBtn.on{background:#ffd166;color:#1a2a1a;border-color:#ffd166}
   .teleBtn:disabled{opacity:.38;cursor:default}
-  .teleStep{display:flex;gap:6px;margin-top:6px}
+  .teleStep{display:flex;gap:6px;margin-top:3px}
   .teleStep button{flex:1;background:rgba(255,255,255,.08);border:1px solid rgba(140,190,230,.35);
-    color:#e8f1f8;border-radius:8px;padding:6px 0;font-size:14px;font-weight:800;cursor:pointer}
+    color:#e8f1f8;border-radius:8px;padding:3px 0;font-size:11px;font-weight:800;cursor:pointer}
   .teleStep button:active{transform:scale(.95)}
-  #teleReadout{margin-top:8px;font-size:11.5px;color:#9db8cc;text-align:center;line-height:1.5}
+  #teleReadout{margin-top:3px;font-size:9px;color:#9db8cc;text-align:center;line-height:1.5}
+  #teleReadout br{display:none}
   #teleReadout b{color:#ffd166}
   /* v11.0: fleet command panel — left, under the top HUD */
   #fleetPanel{position:fixed;left:12px;top:calc(64px + env(safe-area-inset-top));z-index:6;width:132px;
@@ -66,29 +73,27 @@
   .fleetRow.watch{border-color:rgba(120,200,255,.7);color:#9fd4e8} /* v11.15: the sinking ship the camera is following */
   .fleetRow.sunk{opacity:.35;cursor:default}
   /* v11.16: the enemy roster panel is gone — enemies are tracked on the minimap (red diamonds + health bars) instead of in a list. */
-  /* v11.18: compact telegraph for narrow viewports (up to 700px) — the
-     560px breakpoint missed some phones (in-app browsers / display scaling
-     report a wider viewport), so the tall single-column telegraph rendered
-     and overlapped the minimap. The 2-column grid + short labels (see
-     fitTelegraph) keep the panel ~180px tall, well clear of the minimap. */
-  @media (max-width:700px){
-    #telegraphPanel{width:140px;padding:6px 6px 8px}
-    #telegraphPanel .teleHead{font-size:10px;margin-bottom:4px}
-    .teleBtns{display:grid;grid-template-columns:1fr 1fr;gap:3px}
-    .teleBtn{padding:5px 2px;font-size:10px}
-    .teleStep{margin-top:4px}
-    .teleStep button{padding:5px 0}
-    #teleReadout{font-size:10px;margin-top:4px}
-    #teleReadout br{display:none}
+  /* v11.19: tall single-column telegraph, restored ONLY on large desktop
+     screens. Everywhere else the compact 2-column default (above) applies,
+     so the panel can never overlap the minimap on a phone. */
+  @media (min-width:901px){
+    #telegraphPanel{width:158px;padding:10px 10px 12px}
+    #telegraphPanel .teleHead{font-size:11px;margin-bottom:8px}
+    .teleBtns{display:flex;flex-direction:column;gap:4px}
+    .teleBtn{padding:6px 4px;font-size:11.5px}
+    .teleStep{margin-top:6px}
+    .teleStep button{padding:6px 0;font-size:14px}
+    #teleReadout{font-size:11.5px;margin-top:8px}
+    #teleReadout br{display:inline}
   }
   @media (max-width:560px){ #telegraphPanel{bottom:calc(8px + env(safe-area-inset-bottom));width:138px} #fleetPanel{width:112px} } /* v11.16: telegraph stays bottom-right on phones */
   #hint{position:fixed;left:158px;bottom:calc(26px + env(safe-area-inset-bottom));z-index:6;pointer-events:none;
     font-size:12.5px;color:#9db8cc;line-height:1.5;text-shadow:0 1px 6px rgba(0,0,0,.8);transition:opacity 1s ease}
   #hint.fade{opacity:0}
   /* v11.16: minimap moves to the TOP RIGHT corner (was bottom-right, below the telegraph) — below the top bar, opposite the fleet panel (top-left). */
-  #miniMap{position:fixed;right:12px;top:calc(64px + env(safe-area-inset-top));z-index:5;border:1px solid rgba(140,190,230,.35);border-radius:12px;overflow:hidden;background:rgba(6,18,30,.6);pointer-events:none}
+  #miniMap{position:fixed;right:12px;top:calc(8px + env(safe-area-inset-top));z-index:5;border:1px solid rgba(140,190,230,.35);border-radius:12px;overflow:hidden;background:rgba(6,18,30,.6);pointer-events:none}
   #miniCv{display:block}
-  @media (max-width:560px){ #miniMap{right:8px;top:calc(56px + env(safe-area-inset-top))} #miniCv{width:100px;height:100px} } /* v11.16: minimap stays top-right on phones */
+  @media (max-width:560px){ #miniMap{right:8px;top:calc(8px + env(safe-area-inset-top))} #miniCv{width:100px;height:100px} } /* v11.19: minimap pushed to the very top-right corner */
   /* v11.0: the helm is a horizontal rudder track — the stick only swings left/right */
   #joy{position:fixed;left:18px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:6;width:216px;height:62px;border-radius:32px;
     background:rgba(6,18,30,.45);border:1px solid rgba(140,190,230,.35);backdrop-filter:blur(4px);touch-action:none}
@@ -149,7 +154,7 @@
   /* v11.1: the helm adapts to phone screens — the telegraph was too big
      in portrait and ran off the top of the screen in landscape */
   @media (max-width:560px){
-    #telegraphPanel{right:8px;bottom:calc(8px + env(safe-area-inset-bottom));width:132px;padding:6px 6px 8px} /* v11.18: compact telegraph — the tall panel overlapped the minimap on portrait phones */
+    #telegraphPanel{right:8px;bottom:calc(8px + env(safe-area-inset-bottom));width:124px;padding:5px 5px 6px} /* v11.19: telegraph smaller still on phones */
     #telegraphPanel .teleHead{font-size:9.5px;margin-bottom:4px}
     .teleBtns{display:grid;grid-template-columns:1fr 1fr;gap:3px}
     .teleBtn{padding:4px 1px;font-size:9.5px}
@@ -170,7 +175,7 @@
     #integrityWrap{max-width:190px;padding:6px 9px}
     .iconBtn{width:32px;height:32px;font-size:14px}
     #stageToast h2{font-size:22px}
-    #telegraphPanel{right:8px;bottom:calc(8px + env(safe-area-inset-bottom));width:132px;padding:8px 8px 10px}
+    #telegraphPanel{right:8px;bottom:calc(8px + env(safe-area-inset-bottom));width:124px;padding:5px 5px 6px}
     #telegraphPanel .teleHead{font-size:10px;margin-bottom:6px}
     .teleBtns{display:grid;grid-template-columns:1fr 1fr;gap:4px}
     .teleBtn{padding:6px 2px;font-size:10.5px}
@@ -178,7 +183,7 @@
     #teleReadout{font-size:10.5px;margin-top:4px}
     #fleetPanel{left:8px;top:calc(56px + env(safe-area-inset-top));width:120px;padding:6px}
     .fleetRow{padding:4px 5px;font-size:11px}
-    #miniMap{right:8px;top:calc(56px + env(safe-area-inset-top))}
+    #miniMap{right:8px;top:calc(8px + env(safe-area-inset-top))}
     #miniCv{width:84px;height:84px}
     #joy{left:12px;bottom:calc(12px + env(safe-area-inset-bottom));width:190px;height:52px}
     #joyKnob{width:40px;height:40px;margin:-20px 0 0 -20px}
@@ -285,7 +290,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.18</div>
+    <div class="ver">v11.19</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -2490,7 +2495,7 @@ document.querySelectorAll('.teleBtn').forEach(b => {
 const TELE_SHORT = ['FLANK', 'FULL', 'STANDARD', 'HALF', 'SLOW', 'STOP', 'HALF ASTN', 'FULL ASTN'];
 const TELE_FULL = ['FLANK AHEAD', 'FULL AHEAD', 'STANDARD AHEAD', 'HALF AHEAD', 'SLOW AHEAD', 'ALL STOP', 'HALF ASTERN', 'FULL ASTERN'];
 function fitTelegraph(){
-  const compact = window.innerWidth <= 700 || window.innerHeight <= 500;
+  const compact = window.innerWidth <= 900 || window.innerHeight <= 500;
   document.querySelectorAll('.teleBtn').forEach(b => {
     const i = parseInt(b.dataset.i, 10);
     b.textContent = compact ? TELE_SHORT[i] : TELE_FULL[i];
