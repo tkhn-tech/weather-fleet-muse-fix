@@ -104,6 +104,9 @@
   #airOpsPanel .aoBtn{display:block;width:100%;text-align:left;background:rgba(20,50,75,.6);border:1px solid rgba(140,190,230,.35);color:#e8f1f8;border-radius:6px;padding:5px 6px;margin-bottom:4px;font-size:10px;cursor:pointer}
   #airOpsPanel .aoBtn:hover{background:rgba(35,80,115,.7)}
   #airOpsPanel .aoBtn.recall{background:rgba(60,40,20,.5)}
+  #airOpsPanel .aoBtn:disabled{opacity:.38;cursor:not-allowed;background:rgba(20,50,75,.35)}
+  #airOpsPanel .aoBtn.active{border-color:#ffd166;color:#ffd166;background:rgba(60,45,10,.55)}
+  #airOpsPanel .aoStat.exhausted{color:#ff5a5a}
   #airOpsPanel .aoStat{color:#9db8cc;line-height:1.5;padding:0 2px}
   #airOpsPanel .aoStat b{color:#e8f1f8}
   @media (max-width:560px){ #airOpsPanel{right:8px;bottom:calc(188px + env(safe-area-inset-bottom));width:138px} }
@@ -262,6 +265,8 @@
   <button class="aoBtn" id="launchAsmBtn">🚀 Launch Anti-Ship Flight</button>
   <button class="aoBtn" id="launchBombBtn">💣 Launch Precision Bombing Flight</button>
   <button class="aoBtn recall" id="recallBtn">↩️ Recall Flights RTB</button>
+  <button class="aoBtn" id="camBtn" title="Follow camera — cycle wingman / weapon / off (C)">🎥 Cam: Off</button>
+  <div class="aoStat" id="airWingCount">Air Wing: 12 / 12</div>
   <div class="aoStat" id="airOpsStatus">SQN 1: Deck Ready<br>SQN 2: Deck Ready</div>
 </div>
 
@@ -318,7 +323,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.27</div>
+    <div class="ver">v11.28</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -2660,8 +2665,8 @@ window.addEventListener('keydown', e => {
   // Esc/Space cancels the follow and returns to the fleet. The handlers
   // guard on the instances (null until the air-wing block runs) and only
   // ever fire on a keypress, after the whole module has loaded.
-  if(e.key === 'n' || e.key === 'N'){ if(tacticalRadar) tacticalRadar.toggleHeadingUp(); }
-  if(e.key === 'c' || e.key === 'C'){ if(airCam) airCam.cycle(); }
+  if((e.key === 'n' || e.key === 'N') && !e.repeat){ if(tacticalRadar) tacticalRadar.toggleHeadingUp(); }
+  if((e.key === 'c' || e.key === 'C') && !e.repeat){ if(airCam) airCam.cycle(); }
   if(e.key === 'Escape' || e.key === ' '){ if(airCam) airCam.cancel(); }
   if(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ', 'Tab'].includes(e.key)) e.preventDefault();
 });
@@ -2842,6 +2847,21 @@ let tacticalRadar = null; // TacticalRadarHUD (airwing_b.js)
 let airCam = null;        // TacticalCameraSystem (airwing_c.js)
 let airTarget = null;  // radar-designated enemy (the air wing's target)
 let airWaypoint = null; // radar-designated waypoint {x, z} (next flight stages through it)
+// v11.28: FINITE carrier air wing — the carrier carries 12 Super Hornets in
+// total (losses are permanent). airWingRemaining counts the aircraft not yet
+// lost (alive, on deck or airborne). A launch takes up to 2 (a full flight)
+// from the aircraft actually available (remaining minus those already
+// airborne); when it reaches 0 the carrier cannot launch. Resets each round.
+const AIR_WING_TOTAL = 12;
+let airWingRemaining = AIR_WING_TOTAL;
+// Aircraft in flight (not crashed, not on the deck) — used to size a launch.
+function airborneJetCount(){
+  return jets.filter(j => !j.crashed && j.state !== 'deck' && j.state !== 'catapult' && j.state !== 'taxi' && j.state !== 'rearm').length;
+}
+// Aircraft actually available to launch right now.
+function availableToLaunch(){
+  return Math.max(0, airWingRemaining - airborneJetCount());
+}
 // minimap: north-up, centred on the fleet, 500-unit range (v11.24: was 400)
 const miniCv = $('miniCv'), miniCtx = miniCv.getContext('2d');
 function drawMinimap(){
@@ -5110,7 +5130,7 @@ let prevUs = 0;
 // ============================================================================
 
 // --- carrier deck geometry (carrier-local: x = starboard+, z = forward-, y = up) ---
-const CARRIER_DECK_Y = 13; // flight-deck height above the waterline (v11.27: 6.5 -> 13 — the carrier model is 2x taller now; estimate — verify visually)
+const CARRIER_DECK_Y = 10.34; // flight-deck height above the waterline (v11.28: MEASURED from the Kennedy GLB — deck top 26.99 model units, waterline 3.25, fit scale 174/399.53 = 0.4355 -> (26.99-3.25)*0.4355 = 10.34; the v11.27 estimate of 13 was 2.66 too high, so jets floated above the deck)
 const CATAPULTS = [
   {x: -10, z0: -12, z1: -84}, // bow catapult 1 (port) — v11.27: 2x with the carrier (was -5, -6, -42)
   {x: 6, z0: -12, z1: -84},  // bow catapult 2 (centre) — v11.27: 2x (was 3, -6, -42)
@@ -5179,7 +5199,7 @@ class FighterJetEntity {
     this.squadron = squadron;
     this.idx = idx;
     this.loadout = loadout; // 'asm' or 'bomb'
-    this.state = 'deck'; // deck | catapult | climb | ingress | attack | egress | rtb | trap | taxi | rearm | crashed
+    this.state = 'deck'; // deck | catapult | climb | ingress | attack | egress | rtb | trap | divert | taxi | rearm | crashed | sinking | slideoff | carrierCrash
     this.t = 0;
     this.x = 0; this.y = 0; this.z = 0;
     this.vx = 0; this.vy = 0; this.vz = 0;
@@ -5195,6 +5215,10 @@ class FighterJetEntity {
     this.aimPoint = {x: 0, y: 0, z: 0}; // steering target (set by the squadron)
     this.trailT = 0; this.smokeT = 0; this.flareT = 0; this.steamT = 0;
     this.spinT = 0; this.crashed = false;
+    this.sinkT = 0; this.bubT = 0; this.slideT = 0; // v11.28: sinking + slide-off timers
+    this.gone = false; // v11.28: fully despawned (removed from jets + squadron)
+    this.lostCounted = false; // v11.28: deducted from the finite air wing yet?
+    this.crashLocal = null; // v11.28: deck-local impact point (carrier crash)
     this.fired = false; // ordnance released this attack run
     this.attackPhase = ''; // bomb run sub-state: popup | dive | drop | pullout
     this.glowMat = null; // afterburner glow sprite
@@ -5293,15 +5317,25 @@ class FighterJetEntity {
     }
     return false;
   }
-  // Crash: flat spin / flaming dive into the ocean.
-  crash(){
+  // Crash: flat spin / flaming dive into the ocean. The aircraft is LOST
+  // (v11.28: deducted from the finite air wing, exactly once).
+  crash(reason){
     if(this.crashed) return;
     this.crashed = true;
     this.state = 'crashed';
     this.spinT = 0;
+    this.sinkT = 0; this.bubT = 0;
     this.vy = Math.min(this.vy, -5);
     if(this.glowMat) this.glowMat.opacity = 0;
-    toast('💥 Jet down', 'a Super Hornet was shot down');
+    this.loseAircraft(); // v11.28: a lost aircraft is permanently gone
+    toast('💥 Jet down', reason || 'a Super Hornet was shot down');
+  }
+  // v11.28: deduct one aircraft from the finite air wing (12 total).
+  // Guarded so a jet that crashes AND sinks deducts exactly once.
+  loseAircraft(){
+    if(this.lostCounted) return;
+    this.lostCounted = true;
+    airWingRemaining = Math.max(0, airWingRemaining - 1);
   }
   updateCrash(dt){
     this.spinT += dt;
@@ -5320,18 +5354,179 @@ class FighterJetEntity {
     }
     const seaH = getOceanDataAt(this.x, this.z, state.t).height;
     if(this.y <= seaH){
-      // High-speed water plume + floating wreckage.
+      // v11.28: the jet CRASHES into the water and SINKS — she does not
+      // fade out on the surface. Impact splash + explosion, then the wreck
+      // goes under (updateSinking), streaming bubbles, and only despawns
+      // once deep (leaving debris / an oil slick on the surface).
       for(let i = 0; i < 24; i++){
         spawnParticle(this.x + (Math.random() - 0.5) * 4, seaH, this.z + (Math.random() - 0.5) * 4,
           (Math.random() - 0.5) * 6, 6 + Math.random() * 8, (Math.random() - 0.5) * 6,
           1.2, 0.95, 0.98, 1, -1);
       }
       spawnSprite(this.x, seaH + 1, this.z, 1.2, 10, 12, 0.8, 0xffffff, 0.6);
-      // Floating wreckage: a dark debris sprite that drifts and fades.
-      const wreck = spawnSprite(this.x, seaH + 0.5, this.z, 30, 6, 2, 0.2, 0x1a1a1a, 0.85);
-      wreck.vy = 0; wreck.vx = 0.3; wreck.vz = 0.2;
+      // Impact explosion (the jet hits the water at speed and breaks up).
+      boomLight.position.set(this.x, 4, this.z); boomLight.intensity = 10;
+      const fb = spawnSprite(this.x, seaH + 2, this.z, 0.8, 10, 10, 2.5, 0xff7722, 0.9); fb.vy = 3;
+      burst(this.x, seaH + 1, this.z, 20, [1, 0.6, 0.2], 6, 4);
+      if(airCam) airCam.noteDetonation(this.x, this.y, this.z);
+      // The wreck goes under — sinking, not removed (the model stays
+      // visible as she descends, streaming bubbles).
+      this.state = 'sinking';
+      this.sinkT = 0; this.bubT = 0;
+      this.y = seaH;
+      this.vy = -2; this.vx *= 0.3; this.vz *= 0.3; // the impact kills most of the forward speed
+    }
+    this.syncModel();
+  }
+  // v11.28: the wreck SINKS after a water crash. She descends slowly,
+  // streaming bubbles, and only despawns once deep (leaving a debris
+  // field and an oil slick on the surface) — she never fades out on it.
+  updateSinking(dt){
+    this.sinkT += dt;
+    this.vy = Math.max(this.vy - 8 * dt, -3); // settles to a slow sink rate
+    this.y += this.vy * dt;
+    this.x += this.vx * dt; this.z += this.vz * dt;
+    this.heading += dt * 0.5; this.roll += dt * 0.4; // gentle tumble as she goes down
+    // Bubble stream from the wreck (buoyant: grav -1, so they rise).
+    this.bubT -= dt;
+    if(this.bubT <= 0){
+      this.bubT = 0.12;
+      for(let i = 0; i < 3; i++){
+        spawnParticle(this.x + (Math.random() - 0.5) * 2, this.y + 1, this.z + (Math.random() - 0.5) * 2,
+          (Math.random() - 0.5) * 0.5, 1 + Math.random() * 1.5, (Math.random() - 0.5) * 0.5,
+          2.5, 0.9, 0.95, 1, -1);
+      }
+    }
+    const seaH = getOceanDataAt(this.x, this.z, state.t).height;
+    if(this.y <= seaH - 15 || this.sinkT > 12){
+      // Deep enough (or long enough) — gone. Debris field + oil slick.
+      for(let i = 0; i < 4; i++){
+        const d = spawnSprite(this.x + (Math.random() - 0.5) * 6, seaH + 0.3, this.z + (Math.random() - 0.5) * 6, 20, 3, 2, 0.1, 0x1a1a1a, 0.7);
+        d.vx = (Math.random() - 0.5) * 0.3; d.vz = (Math.random() - 0.5) * 0.3;
+      }
+      spawnSprite(this.x, seaH + 0.2, this.z, 25, 10, 10, 0.05, 0x0a0a12, 0.5); // oil slick
       this.removeModel();
-      // Remove from the jets array (the air wing sweeps it).
+      this.gone = true;
+      const i = jets.indexOf(this);
+      if(i >= 0) jets.splice(i, 1);
+      if(this.squadron) this.squadron.onJetLost(this);
+    }
+    this.syncModel();
+  }
+  // v11.28: the carrier is going down and this jet is ON her deck — release
+  // her from the deck anchor. She slides downhill under gravity and off the
+  // deck edge, then falls and sinks (a loss, deducted once).
+  startSlideOff(carrier){
+    if(this.crashed) return;
+    this.crashed = true;
+    this.state = 'slideoff';
+    this.slideT = 0;
+    this.loseAircraft();
+    this.vx = 0; this.vy = 0; this.vz = 0;
+    toast('⚠️ Jet sliding off', 'a Super Hornet is sliding off the sinking carrier');
+  }
+  // Slide down the tilted deck (physics: gravity projected onto the deck
+  // plane, using the carrier's live quaternion — so the slide follows the
+  // deck's real tilt as she lists and goes down). The jet stays on the deck
+  // surface while sliding; past the edge she falls and sinks.
+  updateSlideOff(dt, carrier){
+    this.slideT += dt;
+    if(!carrier){ this.state = 'crashed'; return; }
+    // Deck normal in world space (the carrier's live orientation).
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(carrier.group.quaternion);
+    const deckC = carrierDeckPoint(carrier, 0, CARRIER_DECK_Y, 0);
+    // Gravity projected onto the deck plane: g - (g.up)up with g = (0,-1,0)
+    // gives the downhill direction, magnitude sin(tilt) — no slide on a
+    // level deck, full gravity when the deck is vertical.
+    const gx = up.y * up.x, gy = -1 + up.y * up.y, gz = up.y * up.z;
+    const GRAV = 25; // same gravity as the crash dive
+    this.vx += gx * GRAV * dt; this.vy += gy * GRAV * dt; this.vz += gz * GRAV * dt;
+    this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
+    // Stay on the deck surface (project back onto the plane) and drop the
+    // velocity component into the deck.
+    const dx = this.x - deckC.x, dy = this.y - deckC.y, dz = this.z - deckC.z;
+    const dn = dx * up.x + dy * up.y + dz * up.z;
+    this.x -= up.x * dn; this.y -= up.y * dn; this.z -= up.z * dn;
+    const vn = this.vx * up.x + this.vy * up.y + this.vz * up.z;
+    this.vx -= up.x * vn; this.vy -= up.y * vn; this.vz -= up.z * vn;
+    // Lie flat on the deck (heading with the carrier) while sliding.
+    this.heading = carrier.heading;
+    this.pitch = carrier.pitchSm || 0; this.roll = carrier.rollSm || 0;
+    // Off the deck edge (local frame) — she leaves the deck and falls.
+    const local = carrier.group.worldToLocal(new THREE.Vector3(this.x, this.y, this.z));
+    const seaH = getOceanDataAt(this.x, this.z, state.t).height;
+    if(this.y <= seaH){
+      // The deck is already under — straight into the sinking.
+      this.state = 'sinking'; this.sinkT = 0; this.bubT = 0;
+      this.vy = -2; this.vx *= 0.3; this.vz *= 0.3;
+      this.syncModel();
+      return;
+    }
+    if(Math.abs(local.x) > 20 || Math.abs(local.z) > 88){
+      // Off the edge: fall under gravity (the crash dive handles the
+      // tumble, the water impact and the sinking).
+      this.state = 'crashed'; this.spinT = 0;
+      this.vy = Math.min(this.vy, -2);
+      if(this.glowMat) this.glowMat.opacity = 0;
+    }
+    this.syncModel();
+  }
+  // v11.28: this jet is mid-landing (on final / in the trap) and the
+  // carrier is going down — she does NOT trap. She crashes into the
+  // (sinking, tilted) deck, explodes, and sinks as part of the wreck.
+  crashIntoCarrier(carrier){
+    if(this.crashed) return;
+    this.crashed = true;
+    this.state = 'carrierCrash';
+    this.loseAircraft();
+    // Anchor the wreck to the carrier at the impact point (local deck
+    // coords, at the jet's horizontal position) so it rides the wreck down.
+    const local = carrier.group.worldToLocal(new THREE.Vector3(this.x, this.y, this.z));
+    this.crashLocal = {x: local.x, y: CARRIER_DECK_Y, z: local.z};
+    const p = carrierDeckPoint(carrier, this.crashLocal.x, this.crashLocal.y, this.crashLocal.z);
+    this.x = p.x; this.y = p.y; this.z = p.z;
+    // Large explosion at the impact point (on the deck).
+    boomLight.position.set(this.x, 6, this.z); boomLight.intensity = 12;
+    const fb = spawnSprite(this.x, this.y + 2, this.z, 0.9, 14, 14, 2.5, 0xff8822, 0.95); fb.vy = 4;
+    burst(this.x, this.y, this.z, 30, [1, 0.6, 0.2], 8, 5);
+    burst(this.x, this.y, this.z, 20, [0.3, 0.3, 0.3], 5, 5);
+    for(let i = 0; i < 3; i++){
+      const sm = spawnSprite(this.x + (Math.random() - 0.5) * 4, this.y + 2 + i * 2, this.z + (Math.random() - 0.5) * 4, 2.5, 8, 8, 0.5, 0x222222, 0.6);
+      sm.vy = 4;
+    }
+    if(airCam) airCam.noteDetonation(this.x, this.y, this.z);
+    if(this.glowMat) this.glowMat.opacity = 0;
+    toast('💥 Jet crashed into the carrier', 'a Super Hornet hit the sinking deck and exploded');
+  }
+  // The wreck rides the carrier down (anchored to the deck at the impact
+  // point), burning and streaming bubbles as the deck submerges. When the
+  // carrier is fully under, the wreck is gone with her.
+  updateCarrierCrash(dt, carrier){
+    if(!carrier || !this.crashLocal){ this.gone = true; return; }
+    const p = carrierDeckPoint(carrier, this.crashLocal.x, this.crashLocal.y, this.crashLocal.z);
+    this.x = p.x; this.y = p.y; this.z = p.z;
+    this.heading = carrier.heading;
+    this.pitch = carrier.pitchSm || 0; this.roll = carrier.rollSm || 0;
+    this.syncModel();
+    // Burn on the sinking deck; bubbles once under the sea.
+    const seaH = getOceanDataAt(this.x, this.z, state.t).height;
+    this.smokeT -= dt;
+    if(this.smokeT <= 0){
+      this.smokeT = 0.15;
+      if(this.y >= seaH){
+        spawnParticle(this.x, this.y + 1, this.z, 0, 2, 0, 1.2, 0.15, 0.15, 0.15, 0);
+        spawnParticle(this.x, this.y + 1, this.z, 0, 0, 0, 0.4, 1, 0.5, 0.1, 0);
+      } else {
+        for(let i = 0; i < 2; i++){
+          spawnParticle(this.x + (Math.random() - 0.5) * 2, this.y + 1, this.z + (Math.random() - 0.5) * 2,
+            (Math.random() - 0.5) * 0.5, 1 + Math.random(), (Math.random() - 0.5) * 0.5,
+            2.0, 0.9, 0.95, 1, -1);
+        }
+      }
+    }
+    if(carrier.sinkT >= 1 || this.y < seaH - 2){
+      this.removeModel();
+      this.gone = true;
       const i = jets.indexOf(this);
       if(i >= 0) jets.splice(i, 1);
       if(this.squadron) this.squadron.onJetLost(this);
@@ -5341,7 +5536,10 @@ class FighterJetEntity {
   // flight states; the catapult and crash have their own updates.
   update(dt, carrier){
     if(this.state === 'catapult'){ this.updateCatapult(dt, carrier); this.syncModel(); return; }
-    if(this.state === 'crashed'){ this.updateCrash(dt); return; }
+    if(this.state === 'crashed'){ this.updateCrash(dt); this.syncModel(); return; }
+    if(this.state === 'sinking'){ this.updateSinking(dt); return; }
+    if(this.state === 'slideoff'){ this.updateSlideOff(dt, carrier); this.syncModel(); return; }
+    if(this.state === 'carrierCrash'){ this.updateCarrierCrash(dt, carrier); return; }
     if(this.state === 'deck' || this.state === 'rearm' || this.state === 'taxi'){
       // On the deck: ride the carrier (parked / taxiing / rearming).
       if(carrier && carrier.alive){
@@ -5600,7 +5798,7 @@ class AirSquadron {
   constructor(id){
     this.id = id; // 1 or 2
     this.loadout = null; // 'asm' or 'bomb'
-    this.state = 'deckReady'; // deckReady | catapult | climb | ingress | attack | egress | rtb | trap | taxi | rearm
+    this.state = 'deckReady'; // deckReady | catapult | climb | ingress | attack | egress | rtb | trap | divert | taxi | rearm
     this.t = 0;
     this.jets = [];
     this.target = null; // enemy object
@@ -5611,7 +5809,7 @@ class AirSquadron {
   }
   get label(){ return 'SQN ' + this.id; }
   get statusText(){
-    const m = {deckReady: 'Deck Ready', catapult: 'Catapult Launch', climb: 'Climb', ingress: 'Ingress', attack: this.loadout === 'asm' ? 'Weapons Free' : 'Attack Run', egress: 'Egress', rtb: 'RTB', trap: 'Carrier Trap', taxi: 'Taxi', rearm: 'Rearming'};
+    const m = {deckReady: 'Deck Ready', catapult: 'Catapult Launch', climb: 'Climb', ingress: 'Ingress', attack: this.loadout === 'asm' ? 'Weapons Free' : 'Attack Run', egress: 'Egress', rtb: 'RTB', trap: 'Carrier Trap', divert: 'Divert — No Deck', taxi: 'Taxi', rearm: 'Rearming'};
     return m[this.state] || this.state;
   }
   get aliveJets(){ return this.jets.filter(j => !j.crashed); }
@@ -5638,7 +5836,16 @@ class AirSquadron {
     // from the shared array too, or they would linger as radar ghosts.
     this.jets.forEach(j => { j.removeModel(); const gi = jets.indexOf(j); if(gi >= 0) jets.splice(gi, 1); });
     this.jets = [];
-    for(let i = 0; i < 2; i++){
+    // v11.28: FINITE air wing — a launch takes up to 2 aircraft from the
+    // carrier's remaining air wing (12 total, losses permanent). If fewer
+    // than 2 remain, the flight launches with what is left (a single jet);
+    // if none remain, there is no launch at all.
+    const n = Math.min(2, availableToLaunch());
+    if(n <= 0){
+      toast('⚠️ Air wing exhausted', 'no aircraft remaining — the carrier has lost her whole air wing');
+      return false;
+    }
+    for(let i = 0; i < n; i++){
       const jet = new FighterJetEntity(this, i, loadout);
       jet.buildModel();
       jet.parkSpot = DECK_PARK[(this.id - 1) * 2 + i] || DECK_PARK[i];
@@ -5656,9 +5863,11 @@ class AirSquadron {
     this.jets[0].state = 'catapult';
     this.jets[0].t = 0;
     this.jets[0].catapult = CATAPULTS[0];
-    this.jets[1].state = 'deck';
-    this.jets[1].t = -1; // launches 1 s after the leader
-    this.jets[1].catapult = CATAPULTS[1 % CATAPULTS.length];
+    if(this.jets[1]){ // v11.28: a 1-jet flight (finite wing) has no wingman
+      this.jets[1].state = 'deck';
+      this.jets[1].t = -1; // launches 1 s after the leader
+      this.jets[1].catapult = CATAPULTS[1 % CATAPULTS.length];
+    }
     toast('🚀 ' + this.label + ' launching', loadout === 'asm' ? 'Anti-ship missile strike' : 'Precision bombing strike');
     return true;
   }
@@ -5677,9 +5886,16 @@ class AirSquadron {
   update(dt, carrier){
     if(!carrier) return;
     this.t += dt;
+    // v11.28: the carrier going down overrides the mission — deck jets
+    // slide off, a jet mid-landing crashes into the wreck, and no flight
+    // is cleared to land on a sinking deck. Runs before the state machine.
+    this.handleCarrierSinking(dt, carrier);
     const alive = this.aliveJets;
     if(!alive.length){
       if(this.state !== 'deckReady' && this.state !== 'rearm'){ this.state = 'deckReady'; this.t = 0; }
+      // No live jets — but a crashed / sinking jet still has to fall and
+      // sink (v11.25 bug: the early return skipped her, so she froze).
+      this.updateJets(dt, carrier);
       return;
     }
     // Retarget if the target died.
@@ -5815,7 +6031,25 @@ class AirSquadron {
         const gp = glideSlopePoint(carrier, 220, 48);
         this.setFormationAim(leader, gp.x, gp.y, gp.z, JET_CRUISE_SPEED);
         const dC = Math.hypot(carrier.x - leader.x, carrier.z - leader.z);
-        if(dC < 240){ this.state = 'trap'; this.t = 0; }
+        if(dC < 240){
+          // v11.28: no landing clearance on a sinking carrier — wave off.
+          if(!carrier.alive){ this.state = 'divert'; this.t = 0; }
+          else { this.state = 'trap'; this.t = 0; }
+        }
+        break;
+      }
+      case 'divert': {
+        // v11.28: waved off — circle above the carrier while she goes down.
+        // There is no other deck to land on: when she is fully under, the
+        // flight ditches in the sea (a loss, like a shot-down jet).
+        const seaH = getOceanDataAt(carrier.x, carrier.z, state.t).height;
+        const hx = carrier.x + Math.sin(state.t * 0.3) * 150;
+        const hz = carrier.z + Math.cos(state.t * 0.3) * 150;
+        this.setFormationAim(leader, hx, seaH + 45, hz, JET_CRUISE_SPEED);
+        if(carrier.sinkT >= 1){
+          alive.forEach(j => { j.crash('a Super Hornet ditched — no deck left to land on'); });
+          this.state = 'deckReady'; this.t = 0;
+        }
         break;
       }
       case 'trap': {
@@ -5869,14 +6103,41 @@ class AirSquadron {
     // just left the bow back onto the catapult (or one that just trapped
     // back into the air). Only jets already in flight are mirrored.
     if(this.state === 'climb' || this.state === 'ingress' || this.state === 'attack' ||
-       this.state === 'egress' || this.state === 'rtb' || this.state === 'trap'){
+       this.state === 'egress' || this.state === 'rtb' || this.state === 'trap' || this.state === 'divert'){
       alive.forEach(j => {
         if(j.state === 'catapult' || j.state === 'crashed' || j.state === 'deck' || j.state === 'taxi' || j.state === 'rearm') return;
         j.state = this.state;
       });
     }
-    // Update each jet.
-    this.jets.forEach(j => { if(!j.crashed) j.update(dt, carrier); });
+    // Update each jet — crashed / sinking jets included, so they fall
+    // and sink (v11.25 bug: the old loop skipped them, freezing the dive).
+    this.updateJets(dt, carrier);
+  }
+  // Update every jet in the squadron; drop the ones that are fully gone
+  // (despawned) from the squadron's own array.
+  updateJets(dt, carrier){
+    for(let i = this.jets.length - 1; i >= 0; i--){
+      const j = this.jets[i];
+      if(j.gone){ this.jets.splice(i, 1); continue; }
+      j.update(dt, carrier);
+    }
+  }
+  // v11.28: the carrier is sinking — what happens to her air wing.
+  // Deck jets (parked / taxiing / rearming / on the catapult) slide off
+  // the tilted deck and sink; a jet mid-landing crashes into the wreck;
+  // a flight on final is waved off (it diverts, it does not trap).
+  handleCarrierSinking(dt, carrier){
+    if(!carrier || carrier.alive) return; // carrier fine — nothing to do
+    for(const j of this.jets){
+      if(j.crashed || j.gone) continue;
+      if(j.state === 'deck' || j.state === 'rearm' || j.state === 'taxi' || j.state === 'catapult'){
+        j.startSlideOff(carrier);
+      } else if(j.state === 'trap'){
+        j.crashIntoCarrier(carrier);
+      }
+    }
+    // A flight on final (rtb) is not cleared to land on a sinking deck.
+    if(this.state === 'rtb'){ this.state = 'divert'; this.t = 0; }
   }
   // Set the leader's aim point; wingmen aim at the leader + echelon offset.
   setFormationAim(leader, x, y, z, spd){
@@ -5975,6 +6236,7 @@ class CarrierAirWingSystem {
     updateAirBombs(dt);
   }
   reset(){
+    airWingRemaining = AIR_WING_TOTAL; // v11.28: a new round gets a fresh air wing of 12
     this.squadrons.forEach(s => {
       s.jets.forEach(j => j.removeModel());
       s.jets = [];
@@ -5987,8 +6249,15 @@ class CarrierAirWingSystem {
     airTarget = null; airWaypoint = null;
   }
   // Air Ops panel status (called from updateHud via the radar HUD).
+  // v11.28: the line shows how many jets the squadron still has, so a
+  // squadron that lost a jet reads as having fewer aircraft available.
   statusLines(){
-    return this.squadrons.map(s => s.label + ': ' + s.statusText + (s.target && s.target.alive ? ' → ' + (s.target.label || s.target.name) : ''));
+    return this.squadrons.map(s => {
+      const n = s.aliveJets.length;
+      let line = s.label + ': ' + s.statusText + (n ? ' · ' + n + ' jet' + (n === 1 ? '' : 's') : '');
+      if(s.target && s.target.alive) line += ' → ' + (s.target.label || s.target.name);
+      return line;
+    });
   }
 }
 
@@ -6214,6 +6483,7 @@ class TacticalRadarHUD {
   constructor(){
     this.headingUp = false; // default true-north (matches the current north-up minimap)
     this._lastAirOps = ''; // cached Air Ops status text (only touch the DOM on change)
+    this._lastAirWingCount = ''; // v11.28: cached air-wing count text
   }
   toggleHeadingUp(){
     this.headingUp = !this.headingUp;
@@ -6347,6 +6617,21 @@ class TacticalRadarHUD {
     if(!el) return;
     const txt = airWing ? airWing.statusLines().join('<br>') : 'Air wing offline';
     if(txt !== this._lastAirOps){ this._lastAirOps = txt; el.innerHTML = txt; }
+    // v11.28: FINITE air wing — live count in the panel, and the Launch
+    // buttons disabled (greyed out, unclickable) when the wing is exhausted.
+    const cnt = $('airWingCount');
+    if(cnt){
+      const cTxt = 'Air Wing: ' + airWingRemaining + ' / ' + AIR_WING_TOTAL + (airWingRemaining <= 0 ? ' — exhausted' : '');
+      if(cTxt !== this._lastAirWingCount){ this._lastAirWingCount = cTxt; cnt.textContent = cTxt; cnt.classList.toggle('exhausted', airWingRemaining <= 0); }
+    }
+    const noLaunch = airWingRemaining <= 0;
+    for(const id of ['launchAsmBtn', 'launchBombBtn']){
+      const b = $(id);
+      if(b && b.disabled !== noLaunch) b.disabled = noLaunch;
+    }
+    // v11.28: the follow-camera button label follows the shared mode state
+    // (per-frame safety net — the camera methods also sync it directly).
+    syncCamBtn();
   }
 }
 
@@ -6358,6 +6643,20 @@ tacticalRadar = new TacticalRadarHUD();
 $('launchAsmBtn').addEventListener('click', () => { if(airWing) airWing.launch('asm'); });
 $('launchBombBtn').addEventListener('click', () => { if(airWing) airWing.launch('bomb'); });
 $('recallBtn').addEventListener('click', () => { if(airWing) airWing.recallAll(); });
+$('camBtn').addEventListener('click', () => { if(airCam) airCam.cycle(); }); // v11.28: the follow camera is a tappable button now — the C key was the only way, and Nicholas plays on his phone
+// v11.28: the follow-camera button label follows the ONE shared camera mode
+// (airCam.mode). The button and the C key drive the same state, so the label
+// is always right no matter which input changed it. Cached: only touches
+// the DOM when the label actually changes.
+let _lastCamBtnLabel = '';
+function syncCamBtn(){
+  const b = $('camBtn');
+  if(!b || !airCam) return;
+  const m = airCam.mode;
+  const label = m === 'jet' ? '🎥 Cam: Wingman' : m === 'ordnance' ? '🎥 Cam: Weapon' : m === 'hold' ? '🎥 Cam: Impact' : '🎥 Cam: Off';
+  if(label !== _lastCamBtnLabel){ _lastCamBtnLabel = label; b.textContent = label; }
+  b.classList.toggle('active', !!m);
+}
 $('radarModeBtn').addEventListener('click', () => { if(tacticalRadar) tacticalRadar.toggleHeadingUp(); });
 $('miniCv').addEventListener('click', (ev) => {
   if(!tacticalRadar) return;
@@ -6407,9 +6706,10 @@ class TacticalCameraSystem {
   }
   // C cycles: jet -> ordnance -> off (falling back when a kind is empty).
   cycle(){
-    if(this.mode === 'jet'){ if(!this.trackOrdnance()) this.cancel(); return; }
-    if(this.mode === 'ordnance' || this.mode === 'hold'){ this.cancel(); return; }
+    if(this.mode === 'jet'){ if(!this.trackOrdnance()) this.cancel(); syncCamBtn(); return; }
+    if(this.mode === 'ordnance' || this.mode === 'hold'){ this.cancel(); syncCamBtn(); return; }
     if(!this.trackJet()) this.trackOrdnance();
+    syncCamBtn(); // v11.28: the button label follows the shared mode state
   }
   trackJet(){
     // Prefer an airborne jet (a crashed one still in her dive is fine).
@@ -6455,10 +6755,12 @@ class TacticalCameraSystem {
     this.mode = 'hold';
     this.holdPos = {x, y, z};
     this.holdUntil = state.t + 2.5;
+    syncCamBtn(); // v11.28: the button shows the impact hold
   }
   cancel(){
     if(!this.active()) return;
     this.mode = null; this.kind = null; this.target = null; this.holdPos = null;
+    syncCamBtn(); // v11.28: the button label follows the shared mode state
     toast('🎥 Back to the fleet', 'camera back on the flagship');
   }
   // The camera target for this frame (called from updateCamera, before the
@@ -6516,6 +6818,7 @@ class TacticalCameraSystem {
   }
   reset(){
     this.mode = null; this.kind = null; this.target = null; this.holdPos = null;
+    syncCamBtn(); // v11.28: the button label follows the shared mode state
   }
 }
 
