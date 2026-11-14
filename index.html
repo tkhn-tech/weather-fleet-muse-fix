@@ -284,7 +284,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.23</div>
+    <div class="ver">v11.24</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -561,6 +561,11 @@ const settings = {
   camPanX: Math.max(-30, Math.min(30, savedSettings.camPanX ?? 0)),
   camPanY: Math.max(-12, Math.min(18, savedSettings.camPanY ?? 0)),
 };
+// v11.24: validate the persisted enemy proximity (the v11.18 check saw the
+// picker default to Close on a fresh load — the code default was already
+// 'medium', so that was a stale persisted value from an earlier session;
+// a missing or invalid persisted value now falls back to Medium).
+if(!['close', 'medium', 'far'].includes(settings.enemyProx)) settings.enemyProx = 'medium';
 function wireSeg(id, key, parse){
   const el = $(id);
   el.querySelectorAll('button').forEach(b => {
@@ -2566,12 +2571,14 @@ $('pauseSeaBtn').addEventListener('click', () => {
   $('pauseScreen').classList.add('hidden');
   state.running = false; state.paused = false;
   $('pauseBtn').textContent = '⏸';
+  $('stageToast').classList.remove('show'); // v11.24: no stale toast on the start screen
   $('startScreen').classList.remove('hidden');
 });
 $('startBtn').addEventListener('click', startGame);
 $('againBtn').addEventListener('click', startGame);
 $('againSeaBtn').addEventListener('click', () => {
   $('overScreen').classList.add('hidden');
+  $('stageToast').classList.remove('show'); // v11.24: no stale toast on the start screen
   $('startScreen').classList.remove('hidden');
 });
 function togglePause(){
@@ -2661,6 +2668,11 @@ function startGame(){
 function gameOver(won){
   if(state.over) return;
   state.over = true; state.running = false;
+  // v11.24: dismiss any toast so a stale card (e.g. the "CALM SEAS" intro)
+  // cannot linger on the end screen — the toast is a single shared element
+  // and combat toasts keep re-arming its timer during a round.
+  clearTimeout(showStageToast._t);
+  $('stageToast').classList.remove('show');
   $('finalDist').textContent = Math.floor(state.dist) + ' nm';
   $('finalScore').textContent = state.score;
   $('finalStage').textContent = STAGES[state.stage].name;
@@ -2671,8 +2683,15 @@ function gameOver(won){
   // v11.17 check found it always read FLEET LOST, even on a win). The
   // Hurricane consolation text is gated on the loss not being total, so it
   // can no longer claim the fleet "held together" when 7/7 ships are lost.
-  $('overTitle').innerHTML = won ? '<span>Victory</span>' : 'Fleet <span>Lost</span>';
-  $('overText').textContent = won
+  // v11.24: the heading and subtitle follow the outcome explicitly
+  // (won === true only). The v11.18 check saw the victory line on a defeat
+  // screen — the rounds it saw were victories mislabelled by the static
+  // "FLEET LOST" heading in v11.19/v11.21 (fixed in v11.23) — but the
+  // subtitle now tests won === true, so no truthy non-true value can ever
+  // show the victory line on a loss. Both loss callers pass nothing
+  // (won undefined); the victory caller passes true.
+  $('overTitle').innerHTML = won === true ? '<span>Victory</span>' : 'Fleet <span>Lost</span>';
+  $('overText').textContent = won === true
     ? 'ALL ENEMIES SUNK — the fleet holds the sea.'
     : state.dist >= STAGE_AT[3] && state.lost < fleet.length
     ? 'The fleet reached the hurricane — and held together through the worst of it.'
@@ -2695,11 +2714,11 @@ function gameOver(won){
 const enemies = [];
 let shells = []; // glowing shell arcs in flight
 let torps = [];  // enemy torpedoes running below the surface
-// minimap: north-up, centred on the fleet, 400-unit range
+// minimap: north-up, centred on the fleet, 500-unit range (v11.24: was 400)
 const miniCv = $('miniCv'), miniCtx = miniCv.getContext('2d');
 function drawMinimap(){
   const ctx = miniCtx, W = miniCv.width, H = miniCv.height, C = W / 2;
-  const range = 400, sc = C / range;
+  const range = 500, sc = C / range; // v11.24: 400 -> 500 so Close (250) sits at 50% (clearly inside), Medium (450) at 90% (near the edge), Far (700) clamped — the v11.18 check found Medium and Far indistinguishable (both clamped at 400) and Close's trailing ships near the outer ring
   const f = flagship() || fleet[0];
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = 'rgba(10,30,48,0.9)';
@@ -2750,7 +2769,7 @@ function drawMinimap(){
   // v11.16: enemies on the minimap (the roster panel is gone) — a red-orange
   // diamond, clearly different from the player ships' blue dots, with a
   // small health bar above it (green -> amber -> red by hp%). Enemies
-  // beyond the 400-unit range are clamped to the edge, so the player still
+  // beyond the 500-unit range are clamped to the edge, so the player still
   // sees the direction of an off-map enemy. A sinking enemy is drawn
   // dimmed; a sunk one is not drawn at all.
   enemies.forEach(e => {
@@ -4319,10 +4338,15 @@ function updateCamera(dt){
 // storm slowdowns) and the same whisker avoidance, and hits call the
 // existing damageShip() — no parallel damage path. Objective unchanged:
 // survive; the round ends when all player ships are lost.
+// v11.24: torpedo damage reduced (the v11.18 check found one torpedo took
+// ~25-35% off a capital ship and a single Cadet destroyer sank the Carrier
+// and a destroyer in ~2.5 min — torpedoes were the main killer). torpDmg
+// dd 22 -> 15, cl 26 -> 18, bb 30 -> 20, so a single torpedo is ~15-20% of
+// a capital ship (was ~25-35%). Enemy gunnery unchanged.
 const ENEMY_CLASS = {
-  dd: {type:'enemy_dd', label:'Destroyer', hp:50, mass:1.0, thrustForce:14, rudderTurnSpeed:0.7, spoolUp:1.6, spoolDown:2.6, gunRange:220, gunDmg:6, gunCd:3.2, torpCd:26, torpN:4, torpDmg:22, optRange:170},
-  cl: {type:'enemy_cl', label:'Light Cruiser', hp:65, mass:1.3, thrustForce:18, rudderTurnSpeed:0.65, spoolUp:1.3, spoolDown:2.2, gunRange:260, gunDmg:9, gunCd:2.6, torpCd:30, torpN:3, torpDmg:26, optRange:200},
-  bb: {type:'enemy_bb', label:'Heavy Cruiser', hp:90, mass:1.8, thrustForce:25, rudderTurnSpeed:0.6, spoolUp:1.0, spoolDown:1.8, gunRange:320, gunDmg:14, gunCd:4.0, torpCd:38, torpN:2, torpDmg:30, optRange:240},
+  dd: {type:'enemy_dd', label:'Destroyer', hp:50, mass:1.0, thrustForce:14, rudderTurnSpeed:0.7, spoolUp:1.6, spoolDown:2.6, gunRange:220, gunDmg:6, gunCd:3.2, torpCd:26, torpN:4, torpDmg:15, optRange:170},
+  cl: {type:'enemy_cl', label:'Light Cruiser', hp:65, mass:1.3, thrustForce:18, rudderTurnSpeed:0.65, spoolUp:1.3, spoolDown:2.2, gunRange:260, gunDmg:9, gunCd:2.6, torpCd:30, torpN:3, torpDmg:18, optRange:200},
+  bb: {type:'enemy_bb', label:'Heavy Cruiser', hp:90, mass:1.8, thrustForce:25, rudderTurnSpeed:0.6, spoolUp:1.0, spoolDown:1.8, gunRange:320, gunDmg:14, gunCd:4.0, torpCd:38, torpN:2, torpDmg:20, optRange:240},
 };
 const ENEMY_SKILL = {
   cadet: {disp: 1.6, lead: 0.5, dmgMul: 0.8},
@@ -4398,7 +4422,7 @@ function spawnEnemies(){
   // generally further away). Close 250 is just outside the enemy destroyer
   // gun range (220) — still "close" but not instantly under fire; Medium 450
   // is well outside gun range (a clear approach); Far 700 is well beyond the
-  // minimap's 400-unit range, so the enemy appears clamped to the minimap
+  // minimap's 500-unit range, so the enemy appears clamped to the minimap
   // edge and sails in.
   const proxDist = {close: 250, medium: 450, far: 700}[settings.enemyProx] || 450;
   const brg = flag.heading + (Math.random() - 0.5) * 0.8;
@@ -4514,7 +4538,17 @@ function updateEnemies(dt){
   updateTorpedoes(dt);
   // v11.18: victory — every enemy sunk and gone under (sinkT >= 1, so the
   // sinking plays out first). One enemy fleet per round, no new waves.
-  if(settings.enemyOn && enemies.length && !state.over && enemies.every(e => !e.alive && e.sinkT >= 1)){
+  // v11.24: a victory also requires at least one player ship still afloat.
+  // The v11.18 check saw rounds end with the victory subtitle while player
+  // ships were still afloat — the loss/victory checks themselves were
+  // correctly guarded (a loss needs aliveCount() === 0 AND no ship still
+  // sinking; a win needs every enemy dead AND fully sunk), and the rounds
+  // the check saw were victories mislabelled by the static "FLEET LOST"
+  // heading in v11.19/v11.21 (fixed in v11.23) — but without this guard a
+  // mutual destruction (last enemy and last player ship sinking in the
+  // same frame) would declare a victory with no fleet left, so the win
+  // now also requires aliveCount() > 0.
+  if(settings.enemyOn && enemies.length && !state.over && aliveCount() > 0 && enemies.every(e => !e.alive && e.sinkT >= 1)){
     gameOver(true);
   }
 }
@@ -4581,10 +4615,15 @@ function fireGuns(e, tgt, skill){
 // enemy shell system (predictive lead, dispersion, glowing parabolic arcs
 // in the shared `shells` array, resolved by resolveShellHit), so player
 // shells read exactly like enemy shells.
+// v11.24: player guns hit harder and more often (the v11.18 check found
+// ~11 min of combat with 0 enemy sinkings — raw fleet DPS 15.5 was too weak
+// and the 0.85 lead / wide spread missed manoeuvring targets). Damage up,
+// cooldowns slightly down, lead 0.85 -> 0.95 and spread tightened (see
+// firePlayerGuns). New raw fleet DPS ~26 (was ~15.5).
 const PLAYER_GUNS = {
-  battleship: {range: 320, dmg: 12, cd: 4.2},
-  destroyer:  {range: 260, dmg: 7,  cd: 3.2},
-  carrier:    {range: 240, dmg: 5,  cd: 5.0},
+  battleship: {range: 320, dmg: 18, cd: 3.8},
+  destroyer:  {range: 260, dmg: 11, cd: 3.0},
+  carrier:    {range: 240, dmg: 8,  cd: 4.5},
 };
 function firePlayerGuns(s, tgt){
   // ballistic lead, same as the enemy guns — predict where the target will
@@ -4594,9 +4633,9 @@ function firePlayerGuns(s, tgt){
   const tof = d / shellSpeed;
   const tvx = tgt.motion ? tgt.motion.vx : 0;
   const tvz = tgt.motion ? tgt.motion.vz : 0;
-  const px = tgt.x + tvx * tof * 0.85;
-  const pz = tgt.z + tvz * tof * 0.85;
-  const spread = (6 + state.stage * 4) * 1.0;
+  const px = tgt.x + tvx * tof * 0.95; // v11.24: lead 0.85 -> 0.95 (was missing manoeuvring targets)
+  const pz = tgt.z + tvz * tof * 0.95;
+  const spread = (5 + state.stage * 3) * 1.0; // v11.24: tighter dispersion
   const ix = px + (Math.random() - 0.5) * 2 * spread;
   const iz = pz + (Math.random() - 0.5) * 2 * spread;
   // muzzle flash + smoke at the firing ship's bow turrets
