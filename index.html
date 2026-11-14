@@ -146,7 +146,6 @@
     #stageToast h2{font-size:24px}
   }
   /* v11.12: the camera panel and the spectate bar are gone. */
-  #freakWarn{position:fixed;left:50%;top:calc(112px + env(safe-area-inset-top));transform:translateX(-50%);z-index:9;max-width:calc(100vw - 24px);background:rgba(48,6,6,.9);border:1px solid rgba(255,90,78,.8);color:#ffb3ad;border-radius:999px;padding:8px 16px;font-size:13px;font-weight:700;pointer-events:none;text-align:center}
   /* v11.5: the underwater wash. A fullscreen tint that fades in as the
      camera goes under (opacity set by updateUnderwater); the gradient is
      darker at the edges so the deep reads as a volume, not a flat colour. */
@@ -211,7 +210,6 @@
   <div id="integrityWrap"><div class="lbl">Fleet integrity <span id="intPct">100%</span> · <span id="aliveCount">🚢×7</span></div>
     <div id="integrityBar"><div id="integrityFill"></div></div>
     <div id="stageBar"><div id="stageFill"></div></div></div>
-  <div id="freakWarn" class="hidden">⚠️ FREAK WAVE — a wall of water is coming! Turn into it (bow-on) or be rolled!</div>
   <div id="waterTint"></div>
   <div id="lensDroplets"></div>
   <div class="pill">⭐ <b id="score">0</b></div>
@@ -293,7 +291,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.20</div>
+    <div class="ver">v11.21</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -4348,6 +4346,7 @@ function makeEnemy(cls, i, x, z, heading){
     type: cls.type, label: cls.label + ' ' + (i + 1), isEnemy: true, // v11.18: marks enemy hulls for player-shell hits
     x, z, heading, y: 0,
     hp: cls.hp, maxHp: cls.hp, alive: true, sinkT: 0,
+    lastFreakId: 0, // v11.21: each freak wave hits an enemy at most once
     telegraph: 2, spoolSpeed: 0, // STANDARD AHEAD to start
     gunT: 2 + Math.random() * 3, torpT: 8 + Math.random() * 10,
     circleDir: (i % 2 === 0) ? 1 : -1, // alternate circling direction
@@ -4474,6 +4473,25 @@ function updateEnemies(dt){
     e.group.position.set(e.x, e.y, e.z);
     e.group.rotation.set(e.pitchSm, -e.heading, e.rollSm + mo.heel);
     if(e.foam) e.foam.position.set(e.x, e.y + 0.15, e.z);
+    // v11.21: the freak wave hits the enemy fleet too — the same strike as
+    // the player ships (beam-on capsizes, bow-on swamps). Each wave hits an
+    // enemy at most once (lastFreakId).
+    if(state.freakWave && e.lastFreakId !== state.freakWave.id){
+      const fw = state.freakWave;
+      const along = (e.x - fw.x) * fw.dirX + (e.z - fw.z) * fw.dirZ;
+      if(Math.abs(along) < fw.radius){
+        e.lastFreakId = fw.id;
+        const fx = Math.sin(e.heading), fz = -Math.cos(e.heading);
+        const cosA = Math.abs(fw.dirX * fx + fw.dirZ * fz);
+        if(cosA < 0.5){
+          damageEnemy(e, e.hp, e.x, e.z); // lethal — she capsizes and goes down
+          toast('💥 FREAK WAVE', 'Enemy ' + e.label + ' took it beam-on and rolled over!');
+        } else {
+          damageEnemy(e, 15, e.x, e.z);
+          toast('🌊 SWAMPED', 'Enemy ' + e.label + ' took a freak wave head-on — she is taking on water.');
+        }
+      }
+    }
     // --- gunnery ---
     e.gunT -= dt;
     if(e.gunT <= 0 && d < e.cls.gunRange){
@@ -4922,11 +4940,8 @@ function loop(){
     updateParticles(dt);
     updateSprites(dt);
   }
-  // v11.9: the freak-wave warning is a persistent banner (not just a
-  // toast, which the v11.8 check missed) — it stays up while a freak
-  // wave is active, so the player always sees it coming.
-  if(state.freakWave) $('freakWarn').classList.remove('hidden');
-  else $('freakWarn').classList.add('hidden');
+  // v11.21: the red banner is gone — it duplicated the large toast, so
+  // the toast alone warns the player now.
   updateFreakCrest(); // v11.10: the visible wall follows the freak wave
   updateUnderwater(rawDt);
   skyDome.position.copy(camera.position);
