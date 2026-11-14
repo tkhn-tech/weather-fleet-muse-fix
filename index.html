@@ -268,7 +268,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <button class="bigBtn" id="startBtn">Set Sail ⛵</button>
-    <div class="ver">v11.16</div>
+    <div class="ver">v11.17</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -2627,6 +2627,16 @@ function gameOver(){
   $('overScreen').classList.remove('hidden');
 }
 
+// v11.17: the enemy state arrays MUST be declared here, before drawMinimap.
+// drawMinimap() draws enemy diamonds, and it runs at module load via the
+// top-level updateHud() call (the v11.5 "HUD behind the start overlay" call)
+// — but `enemies` used to be declared as const much later in the file, so
+// referencing it threw a ReferenceError (Temporal Dead Zone) and the module
+// stopped loading, which left Set Sail dead. Declaring the arrays here
+// fixes the load.
+const enemies = [];
+let shells = []; // glowing shell arcs in flight
+let torps = [];  // enemy torpedoes running below the surface
 // minimap: north-up, centred on the fleet, 400-unit range
 const miniCv = $('miniCv'), miniCtx = miniCv.getContext('2d');
 function drawMinimap(){
@@ -4264,9 +4274,8 @@ const ENEMY_SKILL = {
   veteran: {disp: 1.0, lead: 0.85, dmgMul: 1.0},
   elite: {disp: 0.6, lead: 1.0, dmgMul: 1.2},
 };
-const enemies = [];
-let shells = []; // glowing shell arcs in flight
-let torps = [];  // enemy torpedoes running below the surface
+// v11.17: enemies/shells/torps are declared before drawMinimap (see above) —
+// they were moved there because drawMinimap runs at load via updateHud().
 // v11.16: the enemy roster panel is gone (enemies are on the minimap now) — no more 4x-a-second DOM rebuild.
 
 function nearestPlayerShip(e){
