@@ -359,7 +359,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.31</div>
+    <div class="ver">v11.32</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -3569,9 +3569,11 @@ function update(dt){
     // other because nothing pushes them apart until the hulls nearly touch.
     // If a live neighbour is inside the separation radius, shift the Arrive
     // target directly away from her so the escort steers clear instead of
-    // closing the gap. Only alive ships separate — a sinking wreck is not
-    // tangible. The radius (120) sits just inside the design minimum centre
-    // distance (~131), so it never fights the formation on-station.
+    // closing the gap. Only live ships separate (formation spacing) — a
+    // sinking wreck is avoided by the traffic cap and whiskers instead
+    // (v11.32: wrecks ARE tangible). The radius (120) sits just inside
+    // the design minimum centre distance (~131), so it never fights the
+    // formation on-station.
     for(const o of fleet){
       if(o === s || !o.alive) continue;
       const sdx = m.x - o.x, sdz = m.z - o.z;
@@ -3599,14 +3601,16 @@ function update(dt){
     // is now ~13, so a 5-unit threshold only bites when a speed change
     // has already closed the gap dangerously. The cap tightens as the
     // gap closes, so an escort creeps to a near-stop before contact
-    // instead of charging in. A sinking wreck is NOT tangible (v11.31):
-    // she leaves the traffic cap and the whisker obstacles the moment she
-    // starts sinking, so the escorts phase straight through her. It still
-    // steers nothing.
+    // instead of charging in. A sinking wreck IS tangible (v11.32): she
+    // stays in the traffic cap and the whisker obstacles while she is
+    // still substantially above the water (sinkT < 0.7), so the escorts
+    // slow and swerve around her — and collide if they cannot react in
+    // time. Once she is mostly submerged (sinkT >= 0.7) she leaves the
+    // cap. It still steers nothing.
     let trafficCap = Infinity;
     const gapThresh = distToSlot > 6 ? 14 : 8; // v11.31: 10/5 -> 14/8 — the cap bites earlier in steady travel
     fleet.forEach(o => {
-      if(o !== s && o.alive){
+      if(o !== s && (o.alive || (!o.alive && o.sinkT < 0.7))){
         const d = Math.hypot(o.x - m.x, o.z - m.z);
         if(d < 31){
           const gap = hullGap(s, o);
@@ -3662,7 +3666,7 @@ function update(dt){
     // + 4): carrier 23, battleship 17, destroyer 13.
     const obstacles = [];
     if(distToSlot >= 12){
-      fleet.forEach(o => { if(o !== s && o.alive) obstacles.push({ x: o.x, z: o.z, r: Math.max(o.group.userData.wid * 1.5, o.group.userData.len * 0.25) + 4 }); });
+      fleet.forEach(o => { if(o !== s && (o.alive || (!o.alive && o.sinkT < 0.7))) obstacles.push({ x: o.x, z: o.z, r: Math.max(o.group.userData.wid * 1.5, o.group.userData.len * 0.25) + 4 }); });
     }
     // v10.8: escorts see each other sooner — whisker lookahead 26 -> 34 —
     // and a blocked centre whisker cuts the throttle, so an escort slows to
@@ -3732,7 +3736,15 @@ function update(dt){
   for(let i = 0; i < fleet.length; i++){
     for(let j = i + 1; j < fleet.length; j++){
       const a = fleet[i], b = fleet[j];
-      if(!a.alive || !b.alive) continue;
+      // v11.32: a sinking wreck is TANGIBLE — she is a solid obstacle while
+      // she is still substantially above the water (sinkT < 0.7). A live ship
+      // that sails into her collides (impulse + damage) exactly as with a
+      // live ship; two wrecks do not collide, and a mostly submerged wreck
+      // (sinkT >= 0.7) is no longer a surface obstacle. (v11.31 made wrecks
+      // ghosts by mistake — the flagship phased straight through them.)
+      const solidA = a.alive || (!a.alive && a.sinkT < 0.7);
+      const solidB = b.alive || (!b.alive && b.sinkT < 0.7);
+      if(!solidA || !solidB || (!a.alive && !b.alive)) continue;
       const cA = hullCircles(a), cB = hullCircles(b);
       // v10.5b: take the DEEPEST overlap, not the first pair found. With
       // five circles per hull, a shallow bow graze can be found first while
@@ -3769,6 +3781,11 @@ function update(dt){
       const ma = shipMass(a), mb = shipMass(b);
       const invMa = 1 / ma, invMb = 1 / mb;
       const invSum = invMa + invMb;
+      // v11.32: effective inverse masses for the velocity impulse — 0 for a
+      // wreck (see above). The positional correction keeps the real masses.
+      const invMaV = a.alive ? invMa : 0;
+      const invMbV = b.alive ? invMb : 0;
+      const invSumV = invMaV + invMbV;
       // v10.4: only an APPROACHING pair gets an impulse (vn < 0). The old code
       // applied it unconditionally — for a separating pair the formula runs
       // backwards and pumps energy in, so resting hulls ground each other
@@ -3781,14 +3798,14 @@ function update(dt){
         // j = -(1+e) * vn / (invMa + invMb); applied along the normal, the
         // lighter ship takes the bigger velocity change.
         const e = PHYSICS.restitution;
-        jn = -(1 + e) * vn / invSum;
-        a.motion.vx -= hit.nx * jn * invMa; a.motion.vz -= hit.nz * jn * invMa;
-        b.motion.vx += hit.nx * jn * invMb; b.motion.vz += hit.nz * jn * invMb;
+        jn = -(1 + e) * vn / invSumV;
+        a.motion.vx -= hit.nx * jn * invMaV; a.motion.vz -= hit.nz * jn * invMaV;
+        b.motion.vx += hit.nx * jn * invMbV; b.motion.vz += hit.nz * jn * invMbV;
         // scraping friction: a glancing broadside scrape grinds the tangential
         // velocity down instead of bouncing off it (mu ~ 0.3)
-        const jt = -vt * 0.3 / invSum;
-        a.motion.vx -= tx * jt * invMa; a.motion.vz -= tz * jt * invMa;
-        b.motion.vx += tx * jt * invMb; b.motion.vz += tz * jt * invMb;
+        const jt = -vt * 0.3 / invSumV;
+        a.motion.vx -= tx * jt * invMaV; a.motion.vz -= tz * jt * invMaV;
+        b.motion.vx += tx * jt * invMbV; b.motion.vz += tz * jt * invMbV;
       }
       // positional correction so the hulls do not stay interpenetrated.
       // v10.8: full separation — the soft-repulsion zone above means
@@ -3806,8 +3823,8 @@ function update(dt){
         // away from the blow (roll). Lever arm = along-hull offset of the hit.
         const leverA = (hit.x - a.x) * Math.sin(a.heading) - (hit.z - a.z) * Math.cos(a.heading);
         const leverB = (hit.x - b.x) * Math.sin(b.heading) - (hit.z - b.z) * Math.cos(b.heading);
-        a.motion.headingRate += -leverA * jn * 0.004 * invMa;
-        b.motion.headingRate += leverB * jn * 0.004 * invMb;
+        a.motion.headingRate += -leverA * jn * 0.004 * invMaV;
+        b.motion.headingRate += leverB * jn * 0.004 * invMbV;
         a.heelKick = (a.heelKick || 0) + Math.sign(leverA || 1) * 0.12 * Math.min(1, closing / 8);
         b.heelKick = (b.heelKick || 0) + Math.sign(leverB || 1) * 0.12 * Math.min(1, closing / 8);
       }
@@ -3881,6 +3898,82 @@ function update(dt){
       toast('💥 COLLISION', a.label + ' and ' + b.label + ' collided!');
       damageShip(a, dmgA, hit.x, hit.z);
       if(b.alive) damageShip(b, dmgB, hit.x, hit.z);
+    }
+  }
+  // v11.32: enemy<->wreck collisions — an enemy that sails into a sinking
+  // wreck (player or enemy, sinkT < 0.7) collides (impulse + damage), not
+  // phases. The whisker avoidance in updateEnemies usually steers her clear;
+  // this is the backstop for when she cannot react in time.
+  for(const e of enemies){
+    if(!e.alive) continue;
+    const wrecks = [];
+    fleet.forEach(s => { if(!s.alive && s.sinkT < 0.7) wrecks.push(s); });
+    enemies.forEach(o => { if(o !== e && !o.alive && o.sinkT < 0.7) wrecks.push(o); });
+    for(const w of wrecks){
+      const cE = hullCircles(e), cW = hullCircles(w);
+      let hit = null;
+      for(const ce of cE){
+        for(const cw of cW){
+          const dx = cw.x - ce.x, dz = cw.z - ce.z;
+          const d = Math.hypot(dx, dz);
+          if(d < ce.r + cw.r && d > 0.01){
+            const depth = (ce.r + cw.r) - d;
+            if(!hit || depth > hit.depth){
+              hit = {x: (ce.x + cw.x) / 2, z: (ce.z + cw.z) / 2, nx: dx / d, nz: dz / d, depth};
+            }
+          }
+        }
+      }
+      if(!hit) continue;
+      const rvx = w.motion.vx - e.motion.vx, rvz = w.motion.vz - e.motion.vz;
+      const vn = rvx * hit.nx + rvz * hit.nz; // < 0 = moving into each other
+      const closing = Math.max(0, -vn);
+      const tx = -hit.nz, tz = hit.nx;
+      const vt = rvx * tx + rvz * tz;
+      const me = e.motion.mass, mw = w.motion.mass;
+      const invMe = 1 / me, invMw = 1 / mw;
+      const invSum = invMe + invMw;
+      let jn = 0;
+      if(vn < 0){
+        // the wreck is immovable for the velocity impulse (her motion is
+        // stopped); the enemy takes the full deflection, as off a wall.
+        jn = -(1 + PHYSICS.restitution) * vn / invMe;
+        e.motion.vx -= hit.nx * jn * invMe; e.motion.vz -= hit.nz * jn * invMe;
+        const jt = -vt * 0.3 / invMe;
+        e.motion.vx -= tx * jt * invMe; e.motion.vz -= tz * jt * invMe;
+      }
+      // positional correction — separate completely, the wreck shoved by her
+      // real mass share (her x/z are static while sinking, so this is the
+      // visible shove).
+      const push = hit.depth;
+      e.x -= hit.nx * push * (invMe / invSum);
+      e.z -= hit.nz * push * (invMe / invSum);
+      w.x += hit.nx * push * (invMw / invSum);
+      w.z += hit.nz * push * (invMw / invSum);
+      if(vn < 0){
+        const leverE = (hit.x - e.x) * Math.sin(e.heading) - (hit.z - e.z) * Math.cos(e.heading);
+        e.motion.headingRate += -leverE * jn * 0.004 * invMe;
+        e.heelKick = (e.heelKick || 0) + Math.sign(leverE || 1) * 0.12 * Math.min(1, closing / 8);
+      }
+      // one damaging impact per enemy every 1.5 s (a per-enemy cooldown — the
+      // fleet loop uses a per-pair key, but an enemy rarely meets two wrecks
+      // at once, so one cooldown per enemy is enough).
+      e._wreckCollT = e._wreckCollT || 0;
+      if(state.t - e._wreckCollT < 1.5) continue;
+      if(closing < 1.5) continue;
+      if(hit.depth < 0.5) continue;
+      e._wreckCollT = state.t;
+      const redMass = (me * mw) / (me + mw);
+      const ke = 0.5 * redMass * closing * closing;
+      const dmgBase = 12 + ke * 0.75;
+      const dmgE = Math.max(1, Math.round(dmgBase * (mw / (me + mw)) * 2));
+      const boomN = Math.round(20 + dmgBase);
+      burst(hit.x, 3, hit.z, boomN, [1, 0.7, 0.3], 6, 4);
+      burst(hit.x, 4, hit.z, Math.round(boomN / 2), [0.25, 0.25, 0.25], 3, 3);
+      if(dmgBase >= 25) spawnSprite(hit.x, 4, hit.z, 0.5, 14, 14, 2.5, 0xffffff, 0.85);
+      addScorch(e, hit.x, hit.z);
+      toast('💥 COLLISION', e.label + ' collided with a sinking wreck!');
+      damageEnemy(e, dmgE, hit.x, hit.z);
     }
   }
 
@@ -4791,8 +4884,11 @@ function updateEnemies(dt){
     const seaSlow = 1 - state.stage * 0.06;
     // whisker avoidance (same as the escorts): player ships + other enemies
     const obstacles = [];
-    fleet.forEach(s => { if(s.alive) obstacles.push({x: s.x, z: s.z, r: Math.max(s.group.userData.wid * 1.5, s.group.userData.len * 0.25) + 4}); });
-    enemies.forEach(o => { if(o !== e && o.alive) obstacles.push({x: o.x, z: o.z, r: Math.max(o.group.userData.wid * 1.5, o.group.userData.len * 0.25) + 4}); });
+    // v11.32: a sinking wreck is tangible for enemies too — a wreck still
+    // substantially above the water (sinkT < 0.7) is a whisker obstacle, so
+    // an enemy steers around her instead of sailing through her.
+    fleet.forEach(s => { if(s.alive || (!s.alive && s.sinkT < 0.7)) obstacles.push({x: s.x, z: s.z, r: Math.max(s.group.userData.wid * 1.5, s.group.userData.len * 0.25) + 4}); });
+    enemies.forEach(o => { if(o !== e && (o.alive || (!o.alive && o.sinkT < 0.7))) obstacles.push({x: o.x, z: o.z, r: Math.max(o.group.userData.wid * 1.5, o.group.userData.len * 0.25) + 4}); });
     const av = e.motion.avoid(obstacles, 34);
     rudderIn = Math.max(-1, Math.min(1, rudderIn + av.bias));
     const target = telegraphTarget(e, st);
