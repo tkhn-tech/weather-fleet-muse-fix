@@ -359,7 +359,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.32</div>
+    <div class="ver">v11.33</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -2205,6 +2205,7 @@ function switchShip(idx){
   if(!next || !next.alive || idx === state.playerIdx || !state.running) return;
   const old = fleet[state.playerIdx];
   state.playerIdx = idx;
+  clearFleetWaypoint(); // v11.33: command transfer disengages the waypoint autopilot
   // v11.2: re-derive the slots from where the ships actually are — the
   // formation keeps its current shape and nobody's target jumps (see
   // rederiveSlots). The old swap moved the reference frame 40-65 units
@@ -2395,35 +2396,8 @@ scene.add(sunGlow);
 
 
 
-// ---------- waypoint beacon (procedural: sail to it for bonus score) ----------
-let beacon = null;
-function makeBeacon(x, z){
-  const g = new THREE.Group();
-  // the beam is normal-blended, not additive: an additive gold beam over
-  // the bright Calm sky saturates to white. Normal blending composites gold
-  // over any sky, so the beam reads gold in every stage (v8.1: white in Calm)
-  const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 2.2, 60, 8, 1, true),
-    new THREE.MeshBasicMaterial({color: 0xffc233, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, fog: false}));
-  beam.position.y = 30; g.add(beam);
-  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.8, 60, 8, 1, true),
-    new THREE.MeshBasicMaterial({color: 0xffd166, transparent: true, opacity: 0.65, side: THREE.DoubleSide, depthWrite: false, fog: false}));
-  core.position.y = 30; g.add(core);
-  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(2.2),
-    new THREE.MeshStandardMaterial({color: 0xffd166, emissive: 0xaa7700, roughness: 0.3, metalness: 0.6}));
-  gem.position.y = 4; g.add(gem);
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({map: softTex, color: 0xffd166, transparent: true, opacity: 0.5, depthWrite: false}));
-  glow.scale.set(16, 16, 1); glow.position.y = 4; g.add(glow);
-  g.position.set(x, 0, z);
-  scene.add(g);
-  return {x, z, group: g, gem, ph: Math.random() * 6.28};
-}
-function placeBeacon(){
-  if(beacon){ scene.remove(beacon.group); beacon = null; }
-  const f = flagship() || fleet[0];
-  const dist = 260 + Math.random() * 160;
-  const bearing = f.heading + (Math.random() - 0.5) * 1.6;
-  beacon = makeBeacon(f.x + Math.sin(bearing) * dist, f.z - Math.cos(bearing) * dist);
-}
+// v11.33: the auto-spawned waypoint beacon is removed (Item 3) — the
+// minimap waypoint the player sets is the only waypoint now.
 
 // ---------- game state ----------
 const state = {
@@ -2785,6 +2759,7 @@ function reset(){
   state.rudder = 0; state.orbitDrag = false; state.speedLoss = 1; state.kickT = 99; state.prevRudder = 0; // v11.6: dragSteer is gone (the drag orbits the camera)
   state.camHeading = 0; state.camBank = 0; state.headingRate = 0; state.camZfSm = 0;
   state.playerIdx = 0;
+  clearFleetWaypoint(); state.steadyT = 0; // v11.33: no waypoint or steady time carries into a new round
   clearWorld();
   fleet.forEach(s => {
     s.hp = s.maxHp; s.alive = true; s.sinkT = 0;
@@ -2813,7 +2788,6 @@ function reset(){
   });
   ampCur = settings.wave;
   applyStage(state.stage);
-  placeBeacon();
   spawnEnemies(); // v11.15: the enemy fleet (if enabled) sails in with the round
   // v11.25: the air wing + air defense + tactical camera reset with the round.
   if(airWing) airWing.reset();
@@ -2897,6 +2871,39 @@ let tacticalRadar = null; // TacticalRadarHUD (airwing_b.js)
 let airCam = null;        // TacticalCameraSystem (airwing_c.js)
 let airTarget = null;  // radar-designated enemy (the air wing's target)
 let airWaypoint = null; // radar-designated waypoint {x, z} (next flight stages through it)
+// v11.33: MINIMAP WAYPOINT AUTOPILOT (Item 2) — tap the minimap on open
+// ocean and the fleet sails itself there. fleetWaypoint is {x, z} or null;
+// the autopilot steers the flagship with a proportional rudder and the
+// escorts follow in formation. Manual rudder input cancels it at once.
+let fleetWaypoint = null;
+let wpMarker = null; // the 3D waypoint marker (gold ring + gem), created lazily
+function wpMarkerGroup(){
+  if(wpMarker) return wpMarker;
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(5, 0.5, 8, 24),
+    new THREE.MeshBasicMaterial({color: 0xffd166, transparent: true, opacity: 0.9, fog: false}));
+  ring.rotation.x = Math.PI / 2; g.add(ring);
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(2),
+    new THREE.MeshStandardMaterial({color: 0xffd166, emissive: 0xaa7700, roughness: 0.3, metalness: 0.6}));
+  gem.position.y = 5; g.add(gem);
+  g.visible = false;
+  scene.add(g);
+  wpMarker = g;
+  return g;
+}
+function setFleetWaypoint(x, z){
+  fleetWaypoint = {x, z};
+  const g = wpMarkerGroup();
+  g.position.set(x, 0, z);
+  g.visible = true;
+  const f = flagship();
+  if(f && f.telegraph === 5) setTelegraph(2); // ALL STOP -> STANDARD, so the fleet actually moves
+  toast('📍 Waypoint set — autopilot engaged', 'the fleet will steer itself there; steer manually to take over');
+}
+function clearFleetWaypoint(){
+  fleetWaypoint = null;
+  if(wpMarker) wpMarker.visible = false;
+}
 // v11.28: FINITE carrier air wing — the carrier carries 12 Super Hornets in
 // total (losses are permanent). airWingRemaining counts the aircraft not yet
 // lost (alive, on deck or airborne). A launch takes up to 2 (a full flight)
@@ -2942,17 +2949,6 @@ function drawMinimap(){
     ctx.fillStyle = col;
     ctx.beginPath(); ctx.arc(pp[0], pp[1], r, 0, 6.29); ctx.fill();
   };
-  if(beacon){
-    const pp = px(beacon.x, beacon.z);
-    if(pp[0] > -6 && pp[0] < W + 6 && pp[1] > -6 && pp[1] < H + 6){
-      ctx.fillStyle = '#ffd166';
-      const r = 4 + Math.sin(state.t * 4) * 1.2;
-      ctx.beginPath();
-      ctx.moveTo(pp[0], pp[1] - r); ctx.lineTo(pp[0] + r * 0.7, pp[1]);
-      ctx.lineTo(pp[0], pp[1] + r); ctx.lineTo(pp[0] - r * 0.7, pp[1]);
-      ctx.closePath(); ctx.fill();
-    }
-  }
   // v11.8: the freak wave, a red pulsing dot so the player can see where
   // the wall of water is and turn into it (bow-on) or away.
   if(state.freakWave){
@@ -3200,6 +3196,7 @@ function sinkShip(ship, mode){
     // the slots instead of re-centring on the new flagship (which used to
     // teleport every escort's target and scramble the survivors)
     rederiveSlots(next);
+    clearFleetWaypoint(); // v11.33: command transfer disengages the waypoint autopilot
     next.spoolSpeed = next.motion.forwardSpeed;
     next.telegraph = ship.telegraph;
     syncHelmUI(); syncFleetPanel();
@@ -3487,10 +3484,32 @@ function update(dt){
   let keyRudder = 0;
   if(state.keys['ArrowLeft'] || state.keys['a']) keyRudder -= 1;
   if(state.keys['ArrowRight'] || state.keys['d']) keyRudder += 1;
+  const joyRudder = state.joyActive && Math.abs(state.joyX) > 0.08;
   let rudderTarget = 0;
   if(keyRudder !== 0) rudderTarget = keyRudder * RUDDER_MAX;
-  else if(state.joyActive && Math.abs(state.joyX) > 0.08) rudderTarget = state.joyX * RUDDER_MAX;
+  else if(joyRudder) rudderTarget = state.joyX * RUDDER_MAX;
   // v11.6: the drag-steer is gone (the drag orbits the camera now); keys > joystick is the whole priority.
+  // v11.33: minimap waypoint autopilot (Item 2). Manual rudder input
+  // (keys or joystick) cancels it at once — the user has the helm. While
+  // it is engaged, steer the flagship toward the waypoint with a
+  // proportional rudder (heading error -> rudder, clamped to the ±35 deg
+  // max); the escorts follow the flagship in formation. Within ~30 units
+  // the waypoint is reached and the autopilot disengages.
+  if(fleetWaypoint && (keyRudder !== 0 || joyRudder)){
+    clearFleetWaypoint();
+    toast('🧭 Autopilot off', 'manual helm — tap the minimap to set a new waypoint');
+  } else if(fleetWaypoint){
+    const dx = fleetWaypoint.x - flag.x, dz = fleetWaypoint.z - flag.z;
+    if(Math.hypot(dx, dz) < 30){
+      clearFleetWaypoint();
+      toast('📍 Waypoint reached', 'autopilot off — you have the helm');
+    } else {
+      const toWp = Math.atan2(dx, -dz);
+      let dhWp = toWp - flag.heading;
+      dhWp = ((dhWp + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+      rudderTarget = Math.max(-RUDDER_MAX, Math.min(RUDDER_MAX, dhWp * 180 / Math.PI * 1.5));
+    }
+  }
   flag.rudderTargetDeg = rudderTarget;
   const rs = flag.rudderSlew;
   flag.rudderDeg += Math.max(-rs * dt, Math.min(rs * dt, rudderTarget - flag.rudderDeg));
@@ -3504,23 +3523,24 @@ function update(dt){
   });
   flag.x = fm.x; flag.z = fm.z; flag.heading = fm.heading;
   state.rudder = fm.rudder; state.headingRate = fm.headingRate;
+  // v11.33: flagship-steady detector (Item 4) — the escorts re-form slowly
+  // once the flagship stops correcting. Steady = her heading rate near zero
+  // (below 0.01 rad/s — the camera already treats 0.06 as turning) AND her
+  // rudder centred (below 2 deg), sustained for 3 s. While she is turning
+  // or the rudder is held, she is not steady and the escorts just follow.
+  const flagSteady = Math.abs(state.headingRate) < 0.01 && Math.abs(flag.rudderDeg) < 2;
+  state.steadyT = flagSteady ? (state.steadyT || 0) + dt : 0;
   state.speed = fm.forwardSpeed;
   // course-over-ground: where the ship is actually going — heading plus the
   // lateral drift in a turn and the current, so HDG and COG differ in a turn
   const vx = fm.vx + state.curX, vz = fm.vz + state.curZ;
   state.cog = (Math.atan2(vx, -vz) * 180 / Math.PI + 360) % 360;
-  // waypoint beacon: bob, spin, and pay out when the fleet reaches it
-  if(beacon){
-    beacon.gem.position.y = 4 + Math.sin(state.t * 2 + beacon.ph) * 0.8;
-    beacon.gem.rotation.y = state.t * 1.2;
-    beacon.group.position.y = waveHeight(beacon.x, beacon.z, state.t) * 0.5;
-    if(Math.hypot(flag.x - beacon.x, flag.z - beacon.z) < 25){
-      state.score += 500;
-      blip(1320, 0.3, 'sine', 0.12); blip(1760, 0.4, 'sine', 0.1);
-      burst(beacon.x, 4, beacon.z, 30, [1, 0.85, 0.4], 6, 4);
-      toast('📍 WAYPOINT REACHED', '+500 — a new beacon is charted ahead');
-      placeBeacon();
-    }
+  // v11.33: the user waypoint marker (Item 2) bobs on the swell and spins
+  // slowly. The auto-spawned beacon (Item 3) is gone — the minimap
+  // waypoint is the only waypoint now (no +500, no re-charting).
+  if(fleetWaypoint && wpMarker && wpMarker.visible){
+    wpMarker.position.y = waveHeight(fleetWaypoint.x, fleetWaypoint.z, state.t) * 0.5 + 3;
+    wpMarker.rotation.y = state.t * 0.8;
   }
 
   // escorts hold formation with Reynolds Arrive + whisker obstacle avoidance.
@@ -3624,6 +3644,15 @@ function update(dt){
     // does not bleed the speed off fast enough at 2x scale). Inside 25 units
     // of the slot, cap the desired speed so the escort creeps on instead.
     if(distToSlot < 25) desSpeed = Math.min(desSpeed, 5);
+    // v11.33: reform mode (Item 4) — once the flagship has held a steady
+    // course for ~3 s, an escort out of her slot glides back gently instead
+    // of racing to it: approach speed capped at 7 u/s (about half the normal
+    // catch-up speed) and the rudder softened, so she eases into her slot.
+    // While the flagship is manoeuvring there is no reform cap — the escort
+    // just follows. Separation, the traffic cap, near-slot damping and the
+    // whiskers all still apply on top of it.
+    const reforming = state.steadyT >= 3 && distToSlot > 25;
+    if(reforming) desSpeed = Math.min(desSpeed, 7);
     // v11.15: Nicholas's formation rule — the escort takes its bearing
     // from the heading the controlled ship ends up facing (flag.heading)
     // and independently corrects its own course to match it. The only
@@ -3652,6 +3681,7 @@ function update(dt){
     // oscillate across it — a hard rudder at close range is what walks an
     // escort into her neighbour.
     if(distToSlot < 25) rudderIn *= 0.7;
+    if(reforming) rudderIn *= 0.7; // v11.33: reform — a gentle rudder on the way back to the slot
     // v10.11: avoidance overhaul. The v10.7/v10.10 checks showed escorts
     // angled ~45 deg at spawn and motoring into each other at rest: every
     // escort's whiskers constantly tripped on its neighbours' avoid circles
@@ -4814,28 +4844,54 @@ function spawnEnemies(){
   // v11.18: spawn ahead of the fleet (so they are met head-on), at the
   // chosen starting proximity, facing back toward the flagship; the
   // formation offsets use the player slot frame (dx = starboard, dz = astern).
-  // All three distances grew (Nicholas: the enemy fleet should start
-  // generally further away). Close 250 is just outside the enemy destroyer
-  // gun range (220) — still "close" but not instantly under fire; Medium 450
-  // is well outside gun range (a clear approach); Far 1500 is far beyond the
-  // minimap's 500-unit range, so the enemy appears clamped to the minimap
-  // edge and sails in — a long approach before contact (v11.31).
-  const proxDist = {close: 250, medium: 450, far: 1500}[settings.enemyProx] || 450;
+  // v11.33: the distance is the GAP from the edge of the player fleet to
+  // the nearest enemy hull — not flagship-to-formation-centre. The fleet's
+  // edge is the furthest hull point of any alive player ship in the spawn
+  // direction (bounding-box half-extent along it); the nearest enemy hull
+  // point is the formation's closest bow. Close 250 is just outside the
+  // enemy destroyer gun range (220) — still "close" but not instantly under
+  // fire; Medium 450 is well outside gun range (a clear approach); Far 2500
+  // is far beyond the minimap's 500-unit range, so the enemy appears clamped
+  // to the minimap edge and sails in — a long approach before contact.
+  // All three numbers are the same gap.
+  const gapDist = {close: 250, medium: 450, far: 2500}[settings.enemyProx] || 450;
   const brg = flag.heading + (Math.random() - 0.5) * 0.8;
-  const cx = flag.x + Math.sin(brg) * proxDist;
-  const cz = flag.z - Math.cos(brg) * proxDist;
-  const fh = brg + Math.PI;
-  const c = Math.cos(fh), sn = Math.sin(fh);
-  const perType = {dd: 0, cl: 0, bb: 0}; // per-type label numbers (Destroyer 1, Light Cruiser 1, ...)
-  for(let i = 0; i < list.length; i++){
-    const k = list[i];
-    const cls = ENEMY_CLASS[k];
+  const ux = Math.sin(brg), uz = -Math.cos(brg); // spawn direction (flagship -> enemy)
+  // the fleet's edge in the spawn direction: furthest hull point of any
+  // alive player ship, measured from the flagship along (ux, uz)
+  let fleetEdge = 0;
+  fleet.forEach(s => {
+    if(!s.alive) return;
+    const fx = Math.sin(s.heading), fz = -Math.cos(s.heading);
+    const cr = fx * ux + fz * uz; // cos of the ship's heading vs the spawn direction
+    const half = Math.abs(cr) * s.group.userData.len / 2 + Math.sqrt(Math.max(0, 1 - cr * cr)) * s.group.userData.wid / 2;
+    fleetEdge = Math.max(fleetEdge, (s.x - flag.x) * ux + (s.z - flag.z) * uz + half);
+  });
+  // the formation offsets (computed once, reused by the spawn loop below)
+  const offs = list.map((k, i) => {
     let ox = 0, oz = 0;
     if(form === 'line'){ ox = 0; oz = i * 150; } // line ahead, each astern of the leader (v11.27: 60 -> 150 — the 2x ships, incl. the 140-long BB, need room)
     else if(form === 'echelon'){ ox = i * 110; oz = i * 110; } // diagonal, stepping to starboard and astern (v11.27: 45 -> 110)
     else { ox = (i - (list.length - 1) / 2) * 200; oz = Math.abs(i - (list.length - 1) / 2) * 55; } // flanking wolfpack: a shallow arc across the front (v11.27: 90/25 -> 200/55)
-    const x = cx + ox * c - oz * sn;
-    const z = cz + ox * sn + oz * c;
+    return {k, ox, oz, len: MODEL_SPEC[ENEMY_CLASS[k].type].len};
+  });
+  // the nearest enemy hull point beyond the formation reference point: the
+  // enemy faces the player, so her along-track offset from the reference
+  // point is just her astern offset oz, and her bow reaches len/2 toward
+  // the player. The minimum over the formation (negative = protrudes toward
+  // the player past the reference point).
+  const nearestExcess = Math.min(...offs.map(o => o.oz - o.len / 2));
+  const proxDist = gapDist + fleetEdge - nearestExcess;
+  const cx = flag.x + ux * proxDist;
+  const cz = flag.z + uz * proxDist;
+  const fh = brg + Math.PI;
+  const c = Math.cos(fh), sn = Math.sin(fh);
+  const perType = {dd: 0, cl: 0, bb: 0}; // per-type label numbers (Destroyer 1, Light Cruiser 1, ...)
+  for(let i = 0; i < offs.length; i++){
+    const k = offs[i].k;
+    const cls = ENEMY_CLASS[k];
+    const x = cx + offs[i].ox * c - offs[i].oz * sn;
+    const z = cz + offs[i].ox * sn + offs[i].oz * c;
     enemies.push(makeEnemy(cls, perType[k]++, x, z, fh));
   }
   if(enemies.length){
@@ -6696,11 +6752,16 @@ class TacticalRadarHUD {
     return {x: f.x + dx / sc, z: f.z + dy / sc};
   }
   // Radar click: an enemy contact designates the air wing's target; open
-  // ocean sets a waypoint the next flight stages through.
+  // ocean sets a waypoint the next flight stages through AND (v11.33) the
+  // fleet autopilot waypoint — one tap, one point: the fleet sails there
+  // and the next flight stages through it.
   onRadarClick(mx, my){
     const f = flagship() || fleet[0];
     if(!f) return;
-    const C = miniCv.width / 2, range = 400, sc = C / range;
+    // v11.33: the range is 500, matching drawMinimap (v11.25 used 400, so
+    // the air waypoint landed 25% further out than the tap — and enemy
+    // clicks could miss the diamond as drawn).
+    const C = miniCv.width / 2, range = 500, sc = C / range;
     let best = null, bd = 12; // px — a contact is a generous click target
     for(const e of enemies){
       if(e.sinkT >= 1) continue;
@@ -6713,8 +6774,9 @@ class TacticalRadarHUD {
       toast('🎯 Target designated', (best.label || best.name) + ' — the next flight will strike her');
       return;
     }
-    airWaypoint = this.canvasToWorld(mx, my, f, C, sc);
-    toast('📍 Waypoint set', 'the next flight will stage through this point');
+    const wp = this.canvasToWorld(mx, my, f, C, sc);
+    airWaypoint = wp;
+    setFleetWaypoint(wp.x, wp.z);
   }
   // The tactical layers, drawn by drawMinimap after the restore (so they
   // sit in true-north canvas space even when the radar is heading-up).
@@ -6754,6 +6816,16 @@ class TacticalRadarHUD {
       ctx.moveTo(p[0], p[1] - r); ctx.lineTo(p[0] + r, p[1]);
       ctx.lineTo(p[0], p[1] + r); ctx.lineTo(p[0] - r, p[1]);
       ctx.closePath(); ctx.fill();
+    }
+    // --- v11.33: the fleet waypoint (Item 2) — a gold ring round a dot,
+    //     distinct from the air wing's gold diamond (both can sit on the
+    //     same point: one tap sets both).
+    if(fleetWaypoint){
+      const p = this.toPx(f, C, sc, fleetWaypoint.x, fleetWaypoint.z);
+      ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(p[0], p[1], 8, 0, 6.29); ctx.stroke();
+      ctx.fillStyle = '#ffd166';
+      ctx.beginPath(); ctx.arc(p[0], p[1], 2.5, 0, 6.29); ctx.fill();
     }
     // --- airborne squadrons: air chevrons, coloured by mission state,
     //     with ordnance dots (2 = full, 1 = one left, 0 = empty) ---
