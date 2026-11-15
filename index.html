@@ -70,6 +70,7 @@
     padding:8px;backdrop-filter:blur(6px)}
   #fleetPanel .fleetHead{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#9db8cc;
     font-weight:800;text-align:center;margin-bottom:6px}
+  .formTgl{width:100%;background:rgba(255,209,102,.14);border:1px solid rgba(255,209,102,.5);color:#ffd166;border-radius:8px;padding:4px 0;font-size:10px;font-weight:800;margin-bottom:6px}
   .fleetRow{display:flex;align-items:center;gap:6px;width:100%;background:transparent;border:1px solid transparent;
     color:#cfe2ef;border-radius:8px;padding:5px 6px;font-size:11.5px;font-weight:700;cursor:pointer;text-align:left}
   .fleetRow .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -359,7 +360,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.33</div>
+    <div class="ver">v11.34</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -371,7 +372,7 @@
   <div class="card">
     <h2>Controls</h2>
     <p class="keys">Rudder: joystick (left/right) or ← → / A D — release to return to midships &nbsp;·&nbsp; Telegraph: W / S or ↑ ↓, click the panel, or keys 1–8 &nbsp;·&nbsp; Command: Tab or the fleet panel &nbsp;·&nbsp; Pause: P<br>
-      Drag / swipe the sea: orbit the camera round the fleet &nbsp;·&nbsp; Wheel / pinch: zoom &nbsp;·&nbsp; Right-drag: free look &nbsp;·&nbsp; ↺ (or R) resets the camera &nbsp;·&nbsp; U: dive below the surface &nbsp;·&nbsp; Click a sinking ship's row to watch her go down &nbsp;·&nbsp; Air Ops: the panel launches flights &nbsp;·&nbsp; C: follow a jet / weapon &nbsp;·&nbsp; N: radar north-up / heading-up &nbsp;·&nbsp; Esc: back to the fleet</p>
+      Drag / swipe the sea: orbit the camera round the fleet &nbsp;·&nbsp; Wheel / pinch / + / -: zoom &nbsp;·&nbsp; Right-drag: free look &nbsp;·&nbsp; ↺ (or R) resets the camera &nbsp;·&nbsp; U: dive below the surface &nbsp;·&nbsp; Click a sinking ship's row to watch her go down &nbsp;·&nbsp; Air Ops: the panel launches flights &nbsp;·&nbsp; C: follow a jet / weapon &nbsp;·&nbsp; N: radar north-up / heading-up &nbsp;·&nbsp; Esc: back to the fleet</p>
     <button class="bigBtn" id="helpCloseBtn">Done</button>
   </div>
 </div>
@@ -660,6 +661,7 @@ const settings = {
   enemySkill: savedSettings.enemySkill ?? 'veteran',
   enemyProx: savedSettings.enemyProx ?? 'medium', // v11.16: starting proximity of the enemy fleet (close/medium/far)
   fleetSel: (Array.isArray(savedSettings.fleetSel) ? savedSettings.fleetSel : null) ?? ['carrier', 'bb1', 'bb2', 'dd1', 'dd2', 'dd3', 'dd4'],
+  formation: savedSettings.formation ?? 'C',
   camZoom: Math.max(0.35, Math.min(2.5, savedSettings.camZoom ?? 1)),
   camPanX: Math.max(-30, Math.min(30, savedSettings.camPanX ?? 0)),
   camPanY: Math.max(-12, Math.min(18, savedSettings.camPanY ?? 0)),
@@ -769,7 +771,7 @@ const G_GAME = 9.81 / GAME_M;
 // One place for the physics the wave-riding, collisions and sinking share:
 // the same 6-DoF rigid-body state, the same hull nodes, the same impulses.
 const PHYSICS = {
-  restitution: 0.10,       // inelastic collisions: 0.05–0.15 (ships do not bounce)
+  restitution: 0,          // v11.34: fully inelastic, no bounce
   blastImpulseScale: 1.0,  // scales the inverse-square blast impulse
   blastRadius: 40,         // blast impulse falls off over this distance
   floodRate: 0.02,         // base flood rate for a breached compartment
@@ -991,7 +993,7 @@ function shipInteractions(dt){
         const along = ox * ffx + oz * ffz;
         const across = ox * rfx + oz * rfz;
         if(along > 0 && Math.abs(across) < 25){
-          const acc = 0.5 * (spd / 14) * prox;
+          const acc = 0.3 * (spd / 14) * prox; // v11.34: softer bow-wave shove
           const sgn = across >= 0 ? 1 : -1;
           other.motion.vx += rfx * sgn * acc * dt;
           other.motion.vz += rfz * sgn * acc * dt;
@@ -1016,7 +1018,7 @@ function shipInteractions(dt){
 // vertex grid so the wave field stays fixed in world space, not glued to the ship
 const OCEAN_STEP = 8;
 function makeRadialOcean(){
-  const RINGS = [12, 24, 48, 96, 144, 192, 288, 384, 512, 850];
+  const RINGS = [12, 24, 48, 96, 144, 192, 288, 384, 512, 850, 1200, 1700, 2400, 3000];
   const SPOKES = 64;
   const pos = [0, 0, 0];
   for(const R of RINGS){
@@ -1409,7 +1411,7 @@ const freakCrestGeo = new THREE.PlaneGeometry(2000, 24, 64, 6);
 // crest shades like the sea — sun highlight on the face, the curl in
 // shade — instead of a flat coloured card. Roughness 0.25 (smooth,
 // like water), metalness 0.
-const freakCrestMat = new THREE.MeshStandardMaterial({vertexColors: true, transparent: true, opacity: 0.92, side: THREE.DoubleSide, roughness: 0.25, metalness: 0, fog: true});
+const freakCrestMat = new THREE.MeshStandardMaterial({vertexColors: true, transparent: false, opacity: 1, side: THREE.DoubleSide, roughness: 0.25, metalness: 0, fog: true});
 const freakCrest = new THREE.Mesh(freakCrestGeo, freakCrestMat);
 freakCrest.visible = false;
 scene.add(freakCrest);
@@ -1423,7 +1425,7 @@ function updateFreakCrest(){
   // the wave's travel direction, so the fleet sees the breaking face
   // coming at it. v11.12: the wall is 2000 wide, so it spans the whole
   // sea — there is no end to sail around.
-  freakCrest.position.set(fw.x, 12, fw.z);
+  freakCrest.position.set(fw.x, 10, fw.z);
   freakCrest.rotation.y = Math.atan2(fw.dirX, fw.dirZ);
 }
 // sea colours, set per stage: troughs dark, crests pale, foam a grey-white
@@ -1923,7 +1925,7 @@ class ShipMotion {
     // v11.0: going astern the rudder is on the propeller's suction side —
     // nearly useless, and its effect reverses (reversed flow over the blade).
     const astern = this.forwardSpeed < -0.5;
-    const targetRate = this.rudder * turnRate * (astern ? -0.25 : 1);
+    const targetRate = (astern && Math.abs(this.rudder) < 0.05) ? 0 : this.rudder * turnRate * (astern ? -0.25 : 1);
     const rateK = Math.abs(this.rudder) < 0.05 ? 10 : 4;
     this.headingRate += (targetRate - this.headingRate) * (1 - Math.exp(-dt * rateK));
     this.heading += this.headingRate * dt;
@@ -2088,6 +2090,8 @@ const roster = [
 // restored by reset() when she is picked again.
 const fleet = [];
 const FLEET_KEYS = ['carrier', 'bb1', 'bb2', 'dd1', 'dd2', 'dd3', 'dd4'];
+const FORM={C:{carrier:[0,0],bb1:[-140,-155],bb2:[140,-155],dd1:[-240,-310],dd2:[240,-310],dd3:[-240,-70],dd4:[240,-70]},A:{carrier:[0,0],bb1:[-400,-200],bb2:[-400,-400],dd1:[-350,50],dd2:[-150,150],dd3:[-450,200],dd4:[-250,250]}};
+function applyForm(m){const f=FORM[m]||FORM.C;fleet.forEach(s=>{const p=f[s.key];if(p){s.dx=p[0];s.dz=p[1];s.slotDx0=p[0];s.slotDz0=p[1];}});}
 function applyFleetSelection(){
   const sel = (settings.fleetSel && settings.fleetSel.length ? settings.fleetSel : FLEET_KEYS).filter(k => FLEET_KEYS.includes(k));
   const use = sel.length ? sel : FLEET_KEYS;
@@ -2676,6 +2680,8 @@ window.addEventListener('keydown', e => {
   if(e.key === 'Tab'){ e.preventDefault(); cycleShip(1); }
   if(e.key === 'p' || e.key === 'P') togglePause();
   if(e.key === 'r' || e.key === 'R') resetCamera();
+  if(e.key === '+' || e.key === '='){ state.camZoom = Math.max(0.35, Math.min(2.5, state.camZoom / 1.1)); saveCamera(); }
+  if(e.key === '-'){ state.camZoom = Math.max(0.35, Math.min(2.5, state.camZoom * 1.1)); saveCamera(); }
   if(e.key === 'u' || e.key === 'U'){ if(airCam) airCam.cancel(); toggleDiveCam(); } // v11.25: diving ends a tactical follow track
   // v11.25: air wing keys — N toggles the radar north-up / heading-up,
   // C cycles the tactical follow camera (jet -> ordnance -> off),
@@ -3043,7 +3049,7 @@ function shipCode(s){ return s.name.indexOf('Carrier') === 0 ? 'CV' : s.name.ind
 function buildFleetPanel(){
   const el = $('fleetPanel');
   if(!el) return;
-  el.innerHTML = '<div class="fleetHead">⚓ Fleet — command</div>' + fleet.map((s, i) =>
+  el.innerHTML = '<div class="fleetHead">⚓ Fleet — command</div><button class="formTgl" id="formTgl">' + (settings.formation === 'A' ? 'ATTACK' : 'CRUISING') + '</button>' + fleet.map((s, i) =>
     '<button class="fleetRow" data-i="' + i + '"><span class="fic">' + shipIcon(s) + '</span><span class="fcode">' + shipCode(s) + '</span><span class="nm">' + s.name + '</span><span class="fbar"><i></i></span><span class="hp"></span></button>'
   ).join('');
   el.querySelectorAll('.fleetRow').forEach(b => {
@@ -3064,6 +3070,7 @@ function buildFleetPanel(){
       switchShip(idx);
     });
   });
+  const ft=$('formTgl');if(ft)ft.onclick=()=>{settings.formation=settings.formation==='A'?'C':'A';applyForm(settings.formation);ft.textContent=settings.formation==='A'?'ATTACK':'CRUISING';saveCamera();};
 }
 function syncFleetPanel(){
   const el = $('fleetPanel');
@@ -3080,7 +3087,7 @@ function syncFleetPanel(){
     const ic = b.querySelector('.fic'); if(ic) ic.textContent = state.camFollowShip === s ? '🎥' : (!s.alive && s.sinkT < 1) ? '💥' : shipIcon(s); // v11.30: mobile status icon
   });
 }
-applyFleetSelection();
+applyFleetSelection(); applyForm(settings.formation);
 buildFleetPanel();
 updateHud(); // v11.5: the HUD behind the start overlay shows the picked fleet (was x7 until the round started)
 
@@ -3703,6 +3710,7 @@ function update(dt){
     // a crawl instead of motoring into the ship ahead of it.
     const av = distToSlot < 12 ? { bias: 0, blocked: false } : m.avoid(obstacles, 34);
     rudderIn = Math.max(-1, Math.min(1, rudderIn + av.bias));
+    if(m.forwardSpeed < -0.5) rudderIn = -rudderIn; // v11.34: astern — rudder reverses, negate the correction
     // v10.8: holding station replaces the v10.4 dead-zone. The old 4-unit
     // dead-zone let resting escorts wander off on the current and swell
     // with the motor cut; now a resting escort actively holds its slot
@@ -3841,7 +3849,7 @@ function update(dt){
       // v10.8: full separation — the soft-repulsion zone above means
       // overlapping hulls are already a real hit, so separate them
       // completely instead of leaving 20% interpenetrated.
-      const push = hit.depth;
+      const push = hit.depth * 0.5; // v11.34: half per frame, no one-frame fling
       a.x -= hit.nx * push * (invMa / invSum);
       a.z -= hit.nz * push * (invMa / invSum);
       b.x += hit.nx * push * (invMb / invSum);
@@ -3975,7 +3983,7 @@ function update(dt){
       // positional correction — separate completely, the wreck shoved by her
       // real mass share (her x/z are static while sinking, so this is the
       // visible shove).
-      const push = hit.depth;
+      const push = hit.depth * 0.5; // v11.34: half per frame, no one-frame fling
       e.x -= hit.nx * push * (invMe / invSum);
       e.z -= hit.nz * push * (invMe / invSum);
       w.x += hit.nx * push * (invMw / invSum);
@@ -4230,6 +4238,7 @@ function update(dt){
             // v11.10: sinkShip first, then the toast — the v11.9 check
             // never saw the "FREAK WAVE" toast because sinkShip's own
             // "IS GOING DOWN" toast overwrote it (it was called after).
+            s.floodSide = Math.sign(fz * fw.dirX - fx * fw.dirZ) || 1; // v11.34: roll away from the wave side
             sinkShip(s, 'capsize');
             toast('💥 FREAK WAVE', s.name + ' took it beam-on and rolled over!');
           } else {
@@ -4654,7 +4663,7 @@ function updateCamera(dt){
     // so the camera must pull back about twice as far to fit the fleet.
     // v11.31: 7.0 — the slots are 1.4x wider again (formation ~480 x 310),
     // so the cap rises in proportion.
-    const fitCap = state.camZoom < 1 ? camZ : camZ * 7.0;
+    const fitCap = state.camZoom < 1 ? camZ : camZ * 9.0;
     if(fitD >= fitCap){ fitD = fitCap; break; }
   }
   // smooth the fit distance: snap out instantly when the fleet needs room,
@@ -4678,11 +4687,10 @@ function updateCamera(dt){
   // attract camera never dives.
   if(state.diveBlend > 0.001 && (state.running || state.over)){
     const b = state.diveBlend;
-    // v11.27: the dive distance scales with the flagship's length — the
-    // carrier is now 174 (was 87), so a fixed 28 would put the camera
-    // inside her hull. 0.32x len (28/87) normally, 0.25x when watching
-    // a sinking ship (was 22).
-    const diveDist = (state.camFollowShip ? 0.25 : 0.32) * (flag.group.userData.len || 87) * state.camZoom;
+    // v11.27: dive distance scales with flagship length. v11.34: rebased
+    // clear of the stern (0.66x len, 0.6x on a sinking ship) and clamped
+    // so zoom moves it without entering the hull.
+    const diveLen = flag.group.userData.len || 87, diveDist = Math.max(diveLen / 2 + 10, Math.min(diveLen / 2 + 60, (state.camFollowShip ? 0.6 : 0.66) * diveLen * state.camZoom));
     const seaH = getOceanDataAt(flag.x, flag.z, state.t).height;
     const diveY = seaH - 5;
     const dtx = flag.x - ohx * diveDist;
@@ -5461,7 +5469,6 @@ class FighterJetEntity {
     this.crashLocal = null; // v11.28: deck-local impact point (carrier crash)
     this.fired = false; // ordnance released this attack run
     this.attackPhase = ''; // bomb run sub-state: popup | dive | drop | pullout
-    this.glowMat = null; // afterburner glow sprite
   }
   // Build (or rebuild) the 3D model. Uses the Super Hornet GLB; if it failed
   // to load, falls back to a simple procedural jet so the air wing still works.
@@ -5485,12 +5492,6 @@ class FighterJetEntity {
       const fin2 = fin.clone(); fin2.position.x = -1.5; fin2.rotation.z = 0.4; g.add(fin2);
       g.userData.len = 19; g.userData.wid = 13;
     }
-    // Afterburner glow: a small additive sprite at the tail (lit on launch / attack).
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({color: 0xff8833, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false}));
-    glow.scale.set(3, 3, 1);
-    glow.position.set(0, 0, 9.5); // behind the tail (local +z is aft after the flip)
-    g.add(glow);
-    this.glowMat = glow.material;
     this.group = g;
     scene.add(g);
   }
@@ -5537,7 +5538,6 @@ class FighterJetEntity {
           0.8, 3 + Math.random() * 2, 3, 0.5, 0xffffff, 0.5);
       }
     }
-    if(this.glowMat) this.glowMat.opacity = 0.9; // afterburner lit
     // Off the bow: pitch up and transition to flight.
     if(along >= trackLen || this.t >= 2.5){
       this.state = 'climb';
@@ -5566,7 +5566,6 @@ class FighterJetEntity {
     this.spinT = 0;
     this.sinkT = 0; this.bubT = 0;
     this.vy = Math.min(this.vy, -5);
-    if(this.glowMat) this.glowMat.opacity = 0;
     this.loseAircraft(); // v11.28: a lost aircraft is permanently gone
     toast('💥 Jet down', reason || 'a Super Hornet was shot down');
   }
@@ -5707,7 +5706,6 @@ class FighterJetEntity {
       // tumble, the water impact and the sinking).
       this.state = 'crashed'; this.spinT = 0;
       this.vy = Math.min(this.vy, -2);
-      if(this.glowMat) this.glowMat.opacity = 0;
     }
     this.syncModel();
   }
@@ -5735,7 +5733,6 @@ class FighterJetEntity {
       sm.vy = 4;
     }
     if(airCam) airCam.noteDetonation(this.x, this.y, this.z);
-    if(this.glowMat) this.glowMat.opacity = 0;
     toast('💥 Jet crashed into the carrier', 'a Super Hornet hit the sinking deck and exploded');
   }
   // The wreck rides the carrier down (anchored to the deck at the impact
@@ -5789,7 +5786,6 @@ class FighterJetEntity {
         this.heading = carrier.heading;
         this.pitch = carrier.pitchSm || 0; this.roll = carrier.rollSm || 0;
       }
-      if(this.glowMat) this.glowMat.opacity = 0;
       this.syncModel();
       return;
     }
@@ -5800,7 +5796,6 @@ class FighterJetEntity {
     steerJetTo(this, ap.x, ap.y, ap.z, 40, spd, dt);
     // Afterburner + wingtip condensation trails in fast flight.
     const fast = this.speed > 45;
-    if(this.glowMat) this.glowMat.opacity = fast ? 0.55 : 0.12;
     this.trailT -= dt;
     if(this.trailT <= 0 && this.speed > 30){
       this.trailT = 0.09;
@@ -6294,7 +6289,7 @@ class AirSquadron {
       }
       case 'trap': {
         // Arrested landing: follow the moving glide slope down to the wire.
-        const wp = carrierDeckPoint(carrier, WIRE_POS.x, CARRIER_DECK_Y + 2, WIRE_POS.z);
+        const wp = carrierDeckPoint(carrier, WIRE_POS.x, CARRIER_DECK_Y + 0.5, WIRE_POS.z);
         const gp = glideSlopePoint(carrier, 60, 18);
         // Blend from the glide-slope point to the wire as we close.
         const dW = Math.hypot(wp.x - leader.x, wp.z - leader.z);
@@ -6591,7 +6586,6 @@ class SamMissile {
     } else if(tgt && tgt.splash){ // an ASM — intercepted, splashes as a geyser
       tgt.splash();
     } else if(tgt && tgt.remove){ // a bomb — destroyed in the air
-      spawnSprite(this.x, this.y, this.z, 0.5, 5, 5, 0.8, 0xffffff, 0.6);
       tgt.remove();
     }
     if(airCam) airCam.noteDetonation(this.x, this.y, this.z, 'sam');
