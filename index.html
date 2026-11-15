@@ -77,6 +77,7 @@
   .fleetRow.on{background:rgba(255,209,102,.16);border-color:rgba(255,209,102,.6);color:#ffd166}
   .fleetRow.watch{border-color:rgba(120,200,255,.7);color:#9fd4e8} /* v11.15: the sinking ship the camera is following */
   .fleetRow.sunk{opacity:.35;cursor:default}
+  .fleetRow .fic,.fleetRow .fcode,.fleetRow .fbar{display:none} /* v11.30: mobile-only visual fleet elements — hidden on desktop */
   /* v11.16: the enemy roster panel is gone — enemies are tracked on the minimap (red diamonds + health bars) instead of in a list. */
   /* v11.20: no tall desktop telegraph any more — the compact 2-column panel
      (above) is used on PC and mobile alike, so it can never reach up toward
@@ -226,6 +227,37 @@
     .seaBox{margin-top:12px;padding:10px 12px}
     .bigBtn{padding:12px 28px;font-size:15px}
   }
+  /* v11.30: MOBILE phone UI only (max-width:820px) — small banners, visual
+     fleet/telegraph/Air Ops. Desktop untouched. Design language kept. */
+  @media (max-width:820px){
+    #stageToast{top:24%;max-width:82vw;background:rgba(6,18,30,.8);border:1px solid rgba(140,190,230,.4);border-radius:999px;padding:6px 14px;backdrop-filter:blur(6px)}
+    #stageToast.big{top:24%;border-color:rgba(255,209,102,.7)}
+    #stageToast h2{font-size:13px;letter-spacing:.08em}
+    #stageToast.big h2{font-size:15px}
+    #stageToast p{font-size:10px;margin-top:1px}
+    #stageToast.big p{font-size:11px}
+    #fleetPanel{width:100px;left:8px;top:calc(56px + env(safe-area-inset-top));padding:5px}
+    #fleetPanel .fleetHead{display:none}
+    .fleetRow{padding:3px 4px;gap:4px}
+    .fleetRow .nm,.fleetRow .hp{display:none}
+    .fleetRow .fic{display:inline;font-size:12px}
+    .fleetRow .fcode{display:inline;font-size:10px;font-weight:800;color:#e8f1f8;min-width:24px}
+    .fleetRow .fbar{display:block;flex:1;height:5px;background:rgba(255,255,255,.14);border-radius:3px;overflow:hidden}
+    .fleetRow .fbar i{display:block;height:100%;background:#7ed491;border-radius:3px}
+    .fleetRow .fbar i.mid{background:#ffd166}
+    .fleetRow .fbar i.low{background:#ff5a5a}
+    #telegraphPanel{width:112px;right:8px;padding:4px 4px 5px}
+    #telegraphPanel .teleHead{font-size:8.5px}
+    .teleBtn[data-short]{font-size:0;padding:4px 1px}
+    .teleBtn[data-short]::after{content:attr(data-short);font-size:9px;font-weight:700;letter-spacing:.03em}
+    .teleStep button{padding:4px 0;font-size:11px}
+    #teleReadout{font-size:9px}
+    #teleReadout .tLab{display:none}
+    #airOpsPanel{width:132px;right:8px;bottom:calc(170px + env(safe-area-inset-bottom));padding:5px 6px 6px}
+    #airOpsPanel .aoBtn[data-short]{font-size:0;padding:5px 6px}
+    #airOpsPanel .aoBtn[data-short]::after{content:attr(data-short);font-size:10px;font-weight:700}
+    #airOpsPanel .aoStat{font-size:9px;line-height:1.35}
+  }
   .hidden{display:none!important}
 </style>
 <script type="importmap">
@@ -251,17 +283,17 @@
 <div id="telegraphPanel">
   <div class="teleHead">⚙️ Engine Order · <span id="teleShip">Carrier</span></div>
   <div class="teleBtns">
-    <button class="teleBtn" data-i="0">FLANK AHEAD</button>
-    <button class="teleBtn" data-i="1">FULL AHEAD</button>
-    <button class="teleBtn" data-i="2">STANDARD AHEAD</button>
-    <button class="teleBtn" data-i="3">HALF AHEAD</button>
-    <button class="teleBtn" data-i="4">SLOW AHEAD</button>
-    <button class="teleBtn on" data-i="5">ALL STOP</button>
-    <button class="teleBtn astern" data-i="6">HALF ASTERN</button>
-    <button class="teleBtn astern" data-i="7">FULL ASTERN</button>
+    <button class="teleBtn" data-i="0" data-short="FLANK">FLANK AHEAD</button>
+    <button class="teleBtn" data-i="1" data-short="FULL">FULL AHEAD</button>
+    <button class="teleBtn" data-i="2" data-short="STD">STANDARD AHEAD</button>
+    <button class="teleBtn" data-i="3" data-short="HALF">HALF AHEAD</button>
+    <button class="teleBtn" data-i="4" data-short="SLOW">SLOW AHEAD</button>
+    <button class="teleBtn on" data-i="5" data-short="STOP">ALL STOP</button>
+    <button class="teleBtn astern" data-i="6" data-short="HALF ASTN">HALF ASTERN</button>
+    <button class="teleBtn astern" data-i="7" data-short="FULL ASTN">FULL ASTERN</button>
   </div>
   <div class="teleStep"><button id="teleUp" title="Faster (W / ↑)">▲</button><button id="teleDown" title="Slower (S / ↓)">▼</button></div>
-  <div id="teleReadout"><b id="teleOrder">ALL STOP</b><br>target <b id="teleTarget">0</b> kn · actual <b id="teleActual">0</b> kn</div>
+  <div id="teleReadout"><b id="teleOrder">ALL STOP</b><br><span class="tLab">target </span><b id="teleTarget">0</b> kn · <span class="tLab">actual </span><b id="teleActual">0</b> kn</div>
 </div>
 <div id="fleetPanel"></div>
 
@@ -272,10 +304,10 @@
 <!-- v11.25: Air Ops — launch / recall the carrier air wing. -->
 <div id="airOpsPanel">
   <div class="aoHead">✈️ Air Ops <button id="radarModeBtn" title="Toggle radar north-up / heading-up (N)">🧭 N-up</button></div>
-  <button class="aoBtn" id="launchAsmBtn">🚀 Launch Anti-Ship Flight</button>
-  <button class="aoBtn" id="launchBombBtn">💣 Launch Precision Bombing Flight</button>
-  <button class="aoBtn recall" id="recallBtn">↩️ Recall Flights RTB</button>
-  <button class="aoBtn" id="camBtn" title="Follow camera — cycle wingman / weapon / off (C)">🎥 Cam: Off</button>
+  <button class="aoBtn" id="launchAsmBtn" data-short="🚀 Anti-Ship">🚀 Launch Anti-Ship Flight</button>
+  <button class="aoBtn" id="launchBombBtn" data-short="💣 Bombing">💣 Launch Precision Bombing Flight</button>
+  <button class="aoBtn recall" id="recallBtn" data-short="↩️ Recall">↩️ Recall Flights RTB</button>
+  <button class="aoBtn" id="airCamBtn" title="Follow camera — cycle wingman / weapon / off (C)">🎥 Cam: Off</button>
   <div class="aoStat" id="airWingCount">Air Wing: 12 / 12</div>
   <div class="aoStat" id="airOpsStatus">SQN 1: Deck Ready<br>SQN 2: Deck Ready</div>
 </div>
@@ -327,7 +359,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.29</div>
+    <div class="ver">v11.30</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -3007,12 +3039,16 @@ function syncHelmUI(){
   const rd = Math.round(f.rudderDeg);
   $('rudderReadout').textContent = 'RUDDER ' + Math.abs(rd) + '° · ' + (rd < -1 ? 'PORT' : rd > 1 ? 'STBD' : 'MIDSHIPS');
 }
+// v11.30: mobile fleet panel is visual — icon + short code + health bar, so
+// names never truncate. Desktop hides .fic/.fcode/.fbar (base CSS below).
+function shipIcon(s){ return s.name.indexOf('Carrier') === 0 ? '🛳️' : s.name.indexOf('Battleship') === 0 ? '🚢' : '🛥️'; }
+function shipCode(s){ return s.name.indexOf('Carrier') === 0 ? 'CV' : s.name.indexOf('Battleship') === 0 ? 'BB' + s.name.slice(-1) : 'DD' + s.name.slice(-1); }
 // v11.0: fleet command panel — built once, synced every frame
 function buildFleetPanel(){
   const el = $('fleetPanel');
   if(!el) return;
   el.innerHTML = '<div class="fleetHead">⚓ Fleet — command</div>' + fleet.map((s, i) =>
-    '<button class="fleetRow" data-i="' + i + '"><span class="nm">' + s.name + '</span><span class="hp"></span></button>'
+    '<button class="fleetRow" data-i="' + i + '"><span class="fic">' + shipIcon(s) + '</span><span class="fcode">' + shipCode(s) + '</span><span class="nm">' + s.name + '</span><span class="fbar"><i></i></span><span class="hp"></span></button>'
   ).join('');
   el.querySelectorAll('.fleetRow').forEach(b => {
     b.addEventListener('click', () => {
@@ -3042,7 +3078,10 @@ function syncFleetPanel(){
     b.classList.toggle('on', parseInt(b.dataset.i, 10) === state.playerIdx);
     b.classList.toggle('sunk', !s.alive);
     b.classList.toggle('watch', state.camFollowShip === s); // v11.15: the followed sinking ship
-    b.querySelector('.hp').textContent = state.camFollowShip === s ? '🎥 watching' : (!s.alive && s.sinkT < 1) ? '💥 sinking' : Math.max(0, Math.round(s.hp / s.maxHp * 100)) + '%';
+    const pct = Math.max(0, Math.round(s.hp / s.maxHp * 100));
+    b.querySelector('.hp').textContent = state.camFollowShip === s ? '🎥 watching' : (!s.alive && s.sinkT < 1) ? '💥 sinking' : pct + '%';
+    const bar = b.querySelector('.fbar i'); if(bar){ bar.style.width = pct + '%'; bar.className = pct <= 30 ? 'low' : pct <= 60 ? 'mid' : ''; } // v11.30: mobile health bar
+    const ic = b.querySelector('.fic'); if(ic) ic.textContent = state.camFollowShip === s ? '🎥' : (!s.alive && s.sinkT < 1) ? '💥' : shipIcon(s); // v11.30: mobile status icon
   });
 }
 applyFleetSelection();
@@ -6661,14 +6700,14 @@ tacticalRadar = new TacticalRadarHUD();
 $('launchAsmBtn').addEventListener('click', () => { if(airWing) airWing.launch('asm'); });
 $('launchBombBtn').addEventListener('click', () => { if(airWing) airWing.launch('bomb'); });
 $('recallBtn').addEventListener('click', () => { if(airWing) airWing.recallAll(); });
-$('camBtn').addEventListener('click', () => { if(airCam) airCam.cycle(); }); // v11.28: the follow camera is a tappable button now — the C key was the only way, and Nicholas plays on his phone
+$('airCamBtn').addEventListener('click', () => { if(airCam) airCam.cycle(); }); // v11.28: the follow camera is a tappable button now — the C key was the only way, and Nicholas plays on his phone
 // v11.28: the follow-camera button label follows the ONE shared camera mode
 // (airCam.mode). The button and the C key drive the same state, so the label
 // is always right no matter which input changed it. Cached: only touches
 // the DOM when the label actually changes.
 let _lastCamBtnLabel = '';
 function syncCamBtn(){
-  const b = $('camBtn');
+  const b = $('airCamBtn');
   if(!b || !airCam) return;
   const m = airCam.mode;
   const label = m === 'jet' ? '🎥 Cam: Wingman' : m === 'ordnance' ? '🎥 Cam: Weapon' : m === 'hold' ? '🎥 Cam: Impact' : '🎥 Cam: Off';
