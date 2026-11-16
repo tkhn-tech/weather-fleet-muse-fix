@@ -361,7 +361,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.35</div>
+    <div class="ver">v11.36</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -2423,7 +2423,7 @@ const state = {
   camPanX: settings.camPanX ?? 0, camPanY: settings.camPanY ?? 0,
   camOrbitAz: 0, camOrbitEl: 0, orbitDrag: false, orbitLastX: 0, orbitLastY: 0, // v11.6: drag/swipe orbits the camera round its anchor
   capT: 0,
-  camHeading: 0, camBank: 0, headingRate: 0, camZfSm: 0,
+  camHeading: 0, camBank: 0, headingRate: 0, camZfMul: 1,
   windDir: 0, curX: 0, curZ: 0, cog: 0,
   diveCam: false, diveBlend: 0, dropletT: 0, // v11.14: underwater camera (U) + lens droplets
   camFollowShip: null, // v11.15: sinking-ship camera — the sinking ship the camera follows (null = flagship)
@@ -2608,7 +2608,7 @@ function saveCamera(){
 function resetCamera(){
   state.camFollowShip = null; // v11.15: R returns the camera to the flagship (ends a sinking-ship follow)
   if(airCam) airCam.cancel(); // v11.25: R also ends a tactical follow track
-  state.camZoom = 1; state.camPanX = 0; state.camPanY = 0; state.freeLook = 0; state.camZfSm = 0;
+  state.camZoom = 1; state.camPanX = 0; state.camPanY = 0; state.freeLook = 0; state.camZfMul = 1;
   state.camOrbitAz = 0; state.camOrbitEl = 0; state.orbitDrag = false; // v11.6: R also returns the camera to its default angle
   saveCamera();
 }
@@ -2766,7 +2766,7 @@ function reset(){
   state.spawnT = 0; state.boltT = 0; state.flashT = 0;
   state.freakWave = null; state.freakT = 45; // v11.8: no freak wave carries into a new round
   state.rudder = 0; state.orbitDrag = false; state.speedLoss = 1; state.kickT = 99; state.prevRudder = 0; // v11.6: dragSteer is gone (the drag orbits the camera)
-  state.camHeading = 0; state.camBank = 0; state.headingRate = 0; state.camZfSm = 0;
+  state.camHeading = 0; state.camBank = 0; state.headingRate = 0; state.camZfMul = 1;
   state.playerIdx = 0;
   clearFleetWaypoint(); state.steadyT = 0; // v11.33: no waypoint or steady time carries into a new round
   clearWorld();
@@ -3617,8 +3617,9 @@ function update(dt){
       }
     }
     const holding = state.speed < 1;
-    const desired = m.arrive({ x: tx, z: tz }, holding ? 12 : 30, Math.max(6, state.speed + 2));
-    let desSpeed = Math.hypot(desired.x, desired.z);
+    // v11.36: speed mirrors the flagship + a small bounded along-track catch-up (steer ON only) so the escort can still close a slot gap; the Arrive magnitude is no longer the speed target.
+    const ag = (tx - m.x) * Math.sin(flag.heading) - (tz - m.z) * Math.cos(flag.heading);
+    let desSpeed = state.speed + (settings.steer ? Math.max(-2, Math.min(2, ag * 0.1)) : 0);
     // v11.5: the traffic cap moved below, after distToSlot — it is now
     // the real hull-circle gap (hullGap) and only applies off-slot.
     const distToSlot = Math.hypot(tx - m.x, tz - m.z);
@@ -3651,20 +3652,9 @@ function update(dt){
       }
     });
     if(trafficCap < Infinity) desSpeed = Math.min(desSpeed, trafficCap);
-    // v11.31: near-slot damping — an escort closing on its slot at full speed
-    // overshoots into the neighbour's water (the Arrive slowing radius alone
-    // does not bleed the speed off fast enough at 2x scale). Inside 25 units
-    // of the slot, cap the desired speed so the escort creeps on instead.
-    if(distToSlot < 25) desSpeed = Math.min(desSpeed, 5);
-    // v11.33: reform mode (Item 4) — once the flagship has held a steady
-    // course for ~3 s, an escort out of her slot glides back gently instead
-    // of racing to it: approach speed capped at 7 u/s (about half the normal
-    // catch-up speed) and the rudder softened, so she eases into her slot.
-    // While the flagship is manoeuvring there is no reform cap — the escort
-    // just follows. Separation, the traffic cap, near-slot damping and the
-    // whiskers all still apply on top of it.
+    // v11.36: no near-slot speed cap — the mirror catch-up (±2, proportional) cannot overshoot; rudder softening below stays.
+    // v11.33: reform mode — once the flagship has held a steady course for ~3 s, an escort out of her slot glides back gently (rudder softened below). v11.36: no reform speed cap — the mirror catch-up (±2) is already gentle. Separation, the traffic cap and the whiskers still apply.
     const reforming = state.steadyT >= 3 && distToSlot > 25;
-    if(reforming) desSpeed = Math.min(desSpeed, 7);
     // v11.15: Nicholas's formation rule — the escort takes its bearing
     // from the heading the controlled ship ends up facing (flag.heading)
     // and independently corrects its own course to match it. The only
@@ -3686,8 +3676,8 @@ function update(dt){
       const corr = Math.max(-20, Math.min(20, dhF * 180 / Math.PI)) * Math.PI / 180;
       desHeading = flag.heading + corr;
     }
-    // v11.35: steer OFF — escorts hold course (held heading + current speed), no slot-chasing; traffic cap still bites.
-    if(!settings.steer){desHeading=state.heldH;desSpeed=Math.min(m.forwardSpeed,trafficCap);}
+    // v11.35: steer OFF — hold course (held heading), no slot-chasing; speed mirrors the flagship (v11.36).
+    if(!settings.steer) desHeading = state.heldH;
     let dh = desHeading - m.heading;
     dh = ((dh + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
     let rudderIn = Math.max(-1, Math.min(1, dh * 1.5));
@@ -4673,13 +4663,12 @@ function updateCamera(dt){
     const fitCap = state.camZoom < 1 ? camZ : camZ * 9.0;
     if(fitD >= fitCap){ fitD = fitCap; break; }
   }
-  // smooth the fit distance: snap out instantly when the fleet needs room,
-  // ease back in slowly so the camera does not pulse in and out of turns
-  if(fitD > state.camZfSm) state.camZfSm = fitD;
-  else state.camZfSm += (fitD - state.camZfSm) * (1 - Math.exp(-dt * 2.5));
-  if(state.camZoom < 1) state.camZfSm = camZ; // v10.4: a stored fit pull-back must not defeat a close zoom
-  const camZf = Math.max(camZ, state.camZfSm);
-  const camYf = camY * (camZf / camZ);
+  // v11.36: the fit is a multiplier on the user's zoom, not an absolute distance — the old smoothed absolute (camZfSm) overrode the zoom (zooming out did nothing while it decayed; zooming in snapped at camZoom 1). Snap out, ease in.
+  const fitMul = state.camZoom < 1 ? 1 : fitD / camZ;
+  if(fitMul > state.camZfMul) state.camZfMul = fitMul;
+  else state.camZfMul += (fitMul - state.camZfMul) * (1 - Math.exp(-dt * 2.5));
+  const camZf = camZ * state.camZfMul;
+  const camYf = camY * state.camZfMul;
   let tx = flag.x - ohx * camZf * Math.cos(a) + orx * camZf * Math.sin(a) * 0.55;
   let ty = camYf + Math.tan(orbEl) * camZf + Math.sin(state.t * 0.5) * 0.4;
   let tz = flag.z - ohz * camZf * Math.cos(a) + orz * camZf * Math.sin(a) * 0.55;
@@ -4694,10 +4683,8 @@ function updateCamera(dt){
   // attract camera never dives.
   if(state.diveBlend > 0.001 && (state.running || state.over)){
     const b = state.diveBlend;
-    // v11.27: dive distance scales with flagship length. v11.34: rebased
-    // clear of the stern (0.66x len, 0.6x on a sinking ship) and clamped
-    // so zoom moves it without entering the hull.
-    const diveLen = flag.group.userData.len || 87, diveDist = Math.max(diveLen / 2 + 10, Math.min(diveLen / 2 + 60, (state.camFollowShip ? 0.6 : 0.66) * diveLen * state.camZoom));
+    // v11.36: dive distance maps the full zoom range [0.35, 2.5] onto [half+10, half+60] — the old clamp pinned zoom outside ~[0.85, 1.28], so most of the range did nothing.
+    const diveLen = flag.group.userData.len || 87, diveDist = diveLen / 2 + 10 + (state.camZoom - 0.35) / 2.15 * 50;
     const seaH = getOceanDataAt(flag.x, flag.z, state.t).height;
     const diveY = seaH - 5;
     const dtx = flag.x - ohx * diveDist;
