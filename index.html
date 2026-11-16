@@ -71,6 +71,7 @@
   #fleetPanel .fleetHead{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#9db8cc;
     font-weight:800;text-align:center;margin-bottom:6px}
   .formTgl{width:100%;background:rgba(255,209,102,.14);border:1px solid rgba(255,209,102,.5);color:#ffd166;border-radius:8px;padding:4px 0;font-size:10px;font-weight:800;margin-bottom:6px}
+  .sRow{display:flex;gap:4px;margin-bottom:6px}.sRow button{flex:1;background:rgba(120,200,255,.12);border:1px solid rgba(120,200,255,.45);color:#9fd4e8;border-radius:8px;padding:4px 0;font-size:10px;font-weight:800}
   .fleetRow{display:flex;align-items:center;gap:6px;width:100%;background:transparent;border:1px solid transparent;
     color:#cfe2ef;border-radius:8px;padding:5px 6px;font-size:11.5px;font-weight:700;cursor:pointer;text-align:left}
   .fleetRow .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -360,7 +361,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.34</div>
+    <div class="ver">v11.35</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -662,6 +663,7 @@ const settings = {
   enemyProx: savedSettings.enemyProx ?? 'medium', // v11.16: starting proximity of the enemy fleet (close/medium/far)
   fleetSel: (Array.isArray(savedSettings.fleetSel) ? savedSettings.fleetSel : null) ?? ['carrier', 'bb1', 'bb2', 'dd1', 'dd2', 'dd3', 'dd4'],
   formation: savedSettings.formation ?? 'C',
+  steer: savedSettings.steer ?? true, // v11.35: flagship steering affects escorts
   camZoom: Math.max(0.35, Math.min(2.5, savedSettings.camZoom ?? 1)),
   camPanX: Math.max(-30, Math.min(30, savedSettings.camPanX ?? 0)),
   camPanY: Math.max(-12, Math.min(18, savedSettings.camPanY ?? 0)),
@@ -2425,6 +2427,7 @@ const state = {
   windDir: 0, curX: 0, curZ: 0, cog: 0,
   diveCam: false, diveBlend: 0, dropletT: 0, // v11.14: underwater camera (U) + lens droplets
   camFollowShip: null, // v11.15: sinking-ship camera — the sinking ship the camera follows (null = flagship)
+  heldH: 0, // v11.35: held escort heading (steer OFF / Align)
 };
 let frameCount = 0;
 let clock = new THREE.Clock();
@@ -3049,7 +3052,7 @@ function shipCode(s){ return s.name.indexOf('Carrier') === 0 ? 'CV' : s.name.ind
 function buildFleetPanel(){
   const el = $('fleetPanel');
   if(!el) return;
-  el.innerHTML = '<div class="fleetHead">⚓ Fleet — command</div><button class="formTgl" id="formTgl">' + (settings.formation === 'A' ? 'ATTACK' : 'CRUISING') + '</button>' + fleet.map((s, i) =>
+  el.innerHTML = '<div class="fleetHead">⚓ Fleet — command</div><button class="formTgl" id="formTgl">' + (settings.formation === 'A' ? 'ATTACK' : 'CRUISING') + '</button><div class="sRow"><button id="steerTgl">' + (settings.steer ? 'STEER ON' : 'STEER OFF') + '</button><button id="alignBtn">Align</button></div>' + fleet.map((s, i) =>
     '<button class="fleetRow" data-i="' + i + '"><span class="fic">' + shipIcon(s) + '</span><span class="fcode">' + shipCode(s) + '</span><span class="nm">' + s.name + '</span><span class="fbar"><i></i></span><span class="hp"></span></button>'
   ).join('');
   el.querySelectorAll('.fleetRow').forEach(b => {
@@ -3071,6 +3074,8 @@ function buildFleetPanel(){
     });
   });
   const ft=$('formTgl');if(ft)ft.onclick=()=>{settings.formation=settings.formation==='A'?'C':'A';applyForm(settings.formation);ft.textContent=settings.formation==='A'?'ATTACK':'CRUISING';saveCamera();};
+  const st=$('steerTgl');if(st)st.onclick=()=>{settings.steer=!settings.steer;if(!settings.steer){const f=flagship();if(f)state.heldH=f.heading;}st.textContent=settings.steer?'STEER ON':'STEER OFF';saveCamera();};
+  const ab=$('alignBtn');if(ab)ab.onclick=()=>{const f=flagship();if(f)state.heldH=f.heading;};
 }
 function syncFleetPanel(){
   const el = $('fleetPanel');
@@ -3681,6 +3686,8 @@ function update(dt){
       const corr = Math.max(-20, Math.min(20, dhF * 180 / Math.PI)) * Math.PI / 180;
       desHeading = flag.heading + corr;
     }
+    // v11.35: steer OFF — escorts hold course (held heading + current speed), no slot-chasing; traffic cap still bites.
+    if(!settings.steer){desHeading=state.heldH;desSpeed=Math.min(m.forwardSpeed,trafficCap);}
     let dh = desHeading - m.heading;
     dh = ((dh + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
     let rudderIn = Math.max(-1, Math.min(1, dh * 1.5));
@@ -5838,16 +5845,15 @@ class AntiShipMissile {
     this.t = 0;
     this.trailT = 0;
     this.dead = false;
-    // A small missile mesh (dark cylinder + bright exhaust). Reuses a sprite
-    // for the body so it reads at range without a new model.
+    // v11.35: procedural missile body. The real Sparrow GLB was dropped
+    // to fit the size ceiling; saved at ~/workspace/shipmodels/weapon_sources/.
+    // The exhaust glow sprite is gone (flat square, like the jet exhaust
+    // in v11.34); the particle trail is the exhaust now.
     this.group = new THREE.Group();
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 4, 6),
       new THREE.MeshStandardMaterial({color: 0xcccccc, metalness: 0.7, roughness: 0.35}));
     body.rotation.x = Math.PI / 2;
     this.group.add(body);
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({color: 0xffaa33, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false}));
-    glow.scale.set(2.5, 2.5, 1); glow.position.z = 2.5;
-    this.group.add(glow);
     this.group.position.set(this.x, this.y, this.z);
     scene.add(this.group);
   }
@@ -5974,6 +5980,8 @@ class AirBomb {
     this.vy = vy0;
     this.dmg = 30;
     this.dead = false;
+    // v11.35: procedural bomb body. The real JDAM GLB was dropped to fit
+    // the size ceiling; saved at ~/workspace/shipmodels/weapon_sources/.
     this.group = new THREE.Group();
     const body = new THREE.Mesh(new THREE.SphereGeometry(0.7, 8, 6),
       new THREE.MeshStandardMaterial({color: 0x2a2f33, metalness: 0.5, roughness: 0.5}));
@@ -6954,43 +6962,41 @@ class TacticalCameraSystem {
     if(this.kind === 'torp') return torps.includes(t);
     return false;
   }
-  // C cycles: jet -> ordnance -> off (falling back when a kind is empty).
+  // v11.35: C steps through every airborne jet, then every ordnance in flight, then off.
   cycle(){
-    if(this.mode === 'jet'){ if(!this.trackOrdnance()) this.cancel(); syncCamBtn(); return; }
-    if(this.mode === 'ordnance' || this.mode === 'hold'){ this.cancel(); syncCamBtn(); return; }
+    if(this.mode === 'jet' && this.trackJet()){ syncCamBtn(); return; }
+    if(this.mode === 'jet' && this.trackOrdnance()){ syncCamBtn(); return; }
+    if(this.mode === 'ordnance' && this.trackOrdnance()){ syncCamBtn(); return; }
+    if(this.mode){ this.cancel(); syncCamBtn(); return; }
     if(!this.trackJet()) this.trackOrdnance();
-    syncCamBtn(); // v11.28: the button label follows the shared mode state
+    syncCamBtn();
   }
   trackJet(){
-    // Prefer an airborne jet (a crashed one still in her dive is fine).
-    const j = jets.find(j => j.state !== 'deck' && j.state !== 'catapult' && j.state !== 'taxi' && j.state !== 'rearm');
-    if(!j){ toast('🎥 No jets airborne', 'launch a flight first'); return false; }
+    // v11.35: step through every airborne jet in order (a crashed one still in her dive is fine).
+    const air = jets.filter(j => j.state !== 'deck' && j.state !== 'catapult' && j.state !== 'taxi' && j.state !== 'rearm');
+    if(!air.length){ toast('🎥 No jets airborne', 'launch a flight first'); return false; }
+    let i = 0;
+    if(this.mode === 'jet' && this.target) i = air.indexOf(this.target) + 1;
+    if(i >= air.length) return false;
+    const j = air[i];
     this.mode = 'jet'; this.kind = 'jet'; this.target = j;
-    toast('🎥 Wingman cam', 'riding with ' + (j.squadron ? j.squadron.label : 'a Super Hornet') + ' — C to cycle, Esc to return');
+    toast('🎥 Wingman cam', 'jet ' + (i + 1) + '/' + air.length + ' — ' + (j.squadron ? j.squadron.label : 'Super Hornet') + ' — C to cycle, Esc to return');
     return true;
   }
   trackOrdnance(){
-    // Prefer a live ASM, then a shell in flight, then a torpedo.
-    const m = airMissiles.find(m => !m.dead);
-    if(m){
-      this.mode = 'ordnance'; this.kind = 'missile'; this.target = m;
-      toast('🎥 Weapon cam', 'tracking a sea-skimming missile — C to cycle, Esc to return');
-      return true;
-    }
-    const s = shells.find(s => s.t < s.tof);
-    if(s){
-      this.mode = 'ordnance'; this.kind = 'shell'; this.target = s;
-      toast('🎥 Weapon cam', 'tracking a shell in flight — C to cycle, Esc to return');
-      return true;
-    }
-    const tp = torps[0];
-    if(tp){
-      this.mode = 'ordnance'; this.kind = 'torp'; this.target = tp;
-      toast('🎥 Weapon cam', 'tracking a torpedo run — C to cycle, Esc to return');
-      return true;
-    }
-    toast('🎥 No ordnance in flight', 'launch a strike or wait for the guns');
-    return false;
+    // v11.35: step through every ordnance in flight in order (live ASM, shell, torpedo).
+    const list = [];
+    airMissiles.forEach(m => { if(!m.dead) list.push({k:'missile', t:m}); });
+    shells.forEach(s => { if(s.t < s.tof) list.push({k:'shell', t:s}); });
+    torps.forEach(tp => list.push({k:'torp', t:tp}));
+    if(!list.length){ toast('🎥 No ordnance in flight', 'launch a strike or wait for the guns'); return false; }
+    let i = 0;
+    if(this.mode === 'ordnance' && this.target) i = list.findIndex(o => o.t === this.target) + 1;
+    if(i >= list.length) return false;
+    const o = list[i];
+    this.mode = 'ordnance'; this.kind = o.k; this.target = o.t;
+    toast('🎥 Weapon cam', (i + 1) + '/' + list.length + ' — tracking a ' + (o.k === 'missile' ? 'sea-skimming missile' : o.k === 'shell' ? 'shell in flight' : 'torpedo run') + ' — C to cycle, Esc to return');
+    return true;
   }
   // Called by the air wing / air defense on a detonation. Only takes over
   // while a track is active and the blast is near what we are watching —
