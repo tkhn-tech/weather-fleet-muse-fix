@@ -71,7 +71,7 @@
   #fleetPanel .fleetHead{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#9db8cc;
     font-weight:800;text-align:center;margin-bottom:6px}
   .formTgl{width:100%;background:rgba(255,209,102,.14);border:1px solid rgba(255,209,102,.5);color:#ffd166;border-radius:8px;padding:4px 0;font-size:10px;font-weight:800;margin-bottom:6px}
-  .sRow{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}.sRow button{flex:1;background:rgba(120,200,255,.12);border:1px solid rgba(120,200,255,.45);color:#9fd4e8;border-radius:8px;padding:4px 0;font-size:9px;font-weight:800}#carrTgl.on{border-color:rgba(255,209,102,.7);color:#ffd166;background:rgba(255,209,102,.14)}
+  .sRow{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}.sRow button{flex:1;background:rgba(120,200,255,.12);border:1px solid rgba(120,200,255,.45);color:#9fd4e8;border-radius:8px;padding:4px 0;font-size:9px;font-weight:800}.sRow button.on{border-color:rgba(255,209,102,.7);color:#ffd166;background:rgba(255,209,102,.14)}
   .fleetRow{display:flex;align-items:center;gap:6px;width:100%;background:transparent;border:1px solid transparent;
     color:#cfe2ef;border-radius:8px;padding:5px 6px;font-size:11.5px;font-weight:700;cursor:pointer;text-align:left}
   .fleetRow .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -361,7 +361,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.43</div>
+    <div class="ver">v11.44</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -372,7 +372,7 @@
 <div class="overlay hidden" id="helpScreen">
   <div class="card">
     <h2>Controls</h2>
-    <p class="keys">Rudder: joystick (left/right) or ← → / A D — release to return to midships &nbsp;·&nbsp; Telegraph: W / S or ↑ ↓, click the panel, or keys 1–8 &nbsp;·&nbsp; Command: Tab or the fleet panel &nbsp;·&nbsp; Carrier: the CV button cycles OFF / ON (carrier alone) / ANCHOR (carrier holds, you drive the escorts) &nbsp;·&nbsp; Pause: P<br>
+    <p class="keys">Rudder: joystick (left/right) or ← → / A D — release to return to midships &nbsp;·&nbsp; Telegraph: W / S or ↑ ↓, click the panel, or keys 1–8 &nbsp;·&nbsp; Command: Tab or the fleet panel &nbsp;·&nbsp; Fleet mode: INDV drives only the selected ship (the rest hold their last orders) · FLEET drives the selected ship as flagship, the fleet follows · ANCHOR holds the selected ship, you drive all the other ships &nbsp;·&nbsp; Pause: P<br>
       Drag / swipe the sea: orbit the camera round the fleet &nbsp;·&nbsp; Wheel / pinch / + / -: zoom &nbsp;·&nbsp; Shift + drag: pan the camera &nbsp;·&nbsp; Right-drag: free look &nbsp;·&nbsp; ↺ (or R) resets the camera &nbsp;·&nbsp; U: dive below the surface &nbsp;·&nbsp; Click a sinking ship's row to watch her go down &nbsp;·&nbsp; Air Ops: the panel launches flights &nbsp;·&nbsp; C: follow a jet / weapon &nbsp;·&nbsp; N: radar north-up / heading-up &nbsp;·&nbsp; Esc: back to the fleet</p>
     <button class="bigBtn" id="helpCloseBtn">Done</button>
   </div>
@@ -663,8 +663,7 @@ const settings = {
   enemyProx: savedSettings.enemyProx ?? 'medium', // v11.16: starting proximity of the enemy fleet (close/medium/far)
   fleetSel: (Array.isArray(savedSettings.fleetSel) ? savedSettings.fleetSel : null) ?? ['carrier', 'bb1', 'bb2', 'dd1', 'dd2', 'dd3', 'dd4'],
   formation: savedSettings.formation ?? 'C',
-  steer: savedSettings.steer ?? true, // v11.35: flagship steering affects escorts
-  carrierMode: savedSettings.carrierMode ?? 'OFF', // v11.39: carrier button — OFF/ON/ANCHOR
+  fleetMode: ['INDV','FLEET','ANCH'].includes(savedSettings.fleetMode) ? savedSettings.fleetMode : 'FLEET', // v11.44: fleet steering mode — INDV / FLEET / ANCHOR
   camZoom: Math.max(0.35, Math.min(2.5, savedSettings.camZoom ?? 1)),
   camPanX: Math.max(-30, Math.min(30, savedSettings.camPanX ?? 0)),
   camPanY: Math.max(-12, Math.min(18, savedSettings.camPanY ?? 0)),
@@ -2167,18 +2166,63 @@ function flagship(){
   if(f) state.playerIdx = fleet.indexOf(f);
   return f;
 }
-// v11.39: carrier mode — the carrier is found by name (the flagship index
-// moves with Tab). OFF = the Tab flagship as before; ON = the helm drives
-// only the carrier; ANCHOR = the carrier holds her course+speed and the
-// helm drives the escorts (the first is the lead, the rest follow her).
-function carrOn(){ const c=carrierShip(); return settings.carrierMode==='ON'&&c&&c.alive; }
-function carrAnch(){ const c=carrierShip(); return settings.carrierMode==='ANCHOR'&&c&&c.alive; }
-function cmdShip(){
-  if(carrOn()) return carrierShip();
-  if(carrAnch()){ const f=flagship(); if(f&&f!==carrierShip()&&f.alive) return f; const e=fleet.find(s=>s!==carrierShip()&&s.alive); if(e) return e; }
-  return flagship();
+// v11.44: fleet steering modes — INDV / FLEET / ANCHOR. The helm drives a
+// SET of ships, not a single ship. INDV and FLEET both drive the selected
+// ship (in FLEET the rest follow her through the escort controller);
+// ANCHOR drives every alive ship EXCEPT the selected one, which holds.
+// A mode switch only changes WHICH ships the helm drives — it never
+// re-derives slots, computes a target heading, or snaps a telegraph or
+// rudder, so the fleet never swings to align with anything on switching.
+function drivenShips(){
+  const sel = flagship();
+  if(!sel) return [];
+  if((settings.fleetMode || 'FLEET') === 'ANCH') return fleet.filter(s => s.alive && s !== sel);
+  return [sel];
 }
-function syncCarrBtn(){ const b=$('carrTgl'); if(!b) return; const m=settings.carrierMode||'OFF'; b.textContent=m==='ON'?'CV ON':m==='ANCHOR'?'CV ANCH':'CV OFF'; b.classList.toggle('on',m!=='OFF'); }
+// v11.44: waypoint rudder for one ship — her own heading error to the
+// waypoint (v11.33 autopilot, routed through the driven set).
+function wpRudderFor(s){
+  const dx = fleetWaypoint.x - s.x, dz = fleetWaypoint.z - s.z;
+  const toWp = Math.atan2(dx, -dz);
+  let dh = toWp - s.heading;
+  dh = ((dh + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+  return Math.max(-RUDDER_MAX, Math.min(RUDDER_MAX, dh * 180 / Math.PI * 1.5));
+}
+// v11.44: drive one ship for a frame — spool toward her telegraph notch,
+// thrust from the spool (v11.1: feed the drag forward, 0.039 x ordered
+// speed, so the ship settles on the ordered speed), rudder toward the
+// target. Used for every driven ship AND for every holding ship (rudder
+// 0, so she holds her heading on her own notch — no target heading is
+// ever computed for her). Speed loss in turns is per ship now (was the
+// global state.speedLoss on the flagship only).
+function driveShip(s, dt, rudderTarget, st){
+  const dead = propulsionDead(s);
+  if(dead && !s.propToasted){
+    s.propToasted = true;
+    s.telegraph = 5;
+    toast('⚠️ Engine room flooded', s.name + ' — propulsion lost, telegraph locked at ALL STOP');
+  }
+  const target = dead ? 0 : telegraphTarget(s, st);
+  const sp = s.spoolSpeed;
+  const srate = target > sp ? s.spoolUp : s.spoolDown;
+  s.spoolSpeed += Math.max(-srate * dt, Math.min(srate * dt, target - sp));
+  const thrustIn = dead ? 0 : Math.max(-1, Math.min(1, (s.spoolSpeed - s.motion.forwardSpeed) * 0.35 + 0.039 * s.spoolSpeed));
+  const floodFactor = s.speedFactor;
+  s.rudderTargetDeg = rudderTarget;
+  const rs = s.rudderSlew;
+  s.rudderDeg += Math.max(-rs * dt, Math.min(rs * dt, rudderTarget - s.rudderDeg));
+  const m = s.motion;
+  const loss = 1 - 0.33 * m.rudder * m.rudder; // ~1/4 lost after 90 deg, ~1/3 after 180 deg at full wheel
+  m.maxSpeed = Math.max(0, st.speed * loss * floodFactor);
+  const wp = wavePush(s.x, s.z, state.t);
+  m.update(dt, {
+    thrust: thrustIn, rudder: s.rudderDeg / RUDDER_MAX,
+    currentX: state.curX + wp.x, currentZ: state.curZ + wp.z,
+    time: state.t, turnSlow: 1 - s.floodTotal * 0.4, turnFloor: false,
+  });
+  s.x = m.x; s.z = m.z; s.heading = m.heading;
+}
+function syncModeBtns(){ const m=settings.fleetMode||'FLEET'; const b=(id,on)=>{const e=$(id);if(e)e.classList.toggle('on',on);}; b('modeIndv',m==='INDV'); b('modeFleet',m==='FLEET'); b('modeAnch',m==='ANCH'); }
 // Engine Room compartment (index 4) flood caps the ordered speed; a
 // flooded-out engine room kills propulsion outright (Cold Waters rule).
 function propulsionDead(ship){
@@ -2193,17 +2237,19 @@ function telegraphTarget(ship, st){
   return frac * st.speed * capFrac;
 }
 function setTelegraph(i){
-  const f = cmdShip();
-  if(!f || !state.running) return;
-  if(propulsionDead(f)){ f.telegraph = 5; syncHelmUI(); return; }
-  f.telegraph = Math.max(0, Math.min(7, i));
+  const d = drivenShips();
+  if(!d.length || !state.running) return;
+  // v11.44: the notch goes to EVERY driven ship together. A dead ship
+  // keeps ALL STOP; the rest take the new notch (in ANCHOR, ships that
+  // had different notches now share the new one).
+  d.forEach(s => { if(!propulsionDead(s)) s.telegraph = Math.max(0, Math.min(7, i)); else s.telegraph = 5; });
   syncHelmUI();
 }
 function stepTelegraph(dir){
-  const f = cmdShip();
-  if(!f || !state.running) return;
+  const d = drivenShips();
+  if(!d.length || !state.running) return;
   // dir +1 = faster (toward FLANK), -1 = slower (toward FULL ASTERN)
-  setTelegraph(f.telegraph - dir);
+  setTelegraph(d[0].telegraph - dir);
 }
 // v11.2: re-derive every ship's slot from its CURRENT position relative
 // to the new flagship. The old slot swap teleported the formation's
@@ -2241,7 +2287,8 @@ function switchShip(idx){
   next.rudderDeg = next.motion.rudder * RUDDER_MAX;
   next.rudderTargetDeg = next.rudderDeg;
   syncHelmUI(); syncFleetPanel();
-  toast('🚢 You have command of the ' + next.name, old.name + ' follows as escort');
+  const fm=settings.fleetMode||'FLEET';
+  toast('🚢 You have command of the ' + next.name, fm==='FLEET' ? old.name + ' follows as escort' : fm==='INDV' ? old.name + ' holds her last orders' : old.name + ' joins the ships you drive');
 }
 // v11.12: spectate ("watch her sink") is removed. A sinking is still
 // announced with a toast, and the round still ends when the last sinking
@@ -2432,7 +2479,7 @@ const state = {
   freakWave: null, // the active freak wave {id,x,z,dirX,dirZ,amp,radius,speed,age,life}
   freakT: 45, // game-seconds until the next freak wave may spawn
   freakId: 0, // counter for unique freak-wave ids (a ship is hit once per wave)
-  speedLoss: 1, kickT: 99, prevRudder: 0,
+  kickT: 99, prevRudder: 0,
   playerIdx: 0,
   camZoom: settings.camZoom ?? 1, freeLook: 0, freeLookActive: false,
   camPanX: settings.camPanX ?? 0, camPanY: settings.camPanY ?? 0,
@@ -2442,7 +2489,6 @@ const state = {
   windDir: 0, curX: 0, curZ: 0, cog: 0,
   diveCam: false, diveBlend: 0, dropletT: 0, // v11.14: underwater camera (U) + lens droplets
   camFollowShip: null, // v11.15: sinking-ship camera — the sinking ship the camera follows (null = flagship)
-  heldH: 0, // v11.35: held escort heading (steer OFF / Align)
 };
 let frameCount = 0;
 let clock = new THREE.Clock();
@@ -2777,7 +2823,7 @@ function reset(){
   state.shake = 0; state.over = false; state.paused = false;
   state.spawnT = 0; state.boltT = 0; state.flashT = 0;
   state.freakWave = null; state.freakT = 45; // v11.8: no freak wave carries into a new round
-  state.rudder = 0; state.orbitDrag = false; state.speedLoss = 1; state.kickT = 99; state.prevRudder = 0; // v11.6: dragSteer is gone (the drag orbits the camera)
+  state.rudder = 0; state.orbitDrag = false; state.kickT = 99; state.prevRudder = 0; // v11.6: dragSteer is gone (the drag orbits the camera)
   state.camHeading = 0; state.camBank = 0; state.headingRate = 0; state.camZfMul = 1;
   state.playerIdx = 0;
   clearFleetWaypoint(); state.steadyT = 0; // v11.33: no waypoint or steady time carries into a new round
@@ -2917,8 +2963,8 @@ function setFleetWaypoint(x, z){
   const g = wpMarkerGroup();
   g.position.set(x, 0, z);
   g.visible = true;
-  const f = cmdShip();
-  if(f && f.telegraph === 5) setTelegraph(2); // ALL STOP -> STANDARD, so the fleet actually moves
+  const d = drivenShips();
+  if(d.length && d[0].telegraph === 5) setTelegraph(2); // ALL STOP -> STANDARD, so the fleet actually moves
   toast('📍 Waypoint set — autopilot engaged', 'the fleet will steer itself there; steer manually to take over');
 }
 function clearFleetWaypoint(){
@@ -3040,7 +3086,7 @@ function drawMinimap(){
 // panel shows that ship's notch, target and actual speed; the fleet panel
 // shows every ship's integrity and which one you command.
 function syncHelmUI(){
-  const f = cmdShip();
+  const f = drivenShips()[0]; // v11.44: the telegraph UI shows the first driven ship
   if(!f) return;
   document.querySelectorAll('.teleBtn').forEach(b => {
     b.classList.toggle('on', parseInt(b.dataset.i, 10) === f.telegraph);
@@ -3064,7 +3110,7 @@ function shipCode(s){ return s.name.indexOf('Carrier') === 0 ? 'CV' : s.name.ind
 function buildFleetPanel(){
   const el = $('fleetPanel');
   if(!el) return;
-  el.innerHTML = '<div class="fleetHead">⚓ Fleet — command</div><button class="formTgl" id="formTgl">' + (settings.formation === 'A' ? 'ATTACK' : 'CRUISING') + '</button><div class="sRow"><button id="steerTgl">' + (settings.steer ? 'STEER ON' : 'STEER OFF') + '</button><button id="alignBtn">Align</button><button id="carrTgl">CV OFF</button></div>' + fleet.map((s, i) =>
+  el.innerHTML = '<div class="fleetHead">⚓ Fleet — command</div><button class="formTgl" id="formTgl">' + (settings.formation === 'A' ? 'ATTACK' : 'CRUISING') + '</button><div class="sRow"><button id="modeIndv">INDV</button><button id="modeFleet">FLEET</button><button id="modeAnch">ANCH</button></div>' + fleet.map((s, i) =>
     '<button class="fleetRow" data-i="' + i + '"><span class="fic">' + shipIcon(s) + '</span><span class="fcode">' + shipCode(s) + '</span><span class="nm">' + s.name + '</span><span class="fbar"><i></i></span><span class="hp"></span></button>'
   ).join('');
   el.querySelectorAll('.fleetRow').forEach(b => {
@@ -3086,10 +3132,11 @@ function buildFleetPanel(){
     });
   });
   const ft=$('formTgl');if(ft)ft.onclick=()=>{settings.formation=settings.formation==='A'?'C':'A';applyForm(settings.formation);ft.textContent=settings.formation==='A'?'ATTACK':'CRUISING';saveCamera();};
-  const st=$('steerTgl');if(st)st.onclick=()=>{settings.steer=!settings.steer;if(!settings.steer){const f=flagship();if(f)state.heldH=f.heading;}st.textContent=settings.steer?'STEER ON':'STEER OFF';saveCamera();};
-  const ab=$('alignBtn');if(ab)ab.onclick=()=>{const f=flagship();if(f)state.heldH=f.heading;};
-  const cb=$('carrTgl');if(cb)cb.onclick=()=>{const c=carrierShip();const ms=['OFF','ON','ANCHOR'];settings.carrierMode=ms[(ms.indexOf(settings.carrierMode)+1)%3];if(!c||!c.alive)settings.carrierMode='OFF';if(settings.carrierMode!=='OFF'&&c)state.heldH=c.heading;const h=cmdShip();if(h)rederiveSlots(h);syncCarrBtn();saveCamera();toast('⚓ Carrier: '+settings.carrierMode,settings.carrierMode==='ON'?'you drive the carrier alone — escorts hold course':settings.carrierMode==='ANCHOR'?'carrier holds course — you drive the escorts':'normal fleet steering');};
-  syncCarrBtn();
+  const setMode=m=>{settings.fleetMode=m;syncModeBtns();saveCamera();toast('⚓ Fleet mode: '+m,m==='INDV'?'you drive only the selected ship — the rest hold their last orders':m==='ANCH'?'the selected ship holds — you drive all the other ships':'the selected ship is the flagship — the fleet follows her');};
+  const mi=$('modeIndv');if(mi)mi.onclick=()=>setMode('INDV');
+  const mf=$('modeFleet');if(mf)mf.onclick=()=>setMode('FLEET');
+  const ma=$('modeAnch');if(ma)ma.onclick=()=>setMode('ANCH');
+  syncModeBtns();
 }
 function syncFleetPanel(){
   const el = $('fleetPanel');
@@ -3170,7 +3217,6 @@ function sinkShip(ship, mode){
   if(!ship.alive) return;
   ship.alive = false;
   ship.sinkT = 0;
-  if(ship===carrierShip()&&(settings.carrierMode==='ON'||settings.carrierMode==='ANCHOR')){settings.carrierMode='OFF';const n=flagship();if(n)rederiveSlots(n);syncCarrBtn();saveCamera();toast('⚓ Carrier lost','carrier mode off — normal fleet steering');} // v11.39: no helm on a dead carrier
   if(ship.fireGlow){ ship.group.remove(ship.fireGlow); ship.fireGlow = null; } // v11.16: the fire dies with her — no glow sprite on the wreck
   ship.sinkMode = mode || 'settle';
   // propulsion is gone: the ship stops dead in the water and goes down
@@ -3410,8 +3456,8 @@ function update(dt){
   // then the propeller chases that ordered speed. ALL STOP means the screw
   // stops and hydrodynamic drag coasts the ship to a halt; FULL ASTERN is
   // the brake as well as reverse (Atlantic Fleet rule).
-  const flag = cmdShip(); // v11.39: the helm drives the carrier (ON) or the escort lead (ANCHOR)
-  const cmOn = carrOn(), cmAnch = carrAnch(); // v11.39: carrier mode for the escort loop
+  const driven = drivenShips(); // v11.44: the ships the helm drives in this mode
+  const flag = driven[0] || null; // v11.44: the primary driven ship — the flagship in INDV/FLEET, the first driven ship in ANCHOR (the escort loop's reference in FLEET)
   // v11.8: rocking gain — the waves rock the ships more as the weather
   // worsens and the waves are set higher (Nicholas, 2026-11-13). The
   // wave slope already grows with the stage (the spectrum amps), but the
@@ -3450,29 +3496,17 @@ function update(dt){
   // lets it play out; the round ends when she is gone, not the moment she
   // is lost). While no flagship is left, only the sinking animation, the
   // ambience and the HUD run; the helm, escorts and collisions are moot.
-  if(!flag && !fleet.some(s => !s.alive && s.sinkT < 1)){ gameOver(); return; }
-  if(flag){
-  const dead = propulsionDead(flag);
-  if(dead && !flag.propToasted){
-    flag.propToasted = true;
-    flag.telegraph = 5;
-    toast('⚠️ Engine room flooded', 'Propulsion lost — telegraph locked at ALL STOP');
-  }
-  const target = dead ? 0 : telegraphTarget(flag, st);
-  const sp = flag.spoolSpeed;
-  const srate = target > sp ? flag.spoolUp : flag.spoolDown;
-  flag.spoolSpeed += Math.max(-srate * dt, Math.min(srate * dt, target - sp));
-  // v11.1: feed the drag forward. A proportional screw controller must
-  // hold thrust just to overcome hydrodynamic drag (0.55 x speed), so
-  // without this the ship settles ~2 kn below the ordered speed (v11.0
-  // check: target 18, actual 16 in Calm). thrustForce/mass is 14 for
-  // every class, so the drag term is 0.55/14 = 0.039 x ordered speed.
-  const thrustIn = dead ? 0 : Math.max(-1, Math.min(1, (flag.spoolSpeed - flag.motion.forwardSpeed) * 0.35 + 0.039 * flag.spoolSpeed));
-  // speed loss in turns: ~1/4 after 90°, ~1/3 after 180° at full wheel
-  const lossTarget = 1 - 0.33 * state.rudder * state.rudder;
-  state.speedLoss += (lossTarget - state.speedLoss) * Math.min(1, dt * 0.5);
-  const floodFactor = flag.speedFactor;
-  const speed = Math.max(0, flag.motion.forwardSpeed);
+  if(!fleet.some(s => s.alive) && !fleet.some(s => !s.alive && s.sinkT < 1)){ gameOver(); return; }
+  if(fleet.some(s => s.alive)){
+  // v11.44: the helm drives a SET of ships (drivenShips) — the selected
+  // ship in INDV/FLEET, every ship except the selected one in ANCHOR.
+  // Each driven ship gets the helm telegraph/rudder; every other alive
+  // ship holds (keeps her notch, rudder 0). Nothing here re-derives
+  // slots, computes a target heading, or snaps a telegraph or rudder —
+  // a mode switch only changes WHICH ships the helm drives, so the fleet
+  // never swings to align with anything on switching.
+  const primary = flag; // the first driven ship — the flagship in INDV/FLEET
+  const hudShip = primary || flagship(); // the HUD/camera ship when nothing is driven (ANCHOR with only the anchor left)
   // wind + current: the sea pushes the fleet sideways, so heading and
   // course-over-ground differ — steer for the COG, not just the compass
   state.windDir = Math.PI + 0.6 * Math.sin(state.t * 0.012) + 0.4 * Math.sin(state.t * 0.005 + 1.7);
@@ -3491,6 +3525,8 @@ function update(dt){
   // as the wind shifts and the fleet turns
   const wa = state.windDir - Math.PI, wc = Math.cos(wa), ws = Math.sin(wa);
   WAVES.forEach(w => { const dx = w.bdx * wc - w.bdz * ws, dz = w.bdx * ws + w.bdz * wc; w.dx = dx; w.dz = dz; });
+  // distance / score / stage from the primary driven ship's speed (pre-update, as before)
+  const speed = primary ? Math.max(0, primary.motion.forwardSpeed) : 0;
   state.dist += speed * dt * 0.75;
   state.score += Math.round(speed * dt * 10);
   ampCur += (ampTarget - ampCur) * Math.min(1, dt * 0.5);
@@ -3504,65 +3540,56 @@ function update(dt){
   }
 
   // v11.0: steering via ShipMotion — the helm orders a rudder ANGLE
-  // (port/midships/starboard, max 35°) and the rudder slews to it at the
+  // (port/midships/starboard, max 35 deg) and the rudder slews to it at the
   // ship's hydraulic rate; release returns it to midships. Keys give a hard
-  // rudder; joystick X is the rudder; drag steers too. The class owns the
-  // rudder, the speed-scaled turn rate, the velocity (split forward/lateral,
-  // so the ship drifts slightly in a wide turn), the waves and the heel.
+  // rudder; joystick X is the rudder. Keys > joystick is the whole priority.
+  // v11.33: minimap waypoint autopilot — manual rudder input (keys or
+  // joystick) cancels it at once. While engaged it steers each driven ship
+  // toward the waypoint with a proportional rudder; within ~30 units of the
+  // primary it is reached and the autopilot disengages.
   let keyRudder = 0;
   if(state.keys['ArrowLeft'] || state.keys['a']) keyRudder -= 1;
   if(state.keys['ArrowRight'] || state.keys['d']) keyRudder += 1;
   const joyRudder = state.joyActive && Math.abs(state.joyX) > 0.08;
-  let rudderTarget = 0;
-  if(keyRudder !== 0) rudderTarget = keyRudder * RUDDER_MAX;
-  else if(joyRudder) rudderTarget = state.joyX * RUDDER_MAX;
-  // v11.6: the drag-steer is gone (the drag orbits the camera now); keys > joystick is the whole priority.
-  // v11.33: minimap waypoint autopilot (Item 2). Manual rudder input
-  // (keys or joystick) cancels it at once — the user has the helm. While
-  // it is engaged, steer the flagship toward the waypoint with a
-  // proportional rudder (heading error -> rudder, clamped to the ±35 deg
-  // max); the escorts follow the flagship in formation. Within ~30 units
-  // the waypoint is reached and the autopilot disengages.
-  if(fleetWaypoint && (keyRudder !== 0 || joyRudder)){
+  const manualRudder = keyRudder !== 0 ? keyRudder * RUDDER_MAX : joyRudder ? state.joyX * RUDDER_MAX : null;
+  if(fleetWaypoint && manualRudder !== null){
     clearFleetWaypoint();
     toast('🧭 Autopilot off', 'manual helm — tap the minimap to set a new waypoint');
-  } else if(fleetWaypoint){
-    const dx = fleetWaypoint.x - flag.x, dz = fleetWaypoint.z - flag.z;
-    if(Math.hypot(dx, dz) < 30){
-      clearFleetWaypoint();
-      toast('📍 Waypoint reached', 'autopilot off — you have the helm');
-    } else {
-      const toWp = Math.atan2(dx, -dz);
-      let dhWp = toWp - flag.heading;
-      dhWp = ((dhWp + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
-      rudderTarget = Math.max(-RUDDER_MAX, Math.min(RUDDER_MAX, dhWp * 180 / Math.PI * 1.5));
-    }
+  } else if(fleetWaypoint && primary && Math.hypot(fleetWaypoint.x - primary.x, fleetWaypoint.z - primary.z) < 30){
+    clearFleetWaypoint();
+    toast('📍 Waypoint reached', 'autopilot off — you have the helm');
   }
-  flag.rudderTargetDeg = rudderTarget;
-  const rs = flag.rudderSlew;
-  flag.rudderDeg += Math.max(-rs * dt, Math.min(rs * dt, rudderTarget - flag.rudderDeg));
-  const fm = flag.motion;
-  fm.maxSpeed = Math.max(0, st.speed * state.speedLoss * floodFactor);
-  const fwp = wavePush(flag.x, flag.z, state.t);
-  fm.update(dt, {
-    thrust: thrustIn, rudder: flag.rudderDeg / RUDDER_MAX,
-    currentX: state.curX + fwp.x, currentZ: state.curZ + fwp.z,
-    time: state.t, turnSlow: 1 - flag.floodTotal * 0.4, turnFloor: false,
-  });
-  flag.x = fm.x; flag.z = fm.z; flag.heading = fm.heading;
-  state.rudder = fm.rudder; state.headingRate = fm.headingRate;
-  // v11.33: flagship-steady detector (Item 4) — the escorts re-form slowly
-  // once the flagship stops correcting. Steady = her heading rate near zero
-  // (below 0.01 rad/s — the camera already treats 0.06 as turning) AND her
-  // rudder centred (below 2 deg), sustained for 3 s. While she is turning
-  // or the rudder is held, she is not steady and the escorts just follow.
-  const flagSteady = Math.abs(state.headingRate) < 0.01 && Math.abs(flag.rudderDeg) < 2;
-  state.steadyT = flagSteady ? (state.steadyT || 0) + dt : 0;
-  state.speed = fm.forwardSpeed;
-  // course-over-ground: where the ship is actually going — heading plus the
-  // lateral drift in a turn and the current, so HDG and COG differ in a turn
-  const vx = fm.vx + state.curX, vz = fm.vz + state.curZ;
-  state.cog = (Math.atan2(vx, -vz) * 180 / Math.PI + 360) % 360;
+  // drive the helm ships, then hold the rest (rudder 0, own notch)
+  const drivenSet = new Set(driven);
+  for(const s of driven){
+    let rt = 0;
+    if(manualRudder !== null) rt = manualRudder;
+    else if(fleetWaypoint) rt = wpRudderFor(s);
+    driveShip(s, dt, rt, st);
+  }
+  for(const s of fleet){
+    if(!s.alive || drivenSet.has(s)) continue;
+    // v11.44 fix: in FLEET mode the escort controller below owns these
+    // ships (it calls m.update itself) — driving them here too would
+    // update their motion twice per frame.
+    if(settings.fleetMode === 'FLEET') continue;
+    driveShip(s, dt, 0, st);
+  }
+  // the HUD / camera / escort-loop ship
+  if(hudShip){
+    const fm = hudShip.motion;
+    state.rudder = fm.rudder; state.headingRate = fm.headingRate;
+    // v11.33: flagship-steady detector — the escorts re-form slowly once
+    // the flagship stops correcting. Steady = heading rate near zero AND
+    // rudder centred, sustained for 3 s.
+    const flagSteady = Math.abs(state.headingRate) < 0.01 && Math.abs(hudShip.rudderDeg) < 2;
+    state.steadyT = flagSteady ? (state.steadyT || 0) + dt : 0;
+    state.speed = fm.forwardSpeed;
+    // course-over-ground: where the ship is actually going — heading plus the
+    // lateral drift in a turn and the current, so HDG and COG differ in a turn
+    const vx = fm.vx + state.curX, vz = fm.vz + state.curZ;
+    state.cog = (Math.atan2(vx, -vz) * 180 / Math.PI + 360) % 360;
+  }
   // v11.33: the user waypoint marker (Item 2) bobs on the swell and spins
   // slowly. The auto-spawned beacon (Item 3) is gone — the minimap
   // waypoint is the only waypoint now (no +500, no re-charting).
@@ -3571,13 +3598,16 @@ function update(dt){
     wpMarker.rotation.y = state.t * 0.8;
   }
 
-  // escorts hold formation with Reynolds Arrive + whisker obstacle avoidance.
-  // The slot is rotated by -flag.heading (the corrected frame, so the slot
-  // stays on the flagship's quarter as it turns instead of mirroring).
+  // v11.44: escorts hold formation with Reynolds Arrive + whisker obstacle
+  // avoidance — FLEET mode only. In INDV/ANCHOR the controller does not run
+  // at all (the other ships hold or are driven directly), so no mode switch
+  // can swing the fleet. The slot is rotated by -flag.heading (the corrected
+  // frame, so the slot stays on the flagship's quarter as it turns instead
+  // of mirroring).
   fleet.forEach(s => {
+    if(settings.fleetMode !== 'FLEET') return;
     if(!s.alive || s === flag) return;
     const m = s.motion;
-    const isCarrHold = cmAnch && s === carrierShip(); // v11.39: ANCHOR — the carrier holds her own course+speed
     const c = Math.cos(flag.heading), sn = Math.sin(flag.heading);
     let tx = flag.x + s.dx * c - s.dz * sn;
     let tz = flag.z + s.dx * sn + s.dz * c;
@@ -3634,9 +3664,9 @@ function update(dt){
       }
     }
     const holding = state.speed < 1;
-    // v11.36: speed mirrors the flagship + a small bounded along-track catch-up (steer ON only) so the escort can still close a slot gap; the Arrive magnitude is no longer the speed target.
+    // v11.36: speed mirrors the flagship + a small bounded along-track catch-up so the escort can still close a slot gap; the Arrive magnitude is no longer the speed target.
     const ag = (tx - m.x) * Math.sin(flag.heading) - (tz - m.z) * Math.cos(flag.heading);
-    let desSpeed = (cmOn || isCarrHold) ? m.forwardSpeed : state.speed + (settings.steer ? Math.max(-2, Math.min(2, ag * 0.1)) : 0); // v11.39: ON / carrier-hold — hold own speed, do not mirror
+    let desSpeed = state.speed + Math.max(-2, Math.min(2, ag * 0.1));
     // v11.5: the traffic cap moved below, after distToSlot — it is now
     // the real hull-circle gap (hullGap) and only applies off-slot.
     const distToSlot = Math.hypot(tx - m.x, tz - m.z);
@@ -3668,7 +3698,7 @@ function update(dt){
         }
       }
     });
-    if(trafficCap < Infinity && !isCarrHold) desSpeed = Math.min(desSpeed, trafficCap); // v11.39: the held carrier does not slow for traffic
+    if(trafficCap < Infinity) desSpeed = Math.min(desSpeed, trafficCap);
     // v11.36: no near-slot speed cap — the mirror catch-up (±2, proportional) cannot overshoot; rudder softening below stays.
     // v11.33: reform mode — once the flagship has held a steady course for ~3 s, an escort out of her slot glides back gently (rudder softened below). v11.36: no reform speed cap — the mirror catch-up (±2) is already gentle. Separation, the traffic cap and the whiskers still apply.
     const reforming = state.steadyT >= 3 && distToSlot > 25;
@@ -3693,9 +3723,6 @@ function update(dt){
       const corr = Math.max(-20, Math.min(20, dhF * 180 / Math.PI)) * Math.PI / 180;
       desHeading = flag.heading + corr;
     }
-    // v11.35: steer OFF — hold course (held heading), no slot-chasing; speed mirrors the flagship (v11.36).
-    if(!settings.steer) desHeading = state.heldH;
-    if(cmOn || isCarrHold) desHeading = state.heldH; // v11.39: hold the fleet heading captured when the mode was engaged
     let dh = desHeading - m.heading;
     dh = ((dh + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
     let rudderIn = Math.max(-1, Math.min(1, dh * 1.5));
@@ -3723,7 +3750,7 @@ function update(dt){
     // v10.8: escorts see each other sooner — whisker lookahead 26 -> 34 —
     // and a blocked centre whisker cuts the throttle, so an escort slows to
     // a crawl instead of motoring into the ship ahead of it.
-    const av = (distToSlot < 12 || isCarrHold) ? { bias: 0, blocked: false } : m.avoid(obstacles, 34); // v11.39: the held carrier does not swerve
+    const av = distToSlot < 12 ? { bias: 0, blocked: false } : m.avoid(obstacles, 34);
     rudderIn = Math.max(-1, Math.min(1, rudderIn + av.bias));
     if(m.forwardSpeed < -0.5) rudderIn = -rudderIn; // v11.34: astern — rudder reverses, negate the correction
     // v10.8: holding station replaces the v10.4 dead-zone. The old 4-unit
@@ -3743,7 +3770,7 @@ function update(dt){
       // together; the collisions came from the escorts actively thrusting
       // and overshooting. The active hold (telegraph not ALL STOP) reverts
       // to the v11.6 gain (/2) and settled cut (1.5/0.5).
-      if(flag.telegraph === 5 && !cmOn && !isCarrHold){ // v11.39: ON / carrier-hold — no drifting on the carrier's ALL STOP
+      if(flag.telegraph === 5){
         thrustIn = 0;
         rudderIn = 0;
       } else {
@@ -3767,7 +3794,7 @@ function update(dt){
     // formation while the flagship was slowing to a stop; a lagging escort
     // now re-forms over ~10 s instead, stretching the formation (safe)
     // rather than crossing it (fatal).
-    m.maxSpeed = Math.max(6, Math.max(0, (cmOn || isCarrHold) ? m.forwardSpeed : state.speed) + 2); // v11.39: a holding ship is not capped to the driven ship's speed + 2
+    m.maxSpeed = Math.max(6, Math.max(0, state.speed) + 2);
     const ewp = wavePush(m.x, m.z, state.t);
     // v10.5: an escort far from its slot while the flagship is slow gets
     // the turn-rate floor, so re-formation does not crawl at the low-speed
@@ -4032,7 +4059,7 @@ function update(dt){
 
 
   shipInteractions(dt);
-  } // v11.4: end of the flagship-dependent section — see the if(flag) above
+  } // v11.4: end of the flagship-dependent section — see the alive-ships guard above (v11.44)
 
   // per-ship physics: buoyancy, flooding, list/trim, smoke, fire, wakes
   fleet.forEach(s => {
@@ -4593,7 +4620,6 @@ function updateCamera(dt){
   // lock. The follow ends when she finishes sinking (the camera returns to
   // the flagship), when you click the flagship's row, or when you press R.
   let flag = flagship() || fleet[0];
-  if((carrOn()||carrAnch())&&!state.camFollowShip)flag=carrierShip(); // v11.39: ON/ANCHOR — the camera stays on the carrier
   if(state.camFollowShip){
     const f = state.camFollowShip;
     if(!f.alive && f.sinkT < 1) flag = f;
@@ -5493,7 +5519,7 @@ class FighterJetEntity {
     this.parkSpot = null; // deck parking spot
     this.formOffset = {x: 0, z: 0}; // formation offset (echelon, leader frame)
     this.aimPoint = {x: 0, y: 0, z: 0}; // steering target (set by the squadron)
-    this.trailT = 0; this.smokeT = 0; this.flareT = 0; this.steamT = 0;
+    this.smokeT = 0; this.flareT = 0; this.steamT = 0;
     this.spinT = 0; this.crashed = false;
     this.sinkT = 0; this.bubT = 0; this.slideT = 0; // v11.28: sinking + slide-off timers
     this.gone = false; // v11.28: fully despawned (removed from jets + squadron)
@@ -5836,18 +5862,8 @@ class FighterJetEntity {
     const ph = this.squadron ? this.squadron.attackPhase : '';
     const spd = this.state === 'trap' ? JET_TRAP_SPEED : this.state === 'attack' ? (ph === 'dive' ? JET_DIVE_SPEED : ph === 'popup' ? JET_CRUISE_SPEED : JET_ATTACK_SPEED) : JET_CRUISE_SPEED; // v11.43 D11/D12: popup 55, dive 80, pullout 70, egress 55, trap 48
     steerJetTo(this, ap.x, ap.y, ap.z, this.state === 'trap' ? 8 : 40, spd, dt);
-    // Afterburner + wingtip condensation trails in fast flight.
-    const fast = this.speed > 45;
-    this.trailT -= dt;
-    if(this.trailT <= 0 && this.speed > 30){
-      this.trailT = 0.09;
-      // Wingtip trails (two small white sprites at the wingtips).
-      const rx = Math.cos(this.heading), rz = Math.sin(this.heading);
-      for(const s of [-1, 1]){
-        spawnParticle(this.x + rx * 6.5 * s, this.y + 0.3, this.z + rz * 6.5 * s,
-          -this.vx * 0.05, 0, -this.vz * 0.05, 0.9, 0.95, 0.97, 1, 0);
-      }
-    }
+    // v11.44: the white wingtip contrails are gone (performance) — the
+    // damaged-jet smoke/fire below stays, as do the missile/SAM trails.
     // Damaged jets trail dark smoke/fire and wobble.
     if(this.hp < 50 && !this.crashed){
       this.smokeT -= dt;
