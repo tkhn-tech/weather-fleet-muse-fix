@@ -361,7 +361,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.42</div>
+    <div class="ver">v11.43</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -5398,7 +5398,7 @@ const CATAPULTS = [
 ];
 const WIRE_POS = {x: -8, z: 52}; // arrestor wires, angled deck (port side) — v11.27: 2x (was -4, 26)
 const DECK_PARK = [{x: -8, z: 76}, {x: 4, z: 76}, {x: -12, z: -16}, {x: 4, z: -16}]; // v11.40: park1 was (-12,76), off the deck edge (surface 8.81, float 1.53)
-const JET_CRUISE_SPEED = 55, JET_ATTACK_SPEED = 70, JET_CATAPULT_SPEED = 68;
+const JET_CRUISE_SPEED = 55, JET_ATTACK_SPEED = 70, JET_CATAPULT_SPEED = 68, JET_DIVE_SPEED = 80, JET_TRAP_SPEED = 48;
 const JET_MIN_ALT = 4; // minimum altitude above the ocean (units)
 const JET_MAX_ALT = 120; // ceiling (keeps jets in the playable sky)
 
@@ -5431,22 +5431,39 @@ function wrapAngle(a){
 function steerJetTo(jet, tx, ty, tz, slowingR, maxSpeed, dt){
   const dx = tx - jet.x, dy = ty - jet.y, dz = tz - jet.z;
   const d = Math.hypot(dx, dy, dz) || 0.001;
-  const sp = maxSpeed * Math.min(1, d / slowingR);
+  let sp = maxSpeed * Math.min(1, d / slowingR);
+  if(Math.abs(jet.roll) > 0.5) sp = Math.max(0, sp - Math.min(12, 8 * (1 / Math.cos(jet.roll) - 1))); // v11.43 D3: bleed speed in banked turns
   const dvx = dx / d * sp, dvy = dy / d * sp, dvz = dz / d * sp;
+  const pullout = jet.state === 'attack' && jet.squadron && jet.squadron.attackPhase === 'pullout'; // v11.43 D9
+  const divePush = jet.state === 'attack' && jet.squadron && jet.squadron.attackPhase === 'dive'; // v11.43: fast pushover into the 30 deg dive
   const accel = 32; // u/s^2 — jets answer fast, but not instantly
-  jet.vx += Math.max(-accel * dt, Math.min(accel * dt, dvx - jet.vx));
-  jet.vy += Math.max(-accel * dt, Math.min(accel * dt, dvy - jet.vy));
-  jet.vz += Math.max(-accel * dt, Math.min(accel * dt, dvz - jet.vz));
+  const vAcc = pullout ? 47 : divePush ? 60 : 32; // v11.43 D9: 4 g pull is 0.67 rad/s at 70 u/s; dive pushover ~6 g
+  let ax = dvx - jet.vx, ay = dvy - jet.vy, az = dvz - jet.vz;
+  const hSp = Math.hypot(jet.vx, jet.vz); // v11.43 D2: cap lateral accel at 18 u/s^2
+  if(hSp > 1){
+    const ux = jet.vx / hSp, uz = jet.vz / hSp;
+    const lat = -ax * uz + az * ux;
+    const lm = 18 * dt;
+    if(Math.abs(lat) > lm){ const ex = lat - Math.sign(lat) * lm; ax += ex * uz; az -= ex * ux; }
+  }
+  jet.vx += Math.max(-accel * dt, Math.min(accel * dt, ax));
+  jet.vy += Math.max(-vAcc * dt, Math.min(vAcc * dt, ay));
+  jet.vz += Math.max(-accel * dt, Math.min(accel * dt, az));
   jet.x += jet.vx * dt; jet.y += jet.vy * dt; jet.z += jet.vz * dt;
   jet.speed = Math.hypot(jet.vx, jet.vy, jet.vz);
   if(jet.speed > 1){
     const targetHeading = Math.atan2(jet.vx, -jet.vz);
     const dh = wrapAngle(targetHeading - jet.heading);
+    if(jet.prevHeading === undefined){ jet.prevHeading = jet.heading; jet.omegaSm = 0; }
+    const prevH = jet.prevHeading;
     jet.heading += dh * Math.min(1, dt * 3);
-    jet.pitch = Math.asin(Math.max(-1, Math.min(1, jet.vy / Math.max(1, jet.speed))));
-    // Bank into the turn (roll up to ~75 deg = 1.3 rad).
-    const targetRoll = Math.max(-1.3, Math.min(1.3, -dh * 6));
-    jet.roll += (targetRoll - jet.roll) * Math.min(1, dt * 4);
+    const w = wrapAngle(jet.heading - prevH) / Math.max(dt, 0.001);
+    jet.omegaSm += (w - jet.omegaSm) * Math.min(1, dt * 6);
+    jet.prevHeading = jet.heading;
+    const aoa = jet.state === 'trap' ? 0.14 : (jet.state === 'attack' ? 0 : 0.05); // v11.43 D5: angle of attack
+    jet.pitch = Math.asin(Math.max(-1, Math.min(1, jet.vy / Math.max(1, jet.speed)))) + aoa;
+    const targetRoll = pullout ? 0 : Math.max(-1.31, Math.min(1.31, -Math.atan2(jet.speed * jet.omegaSm, 15))); // v11.43 D1: coordinated bank from turn rate; D9: wings level in pullout
+    jet.roll += Math.max(-3.8 * dt, Math.min(3.8 * dt, targetRoll - jet.roll)); // v11.43 D4: constant 220 deg/s roll rate
   }
   const seaH = getOceanDataAt(jet.x, jet.z, state.t).height;
   const minY = seaH + JET_MIN_ALT;
@@ -5816,7 +5833,8 @@ class FighterJetEntity {
     // Flight states are driven by the squadron (it sets this.aimPoint and
     // the speed); the jet steers there.
     const ap = this.aimPoint;
-    const spd = this.state === 'attack' ? JET_ATTACK_SPEED : JET_CRUISE_SPEED;
+    const ph = this.squadron ? this.squadron.attackPhase : '';
+    const spd = this.state === 'trap' ? JET_TRAP_SPEED : this.state === 'attack' ? (ph === 'dive' ? JET_DIVE_SPEED : ph === 'popup' ? JET_CRUISE_SPEED : JET_ATTACK_SPEED) : JET_CRUISE_SPEED; // v11.43 D11/D12: popup 55, dive 80, pullout 70, egress 55, trap 48
     steerJetTo(this, ap.x, ap.y, ap.z, this.state === 'trap' ? 8 : 40, spd, dt);
     // Afterburner + wingtip condensation trails in fast flight.
     const fast = this.speed > 45;
@@ -5994,19 +6012,9 @@ class AirBomb {
     this.launcher = jet;
     this.target = target;
     this.x = jet.x; this.y = jet.y; this.z = jet.z;
-    // Aim at the target's predicted position (lead by fall time). The fall
-    // time accounts for the jet's dive (initial vertical velocity) — a bomb
-    // released in a steep dive falls faster, and ignoring that makes it
-    // fall short of the target. y(t) = y0 + vy0*t - 0.5*g*t^2, so the time
-    // to descend fallH is [vy0 + sqrt(vy0^2 + 2*g*fallH)] / g.
-    const fallH = Math.max(10, this.y - getOceanDataAt(target.x, target.z, state.t).height);
-    const vy0 = jet.vy * 0.5; // initial vertical velocity (negative = diving)
-    const fallT = (vy0 + Math.sqrt(vy0 * vy0 + 2 * 15 * fallH)) / 15; // g = 15 u/s^2 (game feel, not real g)
-    const px = target.x + (target.motion ? target.motion.vx * fallT : 0);
-    const pz = target.z + (target.motion ? target.motion.vz * fallT : 0);
-    this.vx = (px - this.x) / Math.max(0.5, fallT);
-    this.vz = (pz - this.z) / Math.max(0.5, fallT);
-    this.vy = vy0;
+    // v11.43 D10: ballistic — inherit the jet's velocity at release; the
+    // dive geometry (30 deg, release sea + 30, 45 out, 7 long) is what hits.
+    this.vx = jet.vx; this.vy = jet.vy; this.vz = jet.vz;
     this.dmg = 30;
     this.dead = false;
     // v11.35: procedural bomb body. The real JDAM GLB was dropped to fit
@@ -6187,14 +6195,14 @@ class AirSquadron {
         if(w && w.state === 'deck' && this.t >= 1){ w.state = 'catapult'; w.t = 0; }
         // Jets already off the bow (the leader) climb away — do not leave
         // them steering at a stale aim point while the wingman finishes.
-        const cp = carrierDeckPoint(carrier, 0, 45, -120);
+        const cp = carrierDeckPoint(carrier, 0, 60, -100);
         this.setFormationAim(leader, cp.x, cp.y, cp.z, JET_CRUISE_SPEED);
         if(alive.every(j => j.state === 'climb')){ this.state = 'climb'; this.t = 0; }
         break;
       }
       case 'climb': {
         // Climb to cruise altitude, forming up on the leader.
-        const p = carrierDeckPoint(carrier, 0, 45, -120);
+        const p = carrierDeckPoint(carrier, 0, 60, -100);
         this.setFormationAim(leader, p.x, p.y, p.z, JET_CRUISE_SPEED);
         if(leader.y > 38){ this.state = 'ingress'; this.t = 0; }
         break;
@@ -6256,14 +6264,22 @@ class AirSquadron {
           const d = Math.hypot(tgt.x - leader.x, tgt.z - leader.z);
           const seaH = getOceanDataAt(leader.x, leader.z, state.t).height;
           if(this.attackPhase === 'popup'){
-            // Rapid high-G pop-up climb.
-            this.setFormationAim(leader, leader.x, seaH + 62, leader.z, JET_ATTACK_SPEED);
-            if(leader.y > seaH + 55 || this.t > 6){ this.attackPhase = 'dive'; this.t = 0; }
+            // v11.43 D6: 30 deg pop-up climb, 60 ahead to sea + 47 (not a vertical zoom).
+            const fx = Math.sin(leader.heading), fz = -Math.cos(leader.heading);
+            this.setFormationAim(leader, leader.x + fx * 60, leader.y < seaH + 35 ? leader.y + 35 : seaH + 47, leader.z + fz * 60, JET_CRUISE_SPEED); // v11.43: hybrid popup — 30 deg climb, then level off at 47
+            if(leader.y > seaH + 45 || this.t > 6){ this.attackPhase = 'dive'; this.t = 0; }
           } else if(this.attackPhase === 'dive'){
-            // Steep dive onto the target, release bombs at ~80 out.
-            const ap = {x: tgt.x, y: seaH + 8, z: tgt.z};
-            this.setFormationAim(leader, ap.x, ap.y, ap.z, JET_ATTACK_SPEED);
-            if(d < 90){
+            // v11.43 D7/D8: constant 30 deg dive on the line through the release point
+            // (sea + 30, 45 out); release wings-level, abort below sea + 25.
+            const lead = 0.74; // bomb fall time — lead the moving target
+            const tx = tgt.x + (tgt.motion ? tgt.motion.vx * lead : 0);
+            const tz = tgt.z + (tgt.motion ? tgt.motion.vz * lead : 0);
+            const ldx = tx - leader.x, ldz = tz - leader.z;
+            const ld = Math.hypot(ldx, ldz) || 1;
+            const ux = ldx / ld, uz = ldz / ld;
+            const sAim = Math.max(0, ld - 80);
+            this.setFormationAim(leader, tx - ux * sAim, seaH + 30 + (sAim - 45) * 0.577, tz - uz * sAim, JET_DIVE_SPEED);
+            if(d <= 45 && leader.y <= seaH + 30 && Math.abs(leader.roll) < 0.1){
               alive.forEach(j => {
                 if(!j.fired){
                   j.fired = true;
@@ -6272,6 +6288,8 @@ class AirSquadron {
                 }
               });
               this.attackPhase = 'pullout'; this.t = 0;
+            } else if(leader.y <= seaH + 25){
+              this.attackPhase = 'pullout'; this.t = 0; // below min release — abort, no drop
             }
           } else if(this.attackPhase === 'pullout'){
             // Climb away, flares/chaff on pull-out.
@@ -6285,7 +6303,8 @@ class AirSquadron {
                 }
               }
             });
-            this.setFormationAim(leader, leader.x, seaH + 55, leader.z, JET_ATTACK_SPEED);
+            const fx = Math.sin(leader.heading), fz = -Math.cos(leader.heading);
+            this.setFormationAim(leader, leader.x + fx * 150, seaH + 20, leader.z + fz * 150, JET_ATTACK_SPEED); // v11.43 D9: 4 g level recovery, not a zoom climb
             if(this.t > 3){ this.state = 'egress'; this.t = 0; toast('💣 ' + this.label + ' bombs away', 'pulling out — egressing'); }
           }
         }
@@ -6339,12 +6358,12 @@ class AirSquadron {
       case 'trap': {
         // Arrested landing: follow the moving glide slope down to the wire.
         const wp = carrierDeckPoint(carrier, WIRE_POS.x, CARRIER_DECK_Y + 0.5, WIRE_POS.z);
-        const gp = glideSlopePoint(carrier, 60, 18);
+        const gp = glideSlopePoint(carrier, 60, 6); // v11.43 D13: 5.7 deg slope (was 16.7 deg)
         // Blend from the glide-slope point to the wire as we close.
         const dW = Math.hypot(wp.x - leader.x, wp.z - leader.z);
         const k = Math.max(0, Math.min(1, 1 - dW / 80));
         const ax = gp.x + (wp.x - gp.x) * k, ay = gp.y + (wp.y - gp.y) * k, az = gp.z + (wp.z - gp.z) * k;
-        this.setFormationAim(leader, ax, ay, az, 32);
+        this.setFormationAim(leader, ax, ay, az, JET_TRAP_SPEED); // v11.43 D12: 48 u/s approach
         if(dW < 6 && Math.abs(leader.y - wp.y) < 10){
           // Caught the wire: rapid deceleration on the deck.
           alive.forEach(j => {
