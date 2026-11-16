@@ -361,7 +361,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.40</div>
+    <div class="ver">v11.41</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -3651,14 +3651,14 @@ function update(dt){
     // gap closes, so an escort creeps to a near-stop before contact
     // instead of charging in. A sinking wreck IS tangible (v11.32): she
     // stays in the traffic cap and the whisker obstacles while she is
-    // still substantially above the water (sinkT < 0.7), so the escorts
+    // until she goes under (sinkT < 1, v11.41), so the escorts
     // slow and swerve around her — and collide if they cannot react in
-    // time. Once she is mostly submerged (sinkT >= 0.7) she leaves the
+    // time. Once she has gone under (sinkT >= 1) she leaves the
     // cap. It still steers nothing.
     let trafficCap = Infinity;
     const gapThresh = distToSlot > 6 ? 14 : 8; // v11.31: 10/5 -> 14/8 — the cap bites earlier in steady travel
     fleet.forEach(o => {
-      if(o !== s && (o.alive || (!o.alive && o.sinkT < 0.7))){
+      if(o !== s && (o.alive || (!o.alive && o.sinkT < 1))){
         const d = Math.hypot(o.x - m.x, o.z - m.z);
         if(d < 31){
           const gap = hullGap(s, o);
@@ -3716,7 +3716,7 @@ function update(dt){
     // + 4): carrier 23, battleship 17, destroyer 13.
     const obstacles = [];
     if(distToSlot >= 12){
-      fleet.forEach(o => { if(o !== s && (o.alive || (!o.alive && o.sinkT < 0.7))) obstacles.push({ x: o.x, z: o.z, r: Math.max(o.group.userData.wid * 1.5, o.group.userData.len * 0.25) + 4 }); });
+      fleet.forEach(o => { if(o !== s && (o.alive || (!o.alive && o.sinkT < 1))) obstacles.push({ x: o.x, z: o.z, r: Math.max(o.group.userData.wid * 1.5, o.group.userData.len * 0.25) + 4 }); });
     }
     // v10.8: escorts see each other sooner — whisker lookahead 26 -> 34 —
     // and a blocked centre whisker cuts the throttle, so an escort slows to
@@ -3787,14 +3787,14 @@ function update(dt){
   for(let i = 0; i < fleet.length; i++){
     for(let j = i + 1; j < fleet.length; j++){
       const a = fleet[i], b = fleet[j];
-      // v11.32: a sinking wreck is TANGIBLE — she is a solid obstacle while
-      // she is still substantially above the water (sinkT < 0.7). A live ship
-      // that sails into her collides (impulse + damage) exactly as with a
-      // live ship; two wrecks do not collide, and a mostly submerged wreck
-      // (sinkT >= 0.7) is no longer a surface obstacle. (v11.31 made wrecks
+      // v11.32: a sinking wreck is TANGIBLE — she is a solid obstacle for
+      // the WHOLE sinking (sinkT < 1, v11.41). A live ship that sails into
+      // her collides (impulse + damage) exactly as with a live ship; two
+      // wrecks do not collide, and only a fully submerged wreck (sinkT >= 1,
+      // despawned) is no longer a surface obstacle. (v11.31 made wrecks
       // ghosts by mistake — the flagship phased straight through them.)
-      const solidA = a.alive || (!a.alive && a.sinkT < 0.7);
-      const solidB = b.alive || (!b.alive && b.sinkT < 0.7);
+      const solidA = a.alive || (!a.alive && a.sinkT < 1);
+      const solidB = b.alive || (!b.alive && b.sinkT < 1);
       if(!solidA || !solidB || (!a.alive && !b.alive)) continue;
       const cA = hullCircles(a), cB = hullCircles(b);
       // v10.5b: take the DEEPEST overlap, not the first pair found. With
@@ -3952,14 +3952,14 @@ function update(dt){
     }
   }
   // v11.32: enemy<->wreck collisions — an enemy that sails into a sinking
-  // wreck (player or enemy, sinkT < 0.7) collides (impulse + damage), not
+  // wreck (player or enemy, sinkT < 1, v11.41) collides (impulse + damage), not
   // phases. The whisker avoidance in updateEnemies usually steers her clear;
   // this is the backstop for when she cannot react in time.
   for(const e of enemies){
     if(!e.alive) continue;
     const wrecks = [];
-    fleet.forEach(s => { if(!s.alive && s.sinkT < 0.7) wrecks.push(s); });
-    enemies.forEach(o => { if(o !== e && !o.alive && o.sinkT < 0.7) wrecks.push(o); });
+    fleet.forEach(s => { if(!s.alive && s.sinkT < 1) wrecks.push(s); });
+    enemies.forEach(o => { if(o !== e && !o.alive && o.sinkT < 1) wrecks.push(o); });
     for(const w of wrecks){
       const cE = hullCircles(e), cW = hullCircles(w);
       let hit = null;
@@ -4959,11 +4959,11 @@ function updateEnemies(dt){
     const seaSlow = 1 - state.stage * 0.06;
     // whisker avoidance (same as the escorts): player ships + other enemies
     const obstacles = [];
-    // v11.32: a sinking wreck is tangible for enemies too — a wreck still
-    // substantially above the water (sinkT < 0.7) is a whisker obstacle, so
+    // v11.32: a sinking wreck is tangible for enemies too — a wreck is a
+    // whisker obstacle for the whole sinking (sinkT < 1, v11.41), so
     // an enemy steers around her instead of sailing through her.
-    fleet.forEach(s => { if(s.alive || (!s.alive && s.sinkT < 0.7)) obstacles.push({x: s.x, z: s.z, r: Math.max(s.group.userData.wid * 1.5, s.group.userData.len * 0.25) + 4}); });
-    enemies.forEach(o => { if(o !== e && (o.alive || (!o.alive && o.sinkT < 0.7))) obstacles.push({x: o.x, z: o.z, r: Math.max(o.group.userData.wid * 1.5, o.group.userData.len * 0.25) + 4}); });
+    fleet.forEach(s => { if(s.alive || (!s.alive && s.sinkT < 1)) obstacles.push({x: s.x, z: s.z, r: Math.max(s.group.userData.wid * 1.5, s.group.userData.len * 0.25) + 4}); });
+    enemies.forEach(o => { if(o !== e && (o.alive || (!o.alive && o.sinkT < 1))) obstacles.push({x: o.x, z: o.z, r: Math.max(o.group.userData.wid * 1.5, o.group.userData.len * 0.25) + 4}); });
     const av = e.motion.avoid(obstacles, 34);
     rudderIn = Math.max(-1, Math.min(1, rudderIn + av.bias));
     const target = telegraphTarget(e, st);
