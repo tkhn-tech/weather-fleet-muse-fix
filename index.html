@@ -361,7 +361,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.37</div>
+    <div class="ver">v11.38</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -373,7 +373,7 @@
   <div class="card">
     <h2>Controls</h2>
     <p class="keys">Rudder: joystick (left/right) or ← → / A D — release to return to midships &nbsp;·&nbsp; Telegraph: W / S or ↑ ↓, click the panel, or keys 1–8 &nbsp;·&nbsp; Command: Tab or the fleet panel &nbsp;·&nbsp; Pause: P<br>
-      Drag / swipe the sea: orbit the camera round the fleet &nbsp;·&nbsp; Wheel / pinch / + / -: zoom &nbsp;·&nbsp; Right-drag: free look &nbsp;·&nbsp; ↺ (or R) resets the camera &nbsp;·&nbsp; U: dive below the surface &nbsp;·&nbsp; Click a sinking ship's row to watch her go down &nbsp;·&nbsp; Air Ops: the panel launches flights &nbsp;·&nbsp; C: follow a jet / weapon &nbsp;·&nbsp; N: radar north-up / heading-up &nbsp;·&nbsp; Esc: back to the fleet</p>
+      Drag / swipe the sea: orbit the camera round the fleet &nbsp;·&nbsp; Wheel / pinch / + / -: zoom &nbsp;·&nbsp; Shift + drag: pan the camera &nbsp;·&nbsp; Right-drag: free look &nbsp;·&nbsp; ↺ (or R) resets the camera &nbsp;·&nbsp; U: dive below the surface &nbsp;·&nbsp; Click a sinking ship's row to watch her go down &nbsp;·&nbsp; Air Ops: the panel launches flights &nbsp;·&nbsp; C: follow a jet / weapon &nbsp;·&nbsp; N: radar north-up / heading-up &nbsp;·&nbsp; Esc: back to the fleet</p>
     <button class="bigBtn" id="helpCloseBtn">Done</button>
   </div>
 </div>
@@ -2556,17 +2556,15 @@ canvas.addEventListener('pointermove', e => {
   if(state.orbitDrag){
     const dx = e.clientX - state.orbitLastX, dy = e.clientY - state.orbitLastY;
     state.orbitLastX = e.clientX; state.orbitLastY = e.clientY;
-    // drag right swings the camera right (clockwise round the fleet);
-    // drag up raises the camera. The elevation is clamped so the camera
-    // never goes under the water or fully top-down.
-    state.camOrbitAz -= dx * 0.005;
-    state.camOrbitEl = Math.max(-0.15, Math.min(0.6, state.camOrbitEl - dy * 0.005));
+    // Shift+drag pans the look target; plain drag orbits the camera.
+    if(e.shiftKey){ state.camPanX += dx * 0.05; state.camPanY -= dy * 0.05; clampCam(); }
+    else { state.camOrbitAz -= dx * 0.005; state.camOrbitEl = Math.max(-0.15, Math.min(0.6, state.camOrbitEl - dy * 0.005)); }
   }
   if(state.freeLookActive) state.freeLook = Math.max(-0.6, Math.min(0.6, state.freeLook + e.movementX * 0.003));
 });
 window.addEventListener('pointerup', e => {
   if(e.button === 2) state.freeLookActive = false;
-  if(e.button === 0) state.orbitDrag = false;
+  if(e.button === 0){ state.orbitDrag = false; saveCamera(); }
   pinchPts.delete(e.pointerId);
   if(pinchPts.size < 2){
     if(pinchActive){ pinchActive = false; saveCamera(); } // persist the zoom when the pinch ends
@@ -2592,9 +2590,8 @@ canvas.addEventListener('wheel', e => {
 // moves). The user changes the zoom (pinch on touch, wheel on mouse —
 // 0.35x to 2.5x, 1.0x default) and the orbit (drag/swipe round the
 // anchor), and the HUD reset button (or R) restores the defaults. The
-// camera panel (v10.4–v11.11) and the spectate camera are gone. The
-// look-pan state (camPanX/camPanY) stays frozen at 0 — nothing sets it
-// now — so updateCamera is untouched.
+// camera panel (v10.4-v11.11) and the spectate camera are gone.
+// v11.38: Shift+drag pans the look target (camPanX/camPanY).
 function clampCam(){
   state.camZoom = Math.max(0.35, Math.min(2.5, state.camZoom));
   state.camPanX = Math.max(-30, Math.min(30, state.camPanX));
@@ -4663,10 +4660,10 @@ function updateCamera(dt){
     const fitCap = state.camZoom < 1 ? camZ : camZ * 9.0;
     if(fitD >= fitCap){ fitD = fitCap; break; }
   }
-  // v11.36: the fit is a multiplier on the user's zoom, not an absolute distance — the old smoothed absolute (camZfSm) overrode the zoom (zooming out did nothing while it decayed; zooming in snapped at camZoom 1). Snap out, ease in.
+  // v11.36: fit multiplies the user zoom, not an absolute distance. Snap out, ease in; v11.38: snap to 1 when zoomed in (camZoom<1).
   const fitMul = state.camZoom < 1 ? 1 : fitD / camZ;
-  if(fitMul > state.camZfMul) state.camZfMul = fitMul;
-  else state.camZfMul += (fitMul - state.camZfMul) * (1 - Math.exp(-dt * 2.5));
+  if(fitMul > state.camZfMul || state.camZoom < 1) state.camZfMul = fitMul;
+  else state.camZfMul += (fitMul - state.camZfMul) * (1 - Math.exp(-dt * 5));
   const camZf = camZ * state.camZfMul;
   const camYf = camY * state.camZfMul;
   let tx = flag.x - ohx * camZf * Math.cos(a) + orx * camZf * Math.sin(a) * 0.55;
@@ -5426,7 +5423,7 @@ function steerJetTo(jet, tx, ty, tz, slowingR, maxSpeed, dt){
     jet.heading += dh * Math.min(1, dt * 3);
     jet.pitch = Math.asin(Math.max(-1, Math.min(1, jet.vy / Math.max(1, jet.speed))));
     // Bank into the turn (roll up to ~75 deg = 1.3 rad).
-    const targetRoll = Math.max(-1.3, Math.min(1.3, dh * 6));
+    const targetRoll = Math.max(-1.3, Math.min(1.3, -dh * 6));
     jet.roll += (targetRoll - jet.roll) * Math.min(1, dt * 4);
   }
   const seaH = getOceanDataAt(jet.x, jet.z, state.t).height;
@@ -5774,6 +5771,13 @@ class FighterJetEntity {
     if(this.state === 'deck' || this.state === 'rearm' || this.state === 'taxi'){
       // On the deck: ride the carrier (parked / taxiing / rearming).
       if(carrier && carrier.alive){
+        // v11.38: post-trap rollout along the angled deck.
+        if(this.state === 'taxi' && this.rolloutV > 0){
+          this.rolloutV = Math.max(0, this.rolloutV - 6 * dt);
+          this.rolloutZ -= this.rolloutV * dt;
+          this.parkSpot = {x: WIRE_POS.x, z: this.rolloutZ};
+          if(this.rolloutV <= 3 || this.rolloutZ <= -60){ this.rolloutV = 0; this.parkSpot.z = Math.max(-60, this.rolloutZ); }
+        }
         const spot = this.parkSpot || DECK_PARK[this.idx % DECK_PARK.length];
         const p = carrierDeckPoint(carrier, spot.x, CARRIER_DECK_Y, spot.z);
         this.x = p.x; this.y = p.y; this.z = p.z;
@@ -5787,7 +5791,7 @@ class FighterJetEntity {
     // the speed); the jet steers there.
     const ap = this.aimPoint;
     const spd = this.state === 'attack' ? JET_ATTACK_SPEED : JET_CRUISE_SPEED;
-    steerJetTo(this, ap.x, ap.y, ap.z, 40, spd, dt);
+    steerJetTo(this, ap.x, ap.y, ap.z, this.state === 'trap' ? 8 : 40, spd, dt);
     // Afterburner + wingtip condensation trails in fast flight.
     const fast = this.speed > 45;
     this.trailT -= dt;
@@ -6303,12 +6307,11 @@ class AirSquadron {
         const k = Math.max(0, Math.min(1, 1 - dW / 80));
         const ax = gp.x + (wp.x - gp.x) * k, ay = gp.y + (wp.y - gp.y) * k, az = gp.z + (wp.z - gp.z) * k;
         this.setFormationAim(leader, ax, ay, az, 32);
-        if(dW < 6 && Math.abs(leader.y - wp.y) < 6){
+        if(dW < 6 && Math.abs(leader.y - wp.y) < 10){
           // Caught the wire: rapid deceleration on the deck.
           alive.forEach(j => {
             j.state = 'taxi'; j.t = 0;
-            j.speed = 0; j.vx = 0; j.vy = 0; j.vz = 0;
-            j.placeOnDeck(carrier, j.parkSpot || DECK_PARK[j.idx % DECK_PARK.length]);
+            j.rolloutV = 28; j.rolloutZ = WIRE_POS.z + j.idx * 25;
           });
           this.state = 'taxi'; this.t = 0;
           toast('🛬 ' + this.label + ' trapped', 'caught the wire — aboard');
@@ -6316,8 +6319,7 @@ class AirSquadron {
           // Safety: never orbit the carrier forever — force the trap.
           alive.forEach(j => {
             j.state = 'taxi'; j.t = 0;
-            j.speed = 0; j.vx = 0; j.vy = 0; j.vz = 0;
-            j.placeOnDeck(carrier, j.parkSpot || DECK_PARK[j.idx % DECK_PARK.length]);
+            j.rolloutV = 28; j.rolloutZ = WIRE_POS.z + j.idx * 25;
           });
           this.state = 'taxi'; this.t = 0;
           toast('🛬 ' + this.label + ' trapped', 'caught the wire — aboard');
