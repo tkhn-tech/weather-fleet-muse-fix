@@ -361,7 +361,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.39</div>
+    <div class="ver">v11.40</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -5391,11 +5391,11 @@ let prevUs = 0;
 // --- carrier deck geometry (carrier-local: x = starboard+, z = forward-, y = up) ---
 const CARRIER_DECK_Y = 10.34; // flight-deck height above the waterline (v11.28: MEASURED from the Kennedy GLB — deck top 26.99 model units, waterline 3.25, fit scale 174/399.53 = 0.4355 -> (26.99-3.25)*0.4355 = 10.34; the v11.27 estimate of 13 was 2.66 too high, so jets floated above the deck)
 const CATAPULTS = [
-  {x: -10, z0: -12, z1: -84}, // bow catapult 1 (port) — v11.27: 2x with the carrier (was -5, -6, -42)
+  {x: -6, z0: -12, z1: -84}, // bow catapult 1 (port) — v11.40: x -10 ran off the bow deck (float 2.66, void past z=-60); -6 stays on deck
   {x: 6, z0: -12, z1: -84},  // bow catapult 2 (centre) — v11.27: 2x (was 3, -6, -42)
 ];
 const WIRE_POS = {x: -8, z: 52}; // arrestor wires, angled deck (port side) — v11.27: 2x (was -4, 26)
-const DECK_PARK = [{x: -12, z: 76}, {x: 4, z: 76}, {x: -12, z: -16}, {x: 4, z: -16}]; // v11.27: 2x
+const DECK_PARK = [{x: -8, z: 76}, {x: 4, z: 76}, {x: -12, z: -16}, {x: 4, z: -16}]; // v11.40: park1 was (-12,76), off the deck edge (surface 8.81, float 1.53)
 const JET_CRUISE_SPEED = 55, JET_ATTACK_SPEED = 70, JET_CATAPULT_SPEED = 68;
 const JET_MIN_ALT = 4; // minimum altitude above the ocean (units)
 const JET_MAX_ALT = 120; // ceiling (keeps jets in the playable sky)
@@ -5514,7 +5514,7 @@ class FighterJetEntity {
     const p = carrierDeckPoint(carrier, spot.x, CARRIER_DECK_Y, spot.z);
     this.x = p.x; this.y = p.y; this.z = p.z;
     this.heading = carrier.heading;
-    this.pitch = carrier.pitchSm || 0; this.roll = carrier.rollSm || 0;
+    this.pitch = carrier.group.rotation.x; this.roll = carrier.group.rotation.z; // v11.40: sit flat on the deck (full deck pitch/roll incl. trim/list/heel)
     this.vx = 0; this.vy = 0; this.vz = 0; this.speed = 0;
     this.parkSpot = spot;
   }
@@ -5534,7 +5534,7 @@ class FighterJetEntity {
     const p = carrierDeckPoint(carrier, cat.x, CARRIER_DECK_Y, z);
     this.x = p.x; this.y = p.y; this.z = p.z;
     this.heading = carrier.heading;
-    this.pitch = carrier.pitchSm || 0; this.roll = carrier.rollSm || 0;
+    this.pitch = carrier.group.rotation.x; this.roll = carrier.group.rotation.z; // v11.40: flat on the deck
     // Velocity along the carrier's forward (for the transition to flight).
     const fx = Math.sin(carrier.heading), fz = -Math.cos(carrier.heading);
     this.vx = fx * speed; this.vz = fz * speed; this.vy = 0;
@@ -5802,7 +5802,7 @@ class FighterJetEntity {
         const p = carrierDeckPoint(carrier, spot.x, CARRIER_DECK_Y, spot.z);
         this.x = p.x; this.y = p.y; this.z = p.z;
         this.heading = carrier.heading;
-        this.pitch = carrier.pitchSm || 0; this.roll = carrier.rollSm || 0;
+        this.pitch = carrier.group.rotation.x; this.roll = carrier.group.rotation.z; // v11.40: flat on the deck
       }
       this.syncModel();
       return;
