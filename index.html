@@ -361,7 +361,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.36</div>
+    <div class="ver">v11.37</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -6088,6 +6088,7 @@ class AirSquadron {
     this.state = 'catapult';
     this.t = 0;
     this.catIdx = 0;
+    this.patLeg = 0;
     this.attackPhase = '';
     // Stagger the catapult shots: leader first, wingman ~1 s later.
     this.jets[0].state = 'catapult';
@@ -6257,14 +6258,25 @@ class AirSquadron {
         break;
       }
       case 'rtb': {
-        // Fly back to a point astern of the carrier, then join the glide slope.
-        const gp = glideSlopePoint(carrier, 220, 48);
-        this.setFormationAim(leader, gp.x, gp.y, gp.z, JET_CRUISE_SPEED);
-        const dC = Math.hypot(carrier.x - leader.x, carrier.z - leader.z);
-        if(dC < 240){
-          // v11.28: no landing clearance on a sinking carrier — wave off.
-          if(!carrier.alive){ this.state = 'divert'; this.t = 0; }
-          else { this.state = 'trap'; this.t = 0; }
+        // v11.37: carrier landing pattern, not a straight-in — downwind
+        // (port, opposite course), base turn, final on the angled deck.
+        const L = this.patLeg || 0;
+        const p = L === 0 ? patPt(carrier, -190, -60, 45)
+          : L === 1 ? patPt(carrier, -190, 300, 45)
+          : L === 2 ? patPt(carrier, 30, 360, 40)
+          : patPt(carrier, -8, 210, 30);
+        const dP = Math.hypot(p.x - leader.x, p.z - leader.z);
+        if(L === 0 && dP < 70) this.patLeg = 1;
+        else if(L === 1 && dP < 70) this.patLeg = 2;
+        else if(L === 2 && dP < 90) this.patLeg = 3;
+        this.setFormationAim(leader, p.x, p.y, p.z, JET_CRUISE_SPEED);
+        if(L === 3){
+          const dC = Math.hypot(carrier.x - leader.x, carrier.z - leader.z);
+          if(dC < 240){
+            // v11.28: no landing clearance on a sinking carrier — wave off.
+            if(!carrier.alive){ this.state = 'divert'; this.t = 0; }
+            else { this.state = 'trap'; this.t = 0; }
+          }
         }
         break;
       }
@@ -6417,6 +6429,12 @@ function glideSlopePoint(carrier, back, alt){
     y: seaH + alt,
     z: carrier.z - fz * back,
   };
+}
+// v11.37: point at carrier-local (lx, lz), `alt` above the sea.
+function patPt(c, lx, lz, alt){
+  const h = c.heading, fx = Math.sin(h), fz = -Math.cos(h);
+  const x = c.x + Math.cos(h) * lx - fx * lz, z = c.z + Math.sin(h) * lx - fz * lz;
+  return {x, y: getOceanDataAt(x, z, state.t).height + alt, z};
 }
 function dropBomb(jet, target){
   const b = new AirBomb(jet, target);
