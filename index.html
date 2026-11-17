@@ -361,7 +361,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.44</div>
+    <div class="ver">v11.45</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -5454,22 +5454,45 @@ function wrapAngle(a){
 // Steer a jet toward (tx,ty,tz) with Arrive (slows inside slowingR) and a
 // capped acceleration, then integrate. Sets heading/pitch/roll from the
 // velocity and clamps altitude above the ocean.
+// v11.45 F1: stall speeds — real clean stall 130 kt -> 18 u/s at the game's
+// 1/4 speed scale; buffet warning 18-26. A jet below 18 stops flying.
+const JET_STALL_SPEED = 18, JET_BUFFET_SPEED = 26;
 function steerJetTo(jet, tx, ty, tz, slowingR, maxSpeed, dt){
+  // v11.45 F1: stall state (hysteresis: stall below 18, recover above 26,
+  // so it cannot chatter in and out). The wing-drop side is picked per stall.
+  if(jet.stalled === undefined){ jet.stalled = false; jet.stallSide = 1; }
+  if(jet.stalled ? jet.speed > JET_BUFFET_SPEED : jet.speed < JET_STALL_SPEED){
+    jet.stalled = !jet.stalled;
+    if(jet.stalled) jet.stallSide = Math.random() < 0.5 ? -1 : 1;
+  }
+  const stalled = jet.stalled;
+  if(stalled){
+    // Nose down + full power (the pilot recovery: unload, firewall the
+    // throttle). Aim 30 ahead and 20 below — a ~34 deg dive — so the jet
+    // trades altitude for speed instead of hovering.
+    const fx = Math.sin(jet.heading), fz = -Math.cos(jet.heading);
+    tx = jet.x + fx * 30; ty = jet.y - 20; tz = jet.z + fz * 30;
+  }
   const dx = tx - jet.x, dy = ty - jet.y, dz = tz - jet.z;
   const d = Math.hypot(dx, dy, dz) || 0.001;
-  let sp = maxSpeed * Math.min(1, d / slowingR);
+  let sp = stalled ? maxSpeed : maxSpeed * Math.min(1, d / slowingR); // v11.45 F1: stalled, full power (no Arrive slowdown)
   if(Math.abs(jet.roll) > 0.5) sp = Math.max(0, sp - Math.min(12, 8 * (1 / Math.cos(jet.roll) - 1))); // v11.43 D3: bleed speed in banked turns
   const dvx = dx / d * sp, dvy = dy / d * sp, dvz = dz / d * sp;
   const pullout = jet.state === 'attack' && jet.squadron && jet.squadron.attackPhase === 'pullout'; // v11.43 D9
   const divePush = jet.state === 'attack' && jet.squadron && jet.squadron.attackPhase === 'dive'; // v11.43: fast pushover into the 30 deg dive
-  const accel = 32; // u/s^2 — jets answer fast, but not instantly
-  const vAcc = pullout ? 47 : divePush ? 60 : 32; // v11.43 D9: 4 g pull is 0.67 rad/s at 70 u/s; dive pushover ~6 g
+  // v11.45 F6: real Hornet accel ~10-15 u/s^2 — 32 was near-instant (was 32).
+  // v11.45 F1: stalled, the longitudinal accel is 0 — stall drag cancels the
+  // thrust, so the jet gains speed only by falling (the report's energy calc:
+  // v^2 = 18^2 + 2*15*12, ~12 units of fall to get back to 26). It mushes
+  // straight ahead; the lateral cap below (6) is the bound if it could turn.
+  const accel = stalled ? 0 : 20;
+  const vAcc = stalled ? 15 : pullout ? 47 : divePush ? 60 : 32; // v11.45 F1: stalled, vy falls at up to g=15; v11.43 D9: 4 g pull is 0.67 rad/s at 70 u/s; dive pushover ~6 g
   let ax = dvx - jet.vx, ay = dvy - jet.vy, az = dvz - jet.vz;
   const hSp = Math.hypot(jet.vx, jet.vz); // v11.43 D2: cap lateral accel at 18 u/s^2
   if(hSp > 1){
     const ux = jet.vx / hSp, uz = jet.vz / hSp;
     const lat = -ax * uz + az * ux;
-    const lm = 18 * dt;
+    const lm = (stalled ? 6 : 18) * dt; // v11.45 F1: stalled, control is mushy — barely turns
     if(Math.abs(lat) > lm){ const ex = lat - Math.sign(lat) * lm; ax += ex * uz; az -= ex * ux; }
   }
   jet.vx += Math.max(-accel * dt, Math.min(accel * dt, ax));
@@ -5486,14 +5509,27 @@ function steerJetTo(jet, tx, ty, tz, slowingR, maxSpeed, dt){
     const w = wrapAngle(jet.heading - prevH) / Math.max(dt, 0.001);
     jet.omegaSm += (w - jet.omegaSm) * Math.min(1, dt * 6);
     jet.prevHeading = jet.heading;
-    const aoa = jet.state === 'trap' ? 0.14 : (jet.state === 'attack' ? 0 : 0.05); // v11.43 D5: angle of attack
-    jet.pitch = Math.asin(Math.max(-1, Math.min(1, jet.vy / Math.max(1, jet.speed)))) + aoa;
-    const targetRoll = pullout ? 0 : Math.max(-1.31, Math.min(1.31, -Math.atan2(jet.speed * jet.omegaSm, 15))); // v11.43 D1: coordinated bank from turn rate; D9: wings level in pullout
+    if(stalled){
+      // v11.45 F1: the nose drops on its own — pitch target -0.6 rad (-35 deg),
+      // overriding the normal asin(vy/speed) + aoa. Eased at 3 rad/s so it
+      // falls fast but does not snap.
+      jet.pitch += Math.max(-3 * dt, Math.min(3 * dt, -0.6 - jet.pitch));
+    } else {
+      const aoa = jet.state === 'trap' ? 0.14 : (jet.state === 'attack' ? 0 : 0.05); // v11.43 D5: angle of attack
+      jet.pitch = Math.asin(Math.max(-1, Math.min(1, jet.vy / Math.max(1, jet.speed)))) + aoa;
+      if(jet.pitch > 1.05) jet.pitch = 1.05; else if(jet.pitch < -1.05) jet.pitch = -1.05; // v11.45 F7: pitch clamp +-60 deg
+    }
+    // v11.45 F5: SAM-evasion break — force a 60 deg bank (+-1.05 rad) into the
+    // threat. D1 caps the coordinated bank at ~50 deg (atan(18/15)), so the
+    // break overrides it; the turn rate is still capped by the lateral accel.
+    // Sign: defSide +1 is a break to the RIGHT, which banks right = NEGATIVE
+    // roll in this game's convention (right turn -> roll < 0), hence the minus.
+    const targetRoll = stalled ? jet.stallSide * 0.5 : (jet.defensiveT > 0 ? -(jet.defSide || 1) * 1.05 : pullout ? 0 : Math.max(-1.31, Math.min(1.31, -Math.atan2(jet.speed * jet.omegaSm, 15)))); // v11.45 F1: one wing drops (+-0.5 rad) in the stall; v11.43 D1: coordinated bank; D9: wings level in pullout
     jet.roll += Math.max(-3.8 * dt, Math.min(3.8 * dt, targetRoll - jet.roll)); // v11.43 D4: constant 220 deg/s roll rate
   }
   const seaH = getOceanDataAt(jet.x, jet.z, state.t).height;
   const minY = seaH + JET_MIN_ALT;
-  if(jet.y < minY){ jet.y = minY; if(jet.vy < 0) jet.vy = 0; }
+  if(!stalled && jet.y < minY){ jet.y = minY; if(jet.vy < 0) jet.vy = 0; } // v11.45 F1: no altitude floor while stalled — a stalled wing has no lift to hold it up, so it can fall to the sea
   if(jet.y > JET_MAX_ALT){ jet.y = JET_MAX_ALT; if(jet.vy > 0) jet.vy = 0; }
 }
 
@@ -5527,6 +5563,12 @@ class FighterJetEntity {
     this.crashLocal = null; // v11.28: deck-local impact point (carrier crash)
     this.fired = false; // ordnance released this attack run
     this.attackPhase = ''; // bomb run sub-state: popup | dive | drop | pullout
+    this.stalled = false; // v11.45 F1: stall state (below 18 u/s the wing stops flying)
+    this.stallSide = 1; // v11.45 F1: wing-drop side (+1/-1, picked per stall)
+    this.buffT = 0; // v11.45 F1: buffet puff timer
+    this.defensiveT = 0; // v11.45 F5: SAM-evasion break timer
+    this.defSide = 1; // v11.45 F5: break direction (+1 right / -1 left)
+    this.diveT = 0; // v11.45 F2: wingman dive-stagger timer
   }
   // Build (or rebuild) the 3D model. Uses the Super Hornet GLB; if it failed
   // to load, falls back to a simple procedural jet so the air wing still works.
@@ -5636,7 +5678,7 @@ class FighterJetEntity {
     this.lostCounted = true;
     airWingRemaining = Math.max(0, airWingRemaining - 1);
   }
-  updateCrash(dt){
+  updateCrash(dt, carrier){
     this.spinT += dt;
     // Flat spin: yaw spins fast, the jet dives and rolls.
     this.heading += dt * 4;
@@ -5652,6 +5694,27 @@ class FighterJetEntity {
       spawnParticle(this.x, this.y, this.z, 0, 0, 0, 0.4, 1, 0.5, 0.1, 0);
     }
     const seaH = getOceanDataAt(this.x, this.z, state.t).height;
+    // v11.45: a wreck falling onto the carrier deck detonates on the deck
+    // instead of falling through it to the sea (deck footprint: |x|<=19,
+    // |z|<=87 in carrier-local coords, via worldToLocal as in updateSlideOff).
+    if(carrier && carrier.alive && this.y <= CARRIER_DECK_Y + 3){
+      const local = carrier.group.worldToLocal(new THREE.Vector3(this.x, this.y, this.z));
+      if(Math.abs(local.x) <= 19 && Math.abs(local.z) <= 87){
+        boomLight.position.set(this.x, this.y + 2, this.z); boomLight.intensity = 12;
+        const fb = spawnSprite(this.x, this.y + 2, this.z, 0.9, 14, 14, 2.5, 0xff8822, 0.95); fb.vy = 4;
+        burst(this.x, this.y, this.z, 30, [1, 0.6, 0.2], 8, 5);
+        burst(this.x, this.y, this.z, 20, [0.3, 0.3, 0.3], 5, 5);
+        if(airCam) airCam.noteDetonation(this.x, this.y, this.z);
+        toast('💥 Jet wreck on deck', 'a Super Hornet wreck hit the carrier deck and exploded');
+        this.removeModel();
+        this.gone = true;
+        const gi = jets.indexOf(this);
+        if(gi >= 0) jets.splice(gi, 1);
+        if(this.squadron) this.squadron.onJetLost(this);
+        this.syncModel();
+        return;
+      }
+    }
     if(this.y <= seaH){
       // v11.28: the jet CRASHES into the water and SINKS — she does not
       // fade out on the surface. Impact splash + explosion, then the wreck
@@ -5833,7 +5896,7 @@ class FighterJetEntity {
   // flight states; the catapult and crash have their own updates.
   update(dt, carrier){
     if(this.state === 'catapult'){ this.updateCatapult(dt, carrier); this.syncModel(); return; }
-    if(this.state === 'crashed'){ this.updateCrash(dt); this.syncModel(); return; }
+    if(this.state === 'crashed'){ this.updateCrash(dt, carrier); this.syncModel(); return; }
     if(this.state === 'sinking'){ this.updateSinking(dt); return; }
     if(this.state === 'slideoff'){ this.updateSlideOff(dt, carrier); this.syncModel(); return; }
     if(this.state === 'carrierCrash'){ this.updateCarrierCrash(dt, carrier); return; }
@@ -5858,10 +5921,42 @@ class FighterJetEntity {
     }
     // Flight states are driven by the squadron (it sets this.aimPoint and
     // the speed); the jet steers there.
-    const ap = this.aimPoint;
+    // v11.45 F5: SAM-evasion break — a SAM homing on this jet: break hard
+    // into the threat (a 90 deg turn, so the D1 coordinated bank goes to
+    // ~60 deg) and dump flares. Overrides the mission aim for 2-3 s.
+    const sam = samMissiles.find(m => m.target === this && !m.dead);
+    if(sam){
+      this.defensiveT = 2.5;
+      const sbx = sam.x - this.x, sbz = sam.z - this.z;
+      this.defSide = wrapAngle(Math.atan2(sbx, -sbz) - this.heading) >= 0 ? 1 : -1;
+    }
+    let ap = this.aimPoint;
+    if(this.defensiveT > 0){
+      this.defensiveT -= dt;
+      const bh = this.heading + (this.defSide || 1) * Math.PI / 2;
+      ap = { x: this.x + Math.sin(bh) * 150, y: this.y, z: this.z - Math.cos(bh) * 150 };
+      this.flareT -= dt;
+      if(this.flareT <= 0){
+        this.flareT = 0.15;
+        for(let k = 0; k < 3; k++){
+          spawnParticle(this.x, this.y, this.z, (Math.random() - 0.5) * 4, -2 - Math.random() * 2, (Math.random() - 0.5) * 4, 0.6, 1, 0.85, 0.4, 0);
+        }
+      }
+    }
     const ph = this.squadron ? this.squadron.attackPhase : '';
     const spd = this.state === 'trap' ? JET_TRAP_SPEED : this.state === 'attack' ? (ph === 'dive' ? JET_DIVE_SPEED : ph === 'popup' ? JET_CRUISE_SPEED : JET_ATTACK_SPEED) : JET_CRUISE_SPEED; // v11.43 D11/D12: popup 55, dive 80, pullout 70, egress 55, trap 48
     steerJetTo(this, ap.x, ap.y, ap.z, this.state === 'trap' ? 8 : 40, spd, dt);
+    // v11.45 F1: a stalled jet that reaches the sea is lost (the altitude
+    // floor does not apply while stalled). Recovery is only "speed > 26 AND
+    // above the sea" — a stall too low is fatal, via the existing crash().
+    if(this.stalled){
+      const seaH = getOceanDataAt(this.x, this.z, state.t).height;
+      if(this.y <= seaH){
+        this.crash('stalled into the sea');
+        this.syncModel();
+        return;
+      }
+    }
     // v11.44: the white wingtip contrails are gone (performance) — the
     // damaged-jet smoke/fire below stays, as do the missile/SAM trails.
     // Damaged jets trail dark smoke/fire and wobble.
@@ -5874,6 +5969,19 @@ class FighterJetEntity {
         if(this.hp < 25) spawnParticle(this.x, this.y, this.z, 0, 0, 0, 0.35, 1, 0.45, 0.1, 0);
       }
       this.roll += Math.sin(state.t * 7 + this.idx * 2) * 0.15 * dt; // instability wobble
+    }
+    // v11.45 F1: buffet — the stall warning (18-26 u/s). The airframe shakes
+    // and white puffs stream off the wingtips. The jet still flies.
+    if(!this.stalled && this.speed >= JET_STALL_SPEED && this.speed < JET_BUFFET_SPEED && !this.crashed){
+      this.roll += Math.sin(state.t * 13 + (this.idx || 0)) * 0.25 * dt;
+      this.buffT = (this.buffT || 0) - dt;
+      if(this.buffT <= 0){
+        this.buffT = 0.2;
+        const hx = Math.sin(this.heading), hz = -Math.cos(this.heading);
+        const rx = -hz, rz = hx;
+        spawnParticle(this.x + rx * 5.7, this.y, this.z + rz * 5.7, 0, 0, 0, 0.4, 0.95, 0.95, 0.95, 0);
+        spawnParticle(this.x - rx * 5.7, this.y, this.z - rz * 5.7, 0, 0, 0, 0.4, 0.95, 0.95, 0.95, 0);
+      }
     }
     this.syncModel();
   }
@@ -6130,8 +6238,16 @@ class AirSquadron {
     airWaypoint = null;
     // (Re)build the jets on the deck — drop the previous mission's jets
     // from the shared array too, or they would linger as radar ghosts.
-    this.jets.forEach(j => { j.removeModel(); const gi = jets.indexOf(j); if(gi >= 0) jets.splice(gi, 1); });
-    this.jets = [];
+    // v11.45: a falling/sinking wreck is NOT removed — she keeps her model
+    // and her place in the squadron until she despawns, so she finishes her
+    // crash sequence instead of vanishing mid-air on relaunch.
+    const keep = [];
+    this.jets.forEach(j => {
+      if(j.crashed){ keep.push(j); return; }
+      j.removeModel();
+      const gi = jets.indexOf(j); if(gi >= 0) jets.splice(gi, 1);
+    });
+    this.jets = keep;
     // v11.28: FINITE air wing — a launch takes up to 2 aircraft from the
     // carrier's remaining air wing (12 total, losses permanent). If fewer
     // than 2 remain, the flight launches with what is left (a single jet);
@@ -6147,7 +6263,7 @@ class AirSquadron {
       jet.parkSpot = DECK_PARK[(this.id - 1) * 2 + i] || DECK_PARK[i];
       jet.placeOnDeck(carrier, jet.parkSpot);
       // Echelon: wingman offset to the right and slightly behind the leader.
-      jet.formOffset = i === 0 ? {x: 0, z: 0} : {x: 18, z: 12};
+      jet.formOffset = i === 0 ? {x: 0, z: 0} : {x: 18, z: -12}; // v11.45 F3: wingman 12 BEHIND (was +12, ahead — the comment said behind)
       this.jets.push(jet);
       jets.push(jet);
     }
@@ -6157,13 +6273,16 @@ class AirSquadron {
     this.patLeg = 0;
     this.attackPhase = '';
     // Stagger the catapult shots: leader first, wingman ~1 s later.
-    this.jets[0].state = 'catapult';
-    this.jets[0].t = 0;
-    this.jets[0].catapult = CATAPULTS[0];
-    if(this.jets[1]){ // v11.28: a 1-jet flight (finite wing) has no wingman
-      this.jets[1].state = 'deck';
-      this.jets[1].t = -1; // launches 1 s after the leader
-      this.jets[1].catapult = CATAPULTS[1 % CATAPULTS.length];
+    // (The new jets are the last ones pushed — a kept wreck from the last
+    // mission may sit ahead of them in this.jets, so use newJets, not [0]/[1].)
+    const newJets = this.jets.slice(-n);
+    newJets[0].state = 'catapult';
+    newJets[0].t = 0;
+    newJets[0].catapult = CATAPULTS[0];
+    if(newJets[1]){ // v11.28: a 1-jet flight (finite wing) has no wingman
+      newJets[1].state = 'deck';
+      newJets[1].t = -1; // launches 1 s after the leader
+      newJets[1].catapult = CATAPULTS[1 % CATAPULTS.length];
     }
     toast('🚀 ' + this.label + ' launching', loadout === 'asm' ? 'Anti-ship missile strike' : 'Precision bombing strike');
     return true;
@@ -6206,8 +6325,9 @@ class AirSquadron {
     const leader = alive[0];
     switch(this.state){
       case 'catapult': {
-        // Wingman launches 1 s after the leader.
-        const w = this.jets[1];
+        // Wingman launches 1 s after the leader. (aliveJets[1], not
+        // jets[1] — a kept wreck from the last mission may sit at [1].)
+        const w = alive[1];
         if(w && w.state === 'deck' && this.t >= 1){ w.state = 'catapult'; w.t = 0; }
         // Jets already off the bow (the leader) climb away — do not leave
         // them steering at a stale aim point while the wingman finishes.
@@ -6283,7 +6403,7 @@ class AirSquadron {
             // v11.43 D6: 30 deg pop-up climb, 60 ahead to sea + 47 (not a vertical zoom).
             const fx = Math.sin(leader.heading), fz = -Math.cos(leader.heading);
             this.setFormationAim(leader, leader.x + fx * 60, leader.y < seaH + 35 ? leader.y + 35 : seaH + 47, leader.z + fz * 60, JET_CRUISE_SPEED); // v11.43: hybrid popup — 30 deg climb, then level off at 47
-            if(leader.y > seaH + 45 || this.t > 6){ this.attackPhase = 'dive'; this.t = 0; }
+            if(leader.y > seaH + 45 || this.t > 6){ this.attackPhase = 'dive'; this.t = 0; alive.forEach(j => { j.diveT = 0; }); } // v11.45 F2: wingman dive clock starts here
           } else if(this.attackPhase === 'dive'){
             // v11.43 D7/D8: constant 30 deg dive on the line through the release point
             // (sea + 30, 45 out); release wings-level, abort below sea + 25.
@@ -6294,19 +6414,52 @@ class AirSquadron {
             const ld = Math.hypot(ldx, ldz) || 1;
             const ux = ldx / ld, uz = ldz / ld;
             const sAim = Math.max(0, ld - 80);
-            this.setFormationAim(leader, tx - ux * sAim, seaH + 30 + (sAim - 45) * 0.577, tz - uz * sAim, JET_DIVE_SPEED);
-            if(d <= 45 && leader.y <= seaH + 30 && Math.abs(leader.roll) < 0.1){
-              alive.forEach(j => {
-                if(!j.fired){
-                  j.fired = true;
-                  for(let k = 0; k < j.ordnance; k++) dropBomb(j, tgt);
-                  j.ordnance = 0;
-                }
-              });
-              this.attackPhase = 'pullout'; this.t = 0;
-            } else if(leader.y <= seaH + 25){
-              this.attackPhase = 'pullout'; this.t = 0; // below min release — abort, no drop
+            // v11.45 F2: if the leader already released, it holds level at
+            // sea+30 while the wingman finishes its (delayed, higher) dive.
+            if(leader.fired){
+              const fx = Math.sin(leader.heading), fz = -Math.cos(leader.heading);
+              this.setFormationAim(leader, leader.x + fx * 150, seaH + 30, leader.z + fz * 150, JET_CRUISE_SPEED);
+            } else {
+              this.setFormationAim(leader, tx - ux * sAim, seaH + 30 + (sAim - 45) * 0.577, tz - uz * sAim, JET_DIVE_SPEED);
             }
+            // v11.45 F2: wingman dive stagger — rolls in 2 s after the leader,
+            // 10 units higher (release at sea+40). While delayed it holds at
+            // the popup altitude. Once the delay is up it flies its OWN dive
+            // to the target on the same 30 deg line, 10 higher — NOT the
+            // leader's position (the leader has already released and flown
+            // past the target, so chasing it would never release).
+            alive.forEach(j => {
+              if(j === leader) return;
+              if(j.diveT === undefined) j.diveT = 0;
+              j.diveT += dt;
+              if(j.diveT < 2) j.aimPoint.y = seaH + 47;
+              else {
+                const wdx = tx - j.x, wdz = tz - j.z;
+                const wld = Math.hypot(wdx, wdz) || 1;
+                const wux = wdx / wld, wuz = wdz / wld;
+                const wsAim = Math.max(0, wld - 80);
+                j.aimPoint.x = tx - wux * wsAim;
+                j.aimPoint.y = seaH + 40 + (wsAim - 45) * 0.577;
+                j.aimPoint.z = tz - wuz * wsAim;
+              }
+            });
+            // v11.45 F2: per-jet release — the wingman releases 2 s later at
+            // sea+40 (the leader releases at sea+30). Pull out when all have
+            // fired, or when the leader is below the min release (abort).
+            alive.forEach(j => {
+              if(j.fired) return;
+              const isWing = j !== leader;
+              if(isWing && (j.diveT === undefined || j.diveT < 2)) return;
+              const dj = Math.hypot(tgt.x - j.x, tgt.z - j.z);
+              const relAlt = isWing ? seaH + 40 : seaH + 30;
+              if(dj <= 45 && j.y <= relAlt && Math.abs(j.roll) < 0.1){
+                j.fired = true;
+                for(let k = 0; k < j.ordnance; k++) dropBomb(j, tgt);
+                j.ordnance = 0;
+              }
+            });
+            if(alive.every(j => j.fired)){ this.attackPhase = 'pullout'; this.t = 0; }
+            else if(!leader.fired && leader.y <= seaH + 25){ this.attackPhase = 'pullout'; this.t = 0; } // below min release and the leader has NOT released — abort, no drop (v11.45 F2: once the leader has released, the abort must not fire — it would cut the staggered wingman's dive short)
           } else if(this.attackPhase === 'pullout'){
             // Climb away, flares/chaff on pull-out.
             alive.forEach(j => {
@@ -6380,6 +6533,9 @@ class AirSquadron {
         const k = Math.max(0, Math.min(1, 1 - dW / 80));
         const ax = gp.x + (wp.x - gp.x) * k, ay = gp.y + (wp.y - gp.y) * k, az = gp.z + (wp.z - gp.z) * k;
         this.setFormationAim(leader, ax, ay, az, JET_TRAP_SPEED); // v11.43 D12: 48 u/s approach
+        // v11.45 F4: bolter check — carrier-local z of the leader (the wire
+        // is at local z=52, the bow is -z, so past the wire is z < 22).
+        const lclZ = carrier.group.worldToLocal(new THREE.Vector3(leader.x, leader.y, leader.z)).z;
         if(dW < 6 && Math.abs(leader.y - wp.y) < 10){
           // Caught the wire: rapid deceleration on the deck.
           alive.forEach(j => {
@@ -6388,8 +6544,13 @@ class AirSquadron {
           });
           this.state = 'taxi'; this.t = 0;
           toast('🛬 ' + this.label + ' trapped', 'caught the wire — aboard');
-        } else if(this.t > 40){
-          // Safety: never orbit the carrier forever — force the trap.
+        } else if(lclZ < WIRE_POS.z - 30){
+          // v11.45 F4: bolter — the jet flew 30 units past the wire toward
+          // the bow without catching it. Full power, climb, rejoin downwind.
+          this.state = 'rtb'; this.patLeg = 1; this.t = 0;
+          toast('✈️ ' + this.label + ' bolter', 'missed the wire — going around');
+        } else if(this.t > 90){
+          // Safety (last resort only): never orbit the carrier forever — force the trap.
           alive.forEach(j => {
             j.state = 'taxi'; j.t = 0;
             j.rolloutV = 28; j.rolloutZ = WIRE_POS.z + j.idx * 25;
@@ -6465,7 +6626,7 @@ class AirSquadron {
       if(j === leader) return;
       const ox = j.formOffset.x, oz = j.formOffset.z;
       j.aimPoint.x = leader.x + rx * ox + hx * oz;
-      j.aimPoint.y = leader.y;
+      j.aimPoint.y = leader.y - 3; // v11.45 F3: echelon step-down (wingman 3 below the leader, out of the wake)
       j.aimPoint.z = leader.z + rz * ox + hz * oz;
     });
   }
@@ -6555,8 +6716,40 @@ class CarrierAirWingSystem {
     if(!state.running || state.paused || state.over) return;
     const carrier = carrierShip();
     this.squadrons.forEach(s => s.update(dt, carrier));
+    this.checkJetCollisions(); // v11.45: mid-air collisions (after the jets moved this substep)
     if(airMissileSystem) airMissileSystem.update(dt);
     updateAirBombs(dt);
+  }
+  // v11.45: mid-air collisions — two solid jets that touch mid-air both
+  // crash and explode. Threshold 10 units centre-to-centre (a sphere of
+  // radius 5 per jet — at 10 the airframes overlap in every orientation).
+  // Checked once per substep, after the jets moved. Deck/catapult/taxi/
+  // rearm jets are not flying (deck jets sit 12 apart on the catapults),
+  // and crashed/sinking/slideoff/carrierCrash jets are already lost.
+  checkJetCollisions(){
+    const FLY = ['climb', 'ingress', 'attack', 'egress', 'rtb', 'trap', 'divert'];
+    for(let i = 0; i < jets.length; i++){
+      const a = jets[i];
+      if(a.crashed || !FLY.includes(a.state)) continue;
+      for(let k = i + 1; k < jets.length; k++){
+        const b = jets[k];
+        if(b.crashed || !FLY.includes(b.state)) continue;
+        const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+        if(dx * dx + dy * dy + dz * dz < 100){
+          // One mid-air fireball at the midpoint, then both crash (the
+          // existing crash() gives the flat spin, splash and sinking, and
+          // deducts each aircraft exactly once via loseAircraft()).
+          const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, mz = (a.z + b.z) / 2;
+          boomLight.position.set(mx, my, mz); boomLight.intensity = 12;
+          const fb = spawnSprite(mx, my + 2, mz, 0.9, 14, 14, 2.5, 0xff8822, 0.95); fb.vy = 4;
+          burst(mx, my, mz, 30, [1, 0.6, 0.2], 8, 5);
+          burst(mx, my, mz, 20, [0.3, 0.3, 0.3], 5, 5);
+          if(airCam) airCam.noteDetonation(mx, my, mz);
+          toast('💥 Mid-air collision', 'two Super Hornets collided mid-air');
+          a.crash('mid-air collision'); b.crash('mid-air collision');
+        }
+      }
+    }
   }
   reset(){
     airWingRemaining = AIR_WING_TOTAL; // v11.28: a new round gets a fresh air wing of 12
@@ -6914,19 +7107,23 @@ class TacticalRadarHUD {
     const stateCol = {catapult: '#58d68d', climb: '#58d68d', ingress: '#7fd4ff', attack: '#ffd166', egress: '#ffffff', rtb: '#ffffff', trap: '#ffd166'};
     jets.forEach(j => {
       if(j.crashed) return;
-      const p = this.toPx(f, C, sc, j.x, j.z);
-      if(p[0] < -4 || p[0] > W + 4 || p[1] < -4 || p[1] > H + 4) return;
+      // v11.45: jets beyond the 500-unit range are CLAMPED to the rim
+      // (an off-screen indicator) instead of vanishing — the jets are
+      // always tracked on the radar.
+      let p = this.toPx(f, C, sc, j.x, j.z);
+      p = [Math.max(6, Math.min(W - 6, p[0])), Math.max(6, Math.min(H - 6, p[1]))];
       const sq = j.squadron;
       const col = (sq && stateCol[sq.state]) || '#ffffff';
       // Chevron pointing along the jet's heading (north-up: up = -z).
       const hx = Math.sin(j.heading), hz = -Math.cos(j.heading);
-      const r = 5;
+      const r = 6; // v11.45: bigger chevron (was 5)
       ctx.fillStyle = col;
       ctx.beginPath();
       ctx.moveTo(p[0] + hx * r, p[1] + hz * r);
       ctx.lineTo(p[0] - hz * r * 0.8 - hx * r * 0.6, p[1] + hx * r * 0.8 - hz * r * 0.6);
       ctx.lineTo(p[0] + hz * r * 0.8 - hx * r * 0.6, p[1] - hx * r * 0.8 - hz * r * 0.6);
       ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.lineWidth = 1; ctx.stroke(); // v11.45: dark outline so the chevron reads against the sea
       // Ordnance dots beside the chevron.
       for(let k = 0; k < j.ordnance; k++){
         ctx.fillStyle = '#ffd166';
