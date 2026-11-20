@@ -361,7 +361,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.45</div>
+    <div class="ver">v11.46</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -5477,6 +5477,17 @@ function steerJetTo(jet, tx, ty, tz, slowingR, maxSpeed, dt){
   const d = Math.hypot(dx, dy, dz) || 0.001;
   let sp = stalled ? maxSpeed : maxSpeed * Math.min(1, d / slowingR); // v11.45 F1: stalled, full power (no Arrive slowdown)
   if(Math.abs(jet.roll) > 0.5) sp = Math.max(0, sp - Math.min(12, 8 * (1 / Math.cos(jet.roll) - 1))); // v11.43 D3: bleed speed in banked turns
+  // v11.46: never COMMAND a jet below flying speed. Arrive slows the jet as it
+  // nears its aim point, and on a mission leg (climb / ingress / attack) the aim
+  // point can sit almost on top of the jet (the ingress approach point, a dive
+  // aim) — the desired speed then drops below the 18 stall speed and the jet
+  // stalls and death-spirals into the sea, seconds after takeoff. A jet flies
+  // THROUGH its aim point, it does not stop at it; the only place a jet slows
+  // to a stop is the trap rollout (which does not use steerJetTo). The floor is
+  // 30, above the 26 buffet/recovery band. A jet that is ALREADY slow still
+  // stalls (the check is on its current speed, and a stalled jet has accel 0),
+  // so the genuine stall model is untouched.
+  if(!stalled) sp = Math.max(sp, 30);
   const dvx = dx / d * sp, dvy = dy / d * sp, dvz = dz / d * sp;
   const pullout = jet.state === 'attack' && jet.squadron && jet.squadron.attackPhase === 'pullout'; // v11.43 D9
   const divePush = jet.state === 'attack' && jet.squadron && jet.squadron.attackPhase === 'dive'; // v11.43: fast pushover into the 30 deg dive
@@ -5500,6 +5511,26 @@ function steerJetTo(jet, tx, ty, tz, slowingR, maxSpeed, dt){
   jet.vz += Math.max(-accel * dt, Math.min(accel * dt, az));
   jet.x += jet.vx * dt; jet.y += jet.vy * dt; jet.z += jet.vz * dt;
   jet.speed = Math.hypot(jet.vx, jet.vy, jet.vz);
+  // v11.46: climb-out / ingress / attack ACTUAL-speed floor. The sp floor
+  // above only sets the DESIRED speed; the jet still loses ACTUAL speed in
+  // the turn onto an astern/abeam enemy, because that turn is a velocity
+  // reversal (the aim ends up behind the jet, so the steering decelerates
+  // it to turn around) and the speed drops below the 18 stall speed even
+  // with sp >= 30. The same bleed hits the wingman in the attack: its
+  // speed falls 54 -> 33 in the popup climb and -> 18 chasing the hold
+  // point, and it stays banked 0.5-0.9 rad through the dive, so the
+  // wings-level release never fires in the release zone and it releases
+  // late and low. The pilot keeps the jet above flying speed through the
+  // launch sequence (climb/ingress/attack — the first mission leg after
+  // takeoff), so the actual speed is floored at 30 there. A faster jet
+  // also banks less tracking the same aim, so it is wings-level when it
+  // reaches the release zone. A jet that is ALREADY stalled still stalls
+  // (the check is on its current speed, and this floor does not run while
+  // stalled), and it does not apply in egress/rtb/trap/divert, where
+  // genuine slow flight still stalls.
+  if(!stalled && (jet.state === 'climb' || jet.state === 'ingress' || jet.state === 'attack') && jet.speed > 0.01 && jet.speed < 30){
+    const _k = 30 / jet.speed; jet.vx *= _k; jet.vy *= _k; jet.vz *= _k; jet.speed = 30;
+  }
   if(jet.speed > 1){
     const targetHeading = Math.atan2(jet.vx, -jet.vz);
     const dh = wrapAngle(targetHeading - jet.heading);
@@ -6403,7 +6434,7 @@ class AirSquadron {
             // v11.43 D6: 30 deg pop-up climb, 60 ahead to sea + 47 (not a vertical zoom).
             const fx = Math.sin(leader.heading), fz = -Math.cos(leader.heading);
             this.setFormationAim(leader, leader.x + fx * 60, leader.y < seaH + 35 ? leader.y + 35 : seaH + 47, leader.z + fz * 60, JET_CRUISE_SPEED); // v11.43: hybrid popup — 30 deg climb, then level off at 47
-            if(leader.y > seaH + 45 || this.t > 6){ this.attackPhase = 'dive'; this.t = 0; alive.forEach(j => { j.diveT = 0; }); } // v11.45 F2: wingman dive clock starts here
+            if(leader.y > seaH + 45 || this.t > 6){ this.attackPhase = 'dive'; this.t = 0; alive.forEach(j => { j.diveT = 0; j.diveAimPt = null; }); } // v11.45 F2: wingman dive clock starts here; v11.46: the stored dive aim resets too
           } else if(this.attackPhase === 'dive'){
             // v11.43 D7/D8: constant 30 deg dive on the line through the release point
             // (sea + 30, 45 out); release wings-level, abort below sea + 25.
@@ -6432,15 +6463,39 @@ class AirSquadron {
               if(j === leader) return;
               if(j.diveT === undefined) j.diveT = 0;
               j.diveT += dt;
-              if(j.diveT < 2) j.aimPoint.y = seaH + 47;
+              if(j.diveT < 2){
+                // v11.46: hold level at the popup altitude (sea+47), as in
+                // v11.45 — the carrot / standoff / tangent holds all banked
+                // the wingman and broke the stagger release (it released
+                // late and low, or never). The v11.45 hold keeps it flying
+                // straight and wings-level. It does fly onto the target
+                // (22 out) and overshoot — but the v11.46 actual-speed
+                // floor (30 in attack) now keeps it above flying speed
+                // through the overshoot and reversal, so it no longer
+                // stalls; it turns around and releases on the next pass.
+                // The fixed dive aim (below) then gives it a straight,
+                // wings-level dive.
+                j.aimPoint.y = seaH + 47;
+              }
               else {
-                const wdx = tx - j.x, wdz = tz - j.z;
-                const wld = Math.hypot(wdx, wdz) || 1;
-                const wux = wdx / wld, wuz = wdz / wld;
-                const wsAim = Math.max(0, wld - 80);
-                j.aimPoint.x = tx - wux * wsAim;
-                j.aimPoint.y = seaH + 40 + (wsAim - 45) * 0.577;
-                j.aimPoint.z = tz - wuz * wsAim;
+                // v11.46: FIXED dive aim — computed once when the wingman's
+                // dive starts, then flown straight at. Recomputing it every
+                // frame moved the aim point as the jet closed, so the jet
+                // kept turning to chase it (roll 0.5-0.9 the whole dive) and
+                // the wings-level release (|roll| < 0.1) never fired in the
+                // release zone; it descended past sea+40 and released late
+                // and low. A fixed aim stops the turn, so it levels out in
+                // ~0.1 s and is wings-level when it passes dj<=45, y<=40.
+                if(!j.diveAimPt){
+                  const wdx = tx - j.x, wdz = tz - j.z;
+                  const wld = Math.hypot(wdx, wdz) || 1;
+                  const wux = wdx / wld, wuz = wdz / wld;
+                  const wsAim = Math.max(0, wld - 80);
+                  j.diveAimPt = { x: tx - wux * wsAim, y: seaH + 40 + (wsAim - 45) * 0.577, z: tz - wuz * wsAim };
+                }
+                j.aimPoint.x = j.diveAimPt.x;
+                j.aimPoint.y = j.diveAimPt.y;
+                j.aimPoint.z = j.diveAimPt.z;
               }
             });
             // v11.45 F2: per-jet release — the wingman releases 2 s later at
