@@ -361,7 +361,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.46</div>
+    <div class="ver">v11.47</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -2399,7 +2399,7 @@ function emitPropBubbles(dt){
 
 // ---------- sprite pool (smoke, wakes, crest foam) ----------
 const spritePool = [];
-for(let i = 0; i < 120; i++){ // v11.27: 90 -> 120 — more smoke/fireball/shockwave/debris sprites for the bigger VFX
+for(let i = 0; i < 160; i++){ // v11.47: 120 -> 160 — enemies now get smoke columns, fire glows and scorch, so the shared pool needs headroom
   const mat = new THREE.SpriteMaterial({map: softTex, transparent: true, opacity: 0, depthWrite: false});
   const sp = new THREE.Sprite(mat);
   sp.scale.set(4, 4, 1);
@@ -3213,6 +3213,32 @@ function splitShip(ship){
   ship.group.visible = false;
   return {bow, stern};
 }
+// v11.47: the magazine-zone helper — the along-fraction of a hit point in
+// the target's frame (bow +). The Forward Magazine compartment spans the
+// forward 25% of the hull, so an > 0.5 is a magazine hit. Works for player
+// and enemy ships alike (both carry heading, x, z, group.userData.len).
+function magazineAn(ship, hx, hz){
+  const along = (hx - ship.x) * Math.sin(ship.heading) - (hz - ship.z) * Math.cos(ship.heading);
+  return along / ((ship.group.userData.len || 42) * 0.5);
+}
+// v11.47: the magazine secondary — the big detonation (white flash, tall
+// fireball, shockwave, hot debris). Shared by the player breakup (sinkShip)
+// and the enemy breakup (damageEnemy), so both read as the same order of
+// event. Bigger than the v11.16/v11.27 secondary: white flash added,
+// fireball 16 -> 20 x szF, debris 60 -> 80 and 40 -> 50 x szF.
+function magazineSecondary(x, z, szF){
+  boomLight.position.set(x, 6, z);
+  boomLight.intensity = 14;
+  spawnSprite(x, 5, z, 0.5, 14, 14, 2.5, 0xffffff, 0.85); // white flash (the collision hard-hit flash)
+  const mfb = spawnSprite(x, 8, z, 0.9, 20 * szF, 20 * szF, 2.0, 0xff8822, 0.95);
+  mfb.vy = 4;
+  const msw = spawnSprite(x, 3, z, 0.6, 8 * szF, 8 * szF, 8 * szF, 0xffffff, 0.6);
+  msw.vy = 1;
+  burst(x, 6, z, Math.min(100, Math.round(80 * szF)), [1, 0.8, 0.4], 9, 6); // secondary explosion
+  burst(x, 4, z, Math.min(80, Math.round(50 * szF)), [1, 0.7, 0.25], 10, 7); // hot debris thrown outward
+  burst(x, 3, z, Math.min(60, Math.round(30 * szF)), [0.3, 0.3, 0.3], 5, 5);
+  state.shake = Math.min(18, state.shake + 14);
+}
 function sinkShip(ship, mode){
   if(!ship.alive) return;
   ship.alive = false;
@@ -3239,16 +3265,9 @@ function sinkShip(ship, mode){
     // (Atlantic Fleet's CreateMagazineExplosion) — a bigger flash, a tall
     // fireball, more hot debris, and a large shockwave ring, on top of the
     // existing bursts. This is the dramatic detonation, not just big damage.
-    boomLight.position.set(ship.x, 6, ship.z);
-    boomLight.intensity = 14;
-    const mfb = spawnSprite(ship.x, 8, ship.z, 0.9, 16 * szF, 16 * szF, 2.0, 0xff8822, 0.95); // v11.27: magazine fireball x szF — the biggest explosion in the game
-    mfb.vy = 4;
-    const msw = spawnSprite(ship.x, 3, ship.z, 0.6, 8 * szF, 8 * szF, 8 * szF, 0xffffff, 0.6); // v11.27: shockwave x szF
-    msw.vy = 1;
-    burst(ship.x, 6, ship.z, Math.min(100, Math.round(60 * szF)), [1, 0.8, 0.4], 9, 6); // secondary explosion
-    burst(ship.x, 4, ship.z, Math.min(80, Math.round(40 * szF)), [1, 0.7, 0.25], 10, 7); // hot debris thrown outward
-    burst(ship.x, 3, ship.z, Math.min(60, Math.round(30 * szF)), [0.3, 0.3, 0.3], 5, 5);
-    state.shake = Math.min(18, state.shake + 14);
+    // v11.47: factored into magazineSecondary() (shared with the enemy
+    // breakup) and made bigger — white flash, 20x fireball, more debris.
+    magazineSecondary(ship.x, ship.z, szF);
     toast('💥 ' + ship.label + ' broke in two', 'magazine detonation');
   }
   const wasPlayer = (ship === fleet[state.playerIdx]);
@@ -3304,6 +3323,7 @@ function blastImpulse(x, z, power){
 // has to come from the waterline. Collisions are waterline hits.
 function damageShip(ship, dmg, hx, hz, belowWaterline = true){
   if(!ship.alive) return;
+  const hpBefore = ship.hp; // v11.47: the magazine HP gate reads hp BEFORE the hit
   ship.hp -= dmg;
   state.shake = Math.min(18, state.shake + 10);
   boomLight.position.set(ship.x, 4, ship.z);
@@ -3311,22 +3331,23 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
   explosion();
   // the blast physically rocks the ship (and her neighbours)
   blastImpulse(hx, hz, 2 + dmg * 0.15);
-  // rupture the nearest watertight compartment (v10.1): the hit's position
+  // v11.47: the hit's position along the hull is computed for EVERY hit
+  // (not only below-waterline) — the magazine zone is an > 0.5, the whole
+  // Forward Magazine compartment. Flooding still only applies below the
+  // waterline (v10.4: an above-waterline hit cannot breach a compartment).
+  // Rupture the nearest watertight compartment (v10.1): the hit's position
   // along the hull picks the compartment — Forward Magazine at the bow,
-  // Bow, Mid-Port/Starboard, Engine Room, Stern at the stern
-  let magHit = false; // v10.11: whether the hit landed in the Forward Magazine
+  // Bow, Mid-Port/Starboard, Engine Room, Stern at the stern.
+  const an = magazineAn(ship, hx, hz);
+  const magHit = an > 0.5; // v11.47: magazine zone is the whole Forward Magazine (was an > 0.6)
   if(belowWaterline){
-    const along = (hx - ship.x) * Math.sin(ship.heading) - (hz - ship.z) * Math.cos(ship.heading);
     const across = (hx - ship.x) * Math.cos(ship.heading) + (hz - ship.z) * Math.sin(ship.heading);
-    const L = ship.group.userData.len;
-    const an = along / (L * 0.5);
     let ci = 4; // Engine Room (default, mid-aft)
-    if(an > 0.6) ci = 0; // Forward Magazine
+    if(an > 0.5) ci = 0; // Forward Magazine (v11.47: boundary is an > 0.5, was 0.6, so the compartment matches the magazine zone)
     else if(an > 0.25) ci = 1; // Bow
     else if(an > -0.25) ci = across >= 0 ? 3 : 2; // Mid-Starboard / Mid-Port
     else if(an > -0.6) ci = 4; // Engine Room
     else ci = 5; // Stern
-    if(ci === 0) magHit = true;
     const comp = ship.motion.compartments[ci];
     if(comp) comp.flood = Math.min(1, comp.flood + 0.3 + dmg * 0.01);
   }
@@ -3339,7 +3360,10 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
   // v11.16: the impact itself is vivid — a fireball that blooms and fades,
   // a fast-expanding shockwave ring, and hot debris flying outward, all
   // scaled with the hit energy (dmg). This is the explosion on every hit.
-  const fbScale = (6 + dmg * 0.35) * szF; // v11.27: x szF
+  // v11.47: a magazine-zone hit reads bigger even when it does not detonate
+  // (a 10 x szF fireball instead of the normal one, plus an extra smoke
+  // column below) — the player can tell "that hit was in the magazine".
+  const fbScale = magHit ? Math.max((6 + dmg * 0.35) * szF, 10 * szF) : (6 + dmg * 0.35) * szF; // v11.27: x szF
   const fb = spawnSprite(hx, 3, hz, 0.5, fbScale, fbScale, 2.5, 0xff7722, 0.9);
   fb.vy = 2;
   const sw = spawnSprite(hx, 2, hz, 0.4, 4 * szF, 4 * szF, 6 * szF, 0xffffff, 0.5); // v11.27: shockwave x szF
@@ -3357,6 +3381,10 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
   }
   const s = spawnSprite(ship.x, 3, ship.z, 0.9, 10 * szF, 10 * szF, 0.4, 0x666666, 0.55); // v11.27: hit smoke x szF
   s.vy = 4;
+  if(magHit){ // v11.47: a magazine-zone hit throws an extra smoke column
+    const ms = spawnSprite(hx, 4, hz, 1.2, 8 * szF, 8 * szF, 0.5, 0x333333, 0.6);
+    ms.vy = 3;
+  }
   const side = Math.sign(hx - ship.x) || 1;
   const end = Math.sign(hz - ship.z) || 1;
   if(belowWaterline){
@@ -3377,6 +3405,24 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
     spawnParticle(fx + (Math.random() - 0.5) * 2, 2.5, fz + (Math.random() - 0.5) * 2,
       (Math.random() - 0.5) * 1.5, 2 + Math.random() * 2, state.speed * 0.25,
       0.7, 1, 0.6 + Math.random() * 0.3, 0.15, -0.5);
+  }
+  // v11.47: magazine detonation — a heavy hit (dmg >= 15) in the Forward
+  // Magazine blows her in two AT ONCE if it is the killing blow, or if she
+  // was already at or below half HP before the hit. The half-HP gate is the
+  // fairness control: a healthy ship never one-shots from a single
+  // magazine hit. The pickSinkMode branches below stay as the killing-blow
+  // fallback (a 25+ magazine killing blow, or a 40+ hit anywhere).
+  if(magHit && dmg >= 15 && (ship.hp <= 0 || hpBefore <= ship.maxHp * 0.5)){
+    sinkShip(ship, 'breakup');
+    return;
+  }
+  // v11.47: a magazine hit that does not detonate breaches the magazine
+  // hard (below the waterline only — an above-waterline shell cannot flood
+  // a compartment, v10.4): the Forward Magazine floods out completely.
+  if(magHit && dmg >= 15 && belowWaterline){
+    const comp0 = ship.motion.compartments[0];
+    if(comp0) comp0.flood = 1;
+    ship.floodDestroyed = true;
   }
   if(ship.hp <= 0) sinkShip(ship, pickSinkMode(ship, dmg, magHit));
 }
@@ -5013,6 +5059,70 @@ function updateEnemies(dt){
     e.group.position.set(e.x, e.y, e.z);
     e.group.rotation.set(e.pitchSm, -e.heading, e.rollSm + mo.heel);
     if(e.foam) e.foam.position.set(e.x, e.y + 0.15, e.z);
+    // v11.47: a battered enemy shows it — hurt smoke below 70% HP, and a
+    // fire (started by a hard hit, dmg >= 8) burns with a glow and a smoke
+    // column, mirroring the player hurt-ship / fire blocks. The fire decays
+    // and a fire that burns her down sinks her (settle — only a heavy
+    // magazine hit breaks her in two).
+    const eHpFrac = e.hp / e.maxHp;
+    if(eHpFrac < 0.7){
+      e.smokeT = (e.smokeT || 0) + dt;
+      const smokeInt = eHpFrac < 0.4 ? 0.3 : 0.45;
+      if(e.smokeT > smokeInt){
+        e.smokeT = 0;
+        const eszF = Math.max(1, (e.group.userData.len || 42) / 42);
+        const sx = e.x + (Math.random() - 0.5) * e.group.userData.wid;
+        const sz = e.z + (Math.random() - 0.5) * e.group.userData.len * 0.4;
+        const sm = spawnSprite(sx, e.y + 2.5, sz, 3.5, 3 * eszF, 3 * eszF, 1.2, 0x1a1a1a, eHpFrac < 0.4 ? 0.75 : 0.55);
+        sm.vy = 2.5;
+        if(eHpFrac < 0.4 && Math.random() < 0.7){
+          spawnParticle(sx, e.y + 2, sz, (Math.random() - 0.5), 2 + Math.random() * 2, (Math.random() - 0.5),
+            0.6, 1, 0.6, 0.15, -0.5);
+        }
+      }
+    }
+    if(e.fire > 0){
+      e.hp -= e.fire * dt * 1.0; // a fire burns her down
+      const fch = Math.cos(e.heading), fsn = Math.sin(e.heading);
+      const fLx = (e.fireLx !== undefined) ? e.fireLx : (Math.random() - 0.5) * e.group.userData.wid;
+      const fLz = (e.fireLz !== undefined) ? e.fireLz : (Math.random() - 0.5) * e.group.userData.len * 0.5;
+      const eszF = Math.max(1, (e.group.userData.len || 42) / 42);
+      e.fireT = (e.fireT || 0) + dt;
+      if(e.fireT > 0.15){
+        e.fireT = 0;
+        const nFl = 2 + Math.floor(e.fire * 4);
+        for(let fi = 0; fi < nFl; fi++){
+          const fx = e.x + fLx * fch - fLz * fsn + (Math.random() - 0.5) * 1.5;
+          const fz = e.z + fLx * fsn + fLz * fch + (Math.random() - 0.5) * 1.5;
+          spawnParticle(fx, e.y + 2.5, fz, (Math.random() - 0.5), 2 + Math.random() * 2.5, (Math.random() - 0.5),
+            0.8, 1, 0.65, 0.2, -0.5);
+        }
+      }
+      if(!e.fireGlow){
+        const gm = new THREE.SpriteMaterial({map: softTex, color: 0xff7711, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending});
+        e.fireGlow = new THREE.Sprite(gm);
+        e.fireGlow.position.set(fLx, 3.2, fLz);
+        e.group.add(e.fireGlow);
+      }
+      const fl = 0.7 + 0.3 * Math.sin(state.t * 11 + e.x) + 0.2 * Math.sin(state.t * 17 + e.z);
+      const gScale = (4 + e.fire * 4) * eszF * (0.85 + 0.3 * fl);
+      e.fireGlow.scale.set(gScale, gScale * 1.3, 1);
+      e.fireGlow.material.opacity = Math.max(0.15, Math.min(0.95, 0.5 + 0.3 * fl + e.fire * 0.15));
+      e.fireGlow.position.set(fLx, 3.2, fLz);
+      e.fireSmokeT = (e.fireSmokeT || 0) + dt;
+      if(e.fireSmokeT > 0.2){
+        e.fireSmokeT = 0;
+        const sm = spawnSprite(e.x + fLx * fch - fLz * fsn, e.y + 4, e.z + fLx * fsn + fLz * fch, 3.5, (5 + e.fire * 2) * eszF, (5 + e.fire * 2) * eszF, 1.0, 0x141414, 0.85);
+        sm.vy = 3; sm.vx = Math.sin(state.windDir) * 1.2; sm.vz = -Math.cos(state.windDir) * 1.2;
+      }
+      e.fire = Math.max(0, e.fire - dt * 0.015); // burns ~1-2 minutes, like the player fire
+      if(e.fire <= 0 && e.fireGlow){ e.group.remove(e.fireGlow); e.fireGlow = null; }
+      if(e.hp <= 0){ // a fire that burns her down sinks her (settle, not breakup)
+        e.hp = 0; e.alive = false; e.sinkT = 0; e.listDir = Math.random() < 0.5 ? -1 : 1;
+        toast('💥 Enemy ' + e.label + ' sunk', 'the fleet holds the sea a little longer');
+        continue; // dead — no gunnery or torpedoes from a sinking ship
+      }
+    }
     // v11.21: the freak wave hits the enemy fleet too — the same strike as
     // the player ships (beam-on capsizes, bow-on swamps). Each wave hits an
     // enemy at most once (lastFreakId).
@@ -5072,8 +5182,33 @@ function updateEnemySinking(e, dt){
   const f = Math.min(1, e.sinkT);
   e.motion.sampleWaves(state.t);
   e.y = e.motion.y * 0.75 - f * f * PHYSICS.despawnDepth;
-  e.group.position.set(e.x, e.y, e.z);
-  e.group.rotation.set(e.pitchSm + f * 0.1, -e.heading, e.rollSm + f * 1.5 * e.listDir);
+  // v11.47: a magazine breakup — the two halves sink apart, mirroring the
+  // player sinking branch (bow forward, stern rolling away, clip planes
+  // re-aimed each frame so the cut follows each half).
+  if(e.sinkMode === 'breakup' && e.breakParts){
+    const fx = Math.sin(e.heading), fz = -Math.cos(e.heading);
+    const bp = e.breakParts;
+    const bowY = e.y - f * 2, sternY = e.y - f * 1;
+    bp.bow.position.set(e.x + fx * f * 8, bowY, e.z + fz * f * 8);
+    bp.bow.rotation.set(e.pitchSm + f * 0.5, -e.heading, e.rollSm + f * 0.2);
+    bp.stern.position.set(e.x - fx * f * 6, sternY, e.z - fz * f * 6);
+    bp.stern.rotation.set(e.pitchSm - f * 0.15, -e.heading, e.rollSm + f * 1.2 * e.listDir);
+    for(const half of [bp.bow, bp.stern]){
+      const pl = half.userData.clipPlane, sg = half.userData.clipSign;
+      pl.normal.set(fx * sg, 0, fz * sg);
+      pl.constant = -(fx * sg * half.position.x + fz * sg * half.position.z);
+    }
+    if(Math.random() < 0.8){
+      for(let di = 0; di < 2; di++){
+        spawnParticle(e.x + (Math.random() - 0.5) * 8, e.y + 1, e.z + (Math.random() - 0.5) * 8,
+          (Math.random() - 0.5) * 2, 1 + Math.random() * 2, (Math.random() - 0.5) * 2,
+          0.9, 0.4, 0.35, 0.3, 1.5); // debris from the break
+      }
+    }
+  } else {
+    e.group.position.set(e.x, e.y, e.z);
+    e.group.rotation.set(e.pitchSm + f * 0.1, -e.heading, e.rollSm + f * 1.5 * e.listDir);
+  }
   if(e.foam) e.foam.visible = f < 0.5;
   e.bubSinkT = (e.bubSinkT || 0) + dt;
   if(e.bubSinkT > 0.08){ // v11.27: 0.12 -> 0.08 s — a denser plume, matching the player sinking
@@ -5096,6 +5231,7 @@ function updateEnemySinking(e, dt){
   if(f >= 1){
     e.sinkDone = true;
     e.group.visible = false;
+    if(e.breakParts){ e.breakParts.bow.visible = false; e.breakParts.stern.visible = false; } // v11.47: hide the halves too
     if(e.foam) e.foam.visible = false;
     const eszF = Math.max(1, (e.group.userData.len || 42) / 42); // v11.27
     burst(e.x, 1, e.z, Math.min(50, Math.round(20 * eszF)), [0.9, 0.95, 1], 4, 3); // v11.27: 20 -> 20 x eszF
@@ -5115,10 +5251,17 @@ function fireGuns(e, tgt, skill){
   const tvz = tgt.motion ? tgt.motion.vz : 0;
   const px = tgt.x + tvx * tof * skill.lead;
   const pz = tgt.z + tvz * tof * skill.lead;
+  // v11.47: distribute the aim along the hull — a random point ±0.35L along
+  // the target's forward axis, not always the centre — so hits land all over
+  // her and a magazine-zone hit is possible. The hit check is unchanged, so
+  // the hit rate does not move, only WHERE hits land.
+  const tOff = (Math.random() * 2 - 1) * 0.35 * (tgt.group.userData.len || 42);
+  const ax = px + Math.sin(tgt.heading) * tOff;
+  const az = pz - Math.cos(tgt.heading) * tOff;
   // dispersion: skill + storm pitch/roll (rougher seas, wilder shots)
   const spread = (6 + state.stage * 4) * skill.disp;
-  const ix = px + (Math.random() - 0.5) * 2 * spread;
-  const iz = pz + (Math.random() - 0.5) * 2 * spread;
+  const ix = ax + (Math.random() - 0.5) * 2 * spread;
+  const iz = az + (Math.random() - 0.5) * 2 * spread;
   // muzzle flash + smoke ring + a recoil shudder at the firing ship
   const spec = MODEL_SPEC[e.type];
   const mx = e.x + Math.sin(e.heading) * (spec.len * 0.4);
@@ -5163,9 +5306,15 @@ function firePlayerGuns(s, tgt){
   const tvz = tgt.motion ? tgt.motion.vz : 0;
   const px = tgt.x + tvx * tof * 0.95; // v11.24: lead 0.85 -> 0.95 (was missing manoeuvring targets)
   const pz = tgt.z + tvz * tof * 0.95;
+  // v11.47: distribute the aim along the hull, as in fireGuns — a random
+  // point ±0.35L along the target's forward axis, so player shells can land
+  // in the magazine zone too.
+  const tOff = (Math.random() * 2 - 1) * 0.35 * (tgt.group.userData.len || 42);
+  const ax = px + Math.sin(tgt.heading) * tOff;
+  const az = pz - Math.cos(tgt.heading) * tOff;
   const spread = (5 + state.stage * 3) * 1.0; // v11.24: tighter dispersion
-  const ix = px + (Math.random() - 0.5) * 2 * spread;
-  const iz = pz + (Math.random() - 0.5) * 2 * spread;
+  const ix = ax + (Math.random() - 0.5) * 2 * spread;
+  const iz = az + (Math.random() - 0.5) * 2 * spread;
   // muzzle flash + smoke at the firing ship's bow turrets
   const spec = MODEL_SPEC[s.type];
   const mx = s.x + Math.sin(s.heading) * (spec.len * 0.4);
@@ -5212,13 +5361,60 @@ function updatePlayerGuns(dt){
 // sinking presentation (updateEnemySinking: capsize, air bubbles, -20).
 function damageEnemy(e, dmg, hx, hz){
   if(!e.alive) return;
+  const hpBefore = e.hp; // v11.47: the magazine HP gate reads hp BEFORE the hit
   e.hp -= dmg;
   boomLight.position.set(e.x, 4, e.z);
   boomLight.intensity = 6 + Math.min(8, dmg * 0.4);
   const eszF = Math.max(1, (e.group.userData.len || 42) / 42); // v11.27: enemy hits scale with the ship, like player hits
-  const fb = spawnSprite(hx, 3, hz, 0.5, (6 + dmg * 0.35) * eszF, (6 + dmg * 0.35) * eszF, 2.5, 0xff7722, 0.9);
+  // v11.47: magazine-zone hit — the same an math as the player side
+  // (magazineAn), and the same bigger hit VFX as a player magazine hit.
+  const an = magazineAn(e, hx, hz);
+  const magHit = an > 0.5;
+  const fbScale = magHit ? Math.max((6 + dmg * 0.35) * eszF, 10 * eszF) : (6 + dmg * 0.35) * eszF;
+  const fb = spawnSprite(hx, 3, hz, 0.5, fbScale, fbScale, 2.5, 0xff7722, 0.9);
   fb.vy = 2;
+  const sw = spawnSprite(hx, 2, hz, 0.4, 4 * eszF, 4 * eszF, 6 * eszF, 0xffffff, 0.5); // v11.47: shockwave — enemy hit parity with the player side
+  sw.vy = 1;
   burst(hx, 3, hz, Math.min(60, Math.round(Math.min(30, 10 + Math.floor(dmg)) * eszF)), [1, 0.75, 0.3], 6 + dmg * 0.15, 5);
+  addScorch(e, hx, hz, 2.5); // v11.47: enemy hulls accumulate visible craters, like player hulls
+  const s = spawnSprite(e.x, 3, e.z, 0.9, 10 * eszF, 10 * eszF, 0.4, 0x666666, 0.55); // v11.47: hit smoke — enemy hit parity
+  s.vy = 4;
+  if(magHit){ // v11.47: a magazine-zone hit throws an extra smoke column
+    const ms = spawnSprite(hx, 4, hz, 1.2, 8 * eszF, 8 * eszF, 0.5, 0x333333, 0.6);
+    ms.vy = 3;
+  }
+  // v11.47: hot embers from the hit, like a player hit.
+  const efx = e.x + Math.sign(hx - e.x || 1) * e.group.userData.wid * 0.3;
+  const efz = e.z + Math.sign(hz - e.z || 1) * e.group.userData.len * 0.3;
+  for(let i = 0; i < Math.min(24, Math.round(8 * eszF)); i++){
+    spawnParticle(efx + (Math.random() - 0.5) * 2, 2.5, efz + (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 1.5, 2 + Math.random() * 2, (Math.random() - 0.5) * 1.5,
+      0.7, 1, 0.6 + Math.random() * 0.3, 0.15, -0.5);
+  }
+  // v11.47: a hard hit can start a fire on an enemy too (the fire field
+  // already exists, unused until now). The fire position is stored in the
+  // enemy's local frame, like the player's fireLx/fireLz.
+  if(dmg >= 8) e.fire = Math.min(1, (e.fire || 0) + 0.5);
+  {
+    const dx = hx - e.x, dz = hz - e.z;
+    const ch = Math.cos(e.heading), sn = Math.sin(e.heading);
+    e.fireLx = dx * ch + dz * sn;
+    e.fireLz = -dx * sn + dz * ch;
+  }
+  // v11.47: magazine detonation — the same rule as the player side: a heavy
+  // hit (dmg >= 15) in the Forward Magazine blows her in two at once if it
+  // is the killing blow, or if she was already at or below half HP.
+  if(magHit && dmg >= 15 && (e.hp <= 0 || hpBefore <= e.maxHp * 0.5)){
+    if(e.fireGlow){ e.group.remove(e.fireGlow); e.fireGlow = null; } // the fire dies with her — do not clone the glow into the halves
+    e.hp = 0;
+    e.alive = false;
+    e.sinkT = 0;
+    e.sinkMode = 'breakup';
+    e.breakParts = splitShip(e);
+    magazineSecondary(e.x, e.z, eszF); // the big detonation, shared with the player breakup
+    toast('💥 Enemy ' + e.label + ' broke in two', 'magazine detonation');
+    return;
+  }
   if(e.hp <= 0){
     e.hp = 0;
     e.alive = false;
@@ -6047,6 +6243,11 @@ class AntiShipMissile {
     this.t = 0;
     this.trailT = 0;
     this.dead = false;
+    // v11.47: the missile aims at a random point along the hull (±0.35L),
+    // not the centre — so a missile can land in the magazine zone. The
+    // offset is fixed at launch; the aim point is recomputed each frame
+    // from the target's CURRENT heading (see update).
+    this.aimAlong = (Math.random() * 2 - 1) * 0.35 * ((target.group && target.group.userData.len) || 42);
     // v11.35: procedural missile body. The real Sparrow GLB was dropped
     // to fit the size ceiling; saved at ~/workspace/shipmodels/weapon_sources/.
     // The exhaust glow sprite is gone (flat square, like the jet exhaust
@@ -6071,17 +6272,25 @@ class AntiShipMissile {
       this.splash();
       return;
     }
-    const dx = tgt.x - this.x, dz = tgt.z - this.z;
+    // v11.47: steer toward the AIM point (the target's position + the
+    // along-offset from launch, on the target's CURRENT heading), not the
+    // centre — so the missile flies to the bow/stern point it was aimed at.
+    // The detonation check below is distance-to-aim-point for the same
+    // reason, or the missile would detonate early passing the centre.
+    const aOff = this.aimAlong || 0; // 0 = centre, the old behaviour
+    const tfx = Math.sin(tgt.heading), tfz = -Math.cos(tgt.heading);
+    const ax = tgt.x + tfx * aOff, az = tgt.z + tfz * aOff;
+    const dx = ax - this.x, dz = az - this.z;
     const d = Math.hypot(dx, dz);
     const seaH = getOceanDataAt(this.x, this.z, state.t).height;
     // Sea-skimming: 4-6 units above the waves; terminal pop-up in the last
     // ~60 units (climb to ~15, then dive onto the target).
     let wantY = seaH + 5;
     if(d < 60) wantY = seaH + 15 - (60 - d) * 0.18; // pop up, then dive
-    // Steer toward the target (predictive lead on its motion).
+    // Steer toward the aim point (predictive lead on its motion).
     const lead = 0.5;
-    const tx = tgt.x + (tgt.motion ? tgt.motion.vx * lead : 0);
-    const tz = tgt.z + (tgt.motion ? tgt.motion.vz * lead : 0);
+    const tx = ax + (tgt.motion ? tgt.motion.vx * lead : 0);
+    const tz = az + (tgt.motion ? tgt.motion.vz * lead : 0);
     const ddx = tx - this.x, ddz = tz - this.z;
     const dd = Math.hypot(ddx, ddz) || 0.001;
     const desVx = ddx / dd * this.speed, desVz = ddz / dd * this.speed;
@@ -6441,6 +6650,15 @@ class AirSquadron {
             const lead = 0.74; // bomb fall time — lead the moving target
             const tx = tgt.x + (tgt.motion ? tgt.motion.vx * lead : 0);
             const tz = tgt.z + (tgt.motion ? tgt.motion.vz * lead : 0);
+            // v11.47: the bomb dive offset (bombAlong, ±0.35L along the
+            // hull) was REVERTED here — tried three ways, it never moved
+            // the impacts into the magazine zone (sd 0.21, max an 0.42,
+            // 0% in the zone) and it cut the bomb hit rate to 71%
+            // (abeam runs aborted, wingman bombs missed off the beam).
+            // The release point is set by the descent profile, not the
+            // aim point. Bombs stay centre-aimed (v11.46); the magazine
+            // path runs through shells + missiles. A bomb offset needs a
+            // dedicated dive rework, out of scope for this piece.
             const ldx = tx - leader.x, ldz = tz - leader.z;
             const ld = Math.hypot(ldx, ldz) || 1;
             const ux = ldx / ld, uz = ldz / ld;
