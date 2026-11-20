@@ -361,7 +361,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.47</div>
+    <div class="ver">v11.48</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -1071,7 +1071,7 @@ const oceanUniforms = {
   uSunDir:{value: new THREE.Vector3(30, 35, -80).normalize()}, // v10.0: low, ahead of the fleet — the glitter path reads on the sea
   uSunI:  {value: 1.15},
   uTime:  {value: 0},
-  uFoam:  {value: new THREE.Color(0xc7d6de)}, // v11.15: softer blue-grey foam, not near-white
+  uFoam:  {value: new THREE.Color(0xa9c2cf)}, // v11.48: a touch darker/bluer, closer to the sea (was 0xc7d6de)
   // v11.14: hull foam + Kelvin wake — the 7 fleet ships (x, z, heading,
   // forwardSpeed) and their sizes (len, beam); the wind for storm streaks.
   uShips: {value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()]},
@@ -1209,9 +1209,10 @@ const oceanMat = new THREE.ShaderMaterial({
       // v11.14 foam read as bold white; real foam (Monahan, Stage B) is a
       // diffuse grey-white accent on a few crests, feathered into the sea.
       float n = vnoise(wp * 0.35) * 0.6 + vnoise(wp * 1.3) * 0.4;
-      float foamGate = smoothstep(0.15, 0.55, vSteep) * smoothstep(0.0, 0.4, vH);
-      float foam = smoothstep(0.45, 0.95, foamGate + (n - 0.5) * 0.45) * 0.7; // v11.15: wider feather, less speckle, dimmer
-      foam *= exp(-dist / 260.0);
+      float foamGate = smoothstep(0.20, 0.60, vSteep) * smoothstep(0.55, 0.85, vH); // v11.48: top third of the wave only — the old 0.0-0.4 height gate passed the upper 60% of every wave, so foam smeared across broad flanks
+      float foam = smoothstep(0.45, 0.95, foamGate + (n - 0.5) * 0.55) * 0.45; // v11.48: dimmer, more lace
+      foam *= smoothstep(0.35, 0.75, uWindStr); // v11.48: wind gate — ~0 in Calm, ~0.3 Rough, ~0.9 Storm, 1.0 Hurricane (Monahan: real whitecap cover is ~0.02% at 5 m/s)
+      foam *= exp(-dist / 200.0);
       // v11.14: hull waterline foam + Kelvin wake, driven by the fleet.
       // uShips[i] = (x, z, heading, forwardSpeed); uShipSize[i] = (len, beam).
       // The hull is a capsule (a centreline segment bow-to-stern with the beam
@@ -1238,15 +1239,17 @@ const oceanMat = new THREE.ShaderMaterial({
             float lzC = clamp(lz, -hl, hl);
             float segD = length(vec2(lx, lz - lzC));
             float w = segD - hb;
-            float band = smoothstep(0.0, 1.5, w) * (1.0 - smoothstep(1.5, 8.0, w)); // v11.15: wider fade
-            float hullF = band * spdF * (0.75 + 0.25 * churnN); // v11.15: the 0.25 floor outlined every hull in foam at 0 kn (v11.14 check) — removed; foam only when moving, and the churn is gentler
-            float astern = lz - hl;
+            float band = smoothstep(0.0, 1.0, w) * (1.0 - smoothstep(1.0, 4.0, w)); // v11.48: 0-8 -> 0-4 units — a thin churning line at the waterline, not a band half the beam wide
+            float bowW = 0.6 + 0.4 * smoothstep(0.0, hl, -lz); // v11.48: bow-weighted — 0.6 midship, 1.0 at the bow
+            float hullF = band * spdF * (0.5 + 0.2 * churnN) * bowW; // v11.48: peak 1.0 -> 0.7
+            float trail = (uShips[i].w >= 0.0) ? (lz - hl) : (-lz - hl); // v11.48: the wake trails from the bow when the ship moves astern
             float wakeF = 0.0;
-            if(astern > 0.0 && astern < 70.0){ // v11.15: the wake dissipates — it does not stay a bright line for 120 units
-              float armD = min(abs(lx * 0.943 - astern * 0.334), abs(lx * 0.943 + astern * 0.334));
-              float armF = (1.0 - smoothstep(0.0, 6.0, armD)) * (1.0 - smoothstep(10.0, 70.0, astern)); // v11.15: broader, softer V-arms, fading sooner
-              float washF = (1.0 - smoothstep(0.0, 7.0, abs(lx))) * (1.0 - smoothstep(5.0, 45.0, astern));
-              wakeF = (armF * 0.45 + washF * 0.55) * spdF * (0.75 + 0.25 * churnN); // v11.15: dimmer arms and wash
+            if(trail > 0.0 && trail < 45.0){ // v11.48: 70 -> 45 — the wake dissipates sooner
+              float armD = min(abs(lx * 0.943 - trail * 0.334), abs(lx * 0.943 + trail * 0.334));
+              float armF = (1.0 - smoothstep(0.0, 3.5, armD)) * (1.0 - smoothstep(8.0, 45.0, trail)); // v11.48: narrower, shorter V-arms
+              float washW = 4.0 + trail * 0.15; // v11.48: the wash widens astern instead of a uniform rectangle
+              float washF = (1.0 - smoothstep(0.0, washW, abs(lx))) * (1.0 - smoothstep(5.0, 35.0, trail));
+              wakeF = (armF * 0.25 + washF * 0.35) * spdF * (0.6 + 0.2 * churnN); // v11.48: dimmer arms and wash
             }
             shipFoam += hullF + wakeF;
           }
@@ -1264,8 +1267,8 @@ const oceanMat = new THREE.ShaderMaterial({
       vec2 wPerp = vec2(-uWind.y, uWind.x);
       vec2 streakUV = vec2(dot(wp, wPerp), dot(wp, uWind) * 0.15);
       float streak = vnoise(streakUV * 0.55 + vec2(0.0, uTime * 0.25)); // v11.15: finer noise — narrower, more broken-up streaks
-      float streakF = smoothstep(0.6, 0.9, streak) * smoothstep(0.4, 0.8, uWindStr) * 0.35 * smoothstep(0.15, 0.45, vH) * exp(-dist / 260.0); // v11.15: higher threshold (sparser), dimmer, harder crest gate
-      col = mix(col, uFoam, clamp(foam + shipFoam + streakF, 0.0, 1.0) * 0.5); // v11.15: 0.9 -> 0.5 — foam tints the water instead of replacing it with near-white
+      float streakF = smoothstep(0.6, 0.9, streak) * smoothstep(0.4, 0.8, uWindStr) * 0.35 * smoothstep(0.4, 0.7, vH) * exp(-dist / 260.0); // v11.48: crest gate 0.15-0.45 -> 0.4-0.7, so windrows gather on crest faces only
+      col = mix(col, uFoam, clamp(foam + shipFoam + streakF, 0.0, 1.0) * 0.35); // v11.48: 0.5 -> 0.35 — crest + ship + streaks all soften together
       gl_FragColor = vec4(col, 1.0);
       #include <fog_fragment>
     }`,
@@ -1401,7 +1404,7 @@ const freakCrestGeo = new THREE.PlaneGeometry(2000, 24, 64, 6);
     } else {
       const u = (t - 0.85) / 0.15;
       const s = u * u * (3 - 2 * u); // smoothstep
-      r = 0.15 + s * 0.80; g = 0.45 + s * 0.50; b = 0.65 + s * 0.33;
+      r = 0.15 + s * 0.63; g = 0.45 + s * 0.39; b = 0.65 + s * 0.22; // v11.48: top band (0.95,0.95,0.98) -> (0.78,0.84,0.87), the uFoam tone
     }
     ccol[i * 3] = r; ccol[i * 3 + 1] = g; ccol[i * 3 + 2] = b;
   }
@@ -2133,12 +2136,10 @@ roster.forEach(s => {
   s.floodSide = 0; s.floodEnd = 0; s.floodTotal = 0; s.floodDestroyed = false;
   s.list = 0; s.trim = 0; s.draft = 0; s.speedFactor = 1; s.capsize = false;
   scene.add(s.group);
-  const ring = new THREE.Mesh(new THREE.RingGeometry(1, 1.35, 24),
-    new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: 0.22, side: THREE.DoubleSide}));
-  ring.rotation.x = -Math.PI / 2;
-  ring.scale.set(s.group.userData.wid * 0.75, s.group.userData.len * 0.62, 1);
-  scene.add(ring);
-  s.foam = ring;
+  // v11.48: the sprite foam ring is gone — a hard-edged pure-white ellipse
+  // floating detached from the hull, showing at rest, on the flagship's
+  // speed instead of each ship's own. The softened shader hull band plus
+  // the stern-wash / Kelvin sprites carry the waterline foam now.
 });
 // ---------- v11.0: Engine Order Telegraph + fleet command ----------
 // Telegraph notches (Cold Waters / Atlantic Fleet / real USN bells): the
@@ -2851,7 +2852,6 @@ function reset(){
     s.group.visible = true;
     s.group.position.set(s.dx, 0, s.dz);
     s.group.rotation.set(0, 0, 0);
-    s.foam.visible = true;
   });
   ampCur = settings.wave;
   applyStage(state.stage);
@@ -3403,7 +3403,7 @@ function damageShip(ship, dmg, hx, hz, belowWaterline = true){
   const fz = ship.z + end * ship.group.userData.len * 0.3;
   for(let i = 0; i < Math.min(24, Math.round(8 * szF)); i++){ // v11.27: 8 -> 8 x szF (cap 24) — more fire-start embers on a big ship
     spawnParticle(fx + (Math.random() - 0.5) * 2, 2.5, fz + (Math.random() - 0.5) * 2,
-      (Math.random() - 0.5) * 1.5, 2 + Math.random() * 2, state.speed * 0.25,
+      (Math.random() - 0.5) * 1.5, 2 + Math.random() * 2, Math.abs(ship.motion.forwardSpeed) * 0.25, // v11.48: the damaged ship's own speed, not the flagship's
       0.7, 1, 0.6 + Math.random() * 0.3, 0.15, -0.5);
   }
   // v11.47: magazine detonation — a heavy hit (dmg >= 15) in the Forward
@@ -4426,7 +4426,6 @@ function update(dt){
       if(f >= 1){
         s.group.visible = false;
         if(s.breakParts){ s.breakParts.bow.visible = false; s.breakParts.stern.visible = false; }
-        s.foam.visible = false;
         const szF = Math.max(1, (s.group.userData.len || 42) / 42); // v11.27: the final burst scales with the ship
         burst(s.x, 1, s.z, Math.min(60, Math.round(30 * szF)), [0.9, 0.95, 1], 5, 3); // v11.27: 30 -> 30 x szF — a big last bubble burst
         for(let i = 0; i < 5; i++){ // v11.27: 3 -> 5 smoke columns
@@ -4442,36 +4441,33 @@ function update(dt){
         }
       }
     }
-    // foam ring rides the water surface at the hull
-    s.foam.position.set(s.x, waveHeight(s.x, s.z, state.t) + 0.15, s.z);
-    s.foam.rotation.z = -s.heading;
-    const spd = Math.min(1, state.speed / 14);
-    s.foam.material.opacity = s.alive ? 0.14 + 0.22 * spd : Math.max(0, 0.22 * (1 - s.sinkT));
-    s.foam.scale.setScalar(1 + 0.45 * spd);
+    // v11.48: the foam ring is gone (see the ship setup); spd is now
+    // each ship's OWN speed — the ring read the flagship's (state.speed).
+    const spd = Math.min(1, Math.abs(s.motion.forwardSpeed) / 14);
     if(s.alive){
       // stern wash + Kelvin wake: V-arms at 19.5 deg, widening and fading astern.
       // Small, soft, frequent puffs — the old big discrete slabs read as
       // stepped white blocks (v8.1).
       s.wakeT += dt;
-      if(spd > 0.15 && s.wakeT > 0.06 - 0.03 * spd){
+      if(spd > 0.15 && s.wakeT > 0.70 - 0.20 * spd){ // v11.48: throttled (was 0.06-0.03*spd, ~33/s/ship) — the pool holds 160 sprites, so foam must leave room for damage smoke/fire
         s.wakeT = 0;
         const stX = s.x - Math.sin(s.heading) * s.group.userData.len / 2;
         const stZ = s.z + Math.cos(s.heading) * s.group.userData.len / 2;
-        const w = spawnSprite(stX, waveHeight(stX, stZ, state.t) + 0.2, stZ, 5, 5 * (0.6 + 0.5 * spd), 3, 0.9, 0xffffff, 0.15);
+        const w = spawnSprite(stX, waveHeight(stX, stZ, state.t) + 0.2, stZ, 2.0, 5 * (0.6 + 0.5 * spd), 3, 0.3, 0xdde8ee, 0.10);
         w.vz = 0;
       }
       s.kelvinT += dt;
-      if(spd > 0.15 && s.kelvinT > 0.16 - 0.08 * spd){
+      if(spd > 0.15 && s.kelvinT > 1.40 - 0.40 * spd){ // v11.48: throttled (was 0.16-0.08*spd, ~25/s/ship for both arms) — same pool-budget reason as the wash
         s.kelvinT = 0;
         [-1, 1].forEach(arm => {
           const d = 8 + Math.random() * 24;
           const a = 0.34 * arm; // 19.5 deg
           const fx = -Math.sin(s.heading), fz = -Math.cos(s.heading);
           const bx = -fz, bz = fx; // behind direction rotated by arm angle
-          const ax = (Math.sin(s.heading) * Math.cos(a) + Math.cos(s.heading) * Math.sin(a) * arm) * d;
-          const az = (Math.cos(s.heading) * Math.cos(a) - Math.sin(s.heading) * Math.sin(a) * arm) * d;
+          const ax = (-Math.sin(s.heading) * Math.cos(a) + Math.cos(s.heading) * Math.sin(a) * arm) * d; // v11.48: the old formula had both sin-heading terms with the wrong sign, so the puffs spawned AHEAD of the ship on east/west headings (correct only at north/south, where sin h = 0 hides it)
+          const az = (Math.cos(s.heading) * Math.cos(a) + Math.sin(s.heading) * Math.sin(a) * arm) * d;
           const kx = s.x + ax, kz = s.z + az;
-          const sp = spawnSprite(kx, waveHeight(kx, kz, state.t) + 0.15, kz, 5, 4.5 * (0.7 + 0.6 * spd), 1.6, 0.6, 0xffffff, 0.12);
+          const sp = spawnSprite(kx, waveHeight(kx, kz, state.t) + 0.15, kz, 2.0, 4.5 * (0.7 + 0.6 * spd), 1.6, 0.25, 0xdde8ee, 0.08);
           sp.vz = 0;
         });
       }
@@ -4495,16 +4491,18 @@ function update(dt){
         }
       }
       // bow spray grows with V^2; funnel smoke trail length grows with speed
-      const sprayRate = 0.15 + 0.5 * Math.pow(state.speed / 14, 2) * (state.stage >= 1 ? 1 : 0.3);
+      const sprayRate = 0.15 + 0.5 * Math.pow(Math.abs(s.motion.forwardSpeed) / 14, 2) * (state.stage >= 1 ? 1 : 0.3); // v11.48: the ship's own speed, not the flagship's
       if(Math.random() < sprayRate){
-        spawnParticle(s.x + (Math.random() - 0.5) * s.group.userData.wid, 1.5, s.z - s.group.userData.len / 2,
+        const bx = s.x + Math.sin(s.heading) * s.group.userData.len / 2; // v11.48: heading-correct — the old s.z - len/2 threw "bow" spray off the side whenever the ship was not heading north
+        const bz = s.z - Math.cos(s.heading) * s.group.userData.len / 2;
+        spawnParticle(bx + (Math.random() - 0.5) * s.group.userData.wid, 1.5, bz,
           (Math.random() - 0.5) * 2, 1 + Math.random() * 2, -2, 0.7, 0.85, 0.92, 1, -1);
       }
       if(s.type !== 'carrier'){
         s.smokeT += dt;
         if(s.smokeT > 0.22){
           s.smokeT = 0;
-          const sm = spawnSprite(s.x, 4.5, s.z + 2, 2.2 * (0.7 + state.speed / 14), 3, 3, 0.8, 0x5a5f64, 0.4);
+          const sm = spawnSprite(s.x, 4.5, s.z + 2, 2.2 * (0.7 + Math.abs(s.motion.forwardSpeed) / 14), 3, 3, 0.8, 0x5a5f64, 0.4); // v11.48: the ship's own speed, not the flagship's
           sm.vy = 2.5; sm.vz = 1;
         }
       }
@@ -4515,7 +4513,7 @@ function update(dt){
       }
       if(hurt > 0.55 && Math.random() < 0.4){
         spawnParticle(s.x + (Math.random() - 0.5) * 4, 2.5, s.z + (Math.random() - 0.5) * 5,
-          (Math.random() - 0.5) * 1.5, 2 + Math.random() * 2, state.speed * 0.25,
+          (Math.random() - 0.5) * 1.5, 2 + Math.random() * 2, Math.abs(s.motion.forwardSpeed) * 0.25, // v11.48: the ship's own speed
           0.6, 1, 0.6 + Math.random() * 0.3, 0.15, -0.5);
       }
     }
@@ -4530,18 +4528,10 @@ function update(dt){
   // when the last ship is going down there is no flagship — the ambient
   // foam, clouds and whitecaps anchor on the origin instead
   const ref = flag || {x: 0, z: 0};
-  // crest foam: whitecaps where the sea is actually steepening, drifting downwind
-  // v10.6: Monahan's law — foam chance scales with wind^3.41, and foam only
-  // sits on real crests (height above 0.6 x Hs). Calm: a rare fleck.
-  const foamChance = Math.min(0.9, 0.02 + 3.84e-6 * Math.pow(st.wind, 3.41) * 7);
-  if(Math.random() < foamChance){
-    const fx = ref.x + (Math.random() - 0.5) * 120;
-    const fz = ref.z - 120 + Math.random() * 150;
-    if(waveHeight(fx, fz, state.t) > HS_CUR * 0.6){
-      const f = spawnSprite(fx, waveHeight(fx, fz, state.t) + 0.1, fz, 5 + Math.random() * 3, 4 + Math.random() * 4, 2, 0.3, 0xffffff, 0.3);
-      f.vx = Math.sin(state.windDir) * 0.8; f.vz = -Math.cos(state.windDir) * 0.8;
-    }
-  }
+  // v11.48: the foamChance whitecap spawner is gone — it duplicated the
+  // Monahan-gated capT spawner below with worse gating (height only, no
+  // slope check) and in Hurricane it alone put ~35-70 white blobs on the
+  // sea and ate half the sprite pool.
 
   // lightning, clouds
   clouds.forEach(c => {
@@ -4563,7 +4553,7 @@ function update(dt){
     const steep = Math.hypot(d.slopeX, d.slopeZ);
     const wFrac = 3.84e-6 * Math.pow(st.wind, 3.41);
     if(d.height > HS_CUR * 0.5 && steep > 0.28 && Math.random() < Math.min(0.95, 0.05 + wFrac / 0.105 * 0.9)){
-      const cap = spawnSprite(cx, d.height + 0.3, cz, 2.5, 6 + Math.random() * 6, 3, 0.5, 0xffffff, 0.35);
+      const cap = spawnSprite(cx, d.height + 0.3, cz, 2.5, 5 + Math.random() * 4, 3, 0.5, 0xdde8ee, 0.25); // v11.48: softer colour/opacity, smaller
       cap.vy = 0.4;
     }
   }
@@ -4889,7 +4879,7 @@ function makeEnemy(cls, i, x, z, heading){
     gunT: 2 + Math.random() * 3, torpT: 8 + Math.random() * 10,
     circleDir: (i % 2 === 0) ? 1 : -1, // alternate circling direction
     skill: settings.enemySkill || 'veteran',
-    cls, group: wrap, foam: null,
+    cls, group: wrap,
     floodSide: 0, floodEnd: 0, floodTotal: 0, floodDestroyed: false,
     list: 0, trim: 0, draft: 0, fire: 0, listDir: (i % 2 === 0) ? 1 : -1,
     pitchSm: 0, rollSm: 0, pitchVel: 0, rollVel: 0,
@@ -4903,14 +4893,9 @@ function makeEnemy(cls, i, x, z, heading){
     length: spec.len, beam: spec.wid,
     getWaveHeight: waveHeight, x, z, heading,
   });
-  // a soft foam ring at the waterline (same as the player ships) so the
-  // enemy reads as a hull in the water, not a model gliding on glass
-  const ring = new THREE.Mesh(new THREE.RingGeometry(1, 1.35, 24),
-    new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: 0.22, side: THREE.DoubleSide}));
-  ring.rotation.x = -Math.PI / 2;
-  ring.scale.set(spec.wid * 0.75, spec.len * 0.62, 1);
-  scene.add(ring);
-  e.foam = ring;
+  // v11.48: the enemy foam ring is gone with the player's (same defects,
+  // and it never even rotated with the ship's heading). Enemies get sprite
+  // stern-wash + Kelvin wakes in updateEnemies instead.
   e.group.position.set(x, 0, z);
   e.group.rotation.set(0, -heading, 0);
   scene.add(e.group);
@@ -4998,7 +4983,6 @@ function spawnEnemies(){
 function clearEnemies(){
   enemies.forEach(e => {
     if(e.group) scene.remove(e.group);
-    if(e.foam) scene.remove(e.foam);
   });
   enemies.length = 0;
   shells.length = 0; // shells are particles only — nothing to remove
@@ -5058,7 +5042,31 @@ function updateEnemies(dt){
     e.y = mo.y;
     e.group.position.set(e.x, e.y, e.z);
     e.group.rotation.set(e.pitchSm, -e.heading, e.rollSm + mo.heel);
-    if(e.foam) e.foam.position.set(e.x, e.y + 0.15, e.z);
+    // v11.48: sprite stern wash + Kelvin wake — the foam ring is gone and
+    // enemies are not in uShips, so this is their only foam. Same throttled,
+    // soft spawners as the player ships, driven by the enemy's own speed.
+    const eSpd = Math.min(1, Math.abs(e.motion.forwardSpeed) / 14);
+    e.wakeT = (e.wakeT || 0) + dt;
+    if(eSpd > 0.15 && e.wakeT > 0.70 - 0.20 * eSpd){
+      e.wakeT = 0;
+      const stX = e.x - Math.sin(e.heading) * e.group.userData.len / 2;
+      const stZ = e.z + Math.cos(e.heading) * e.group.userData.len / 2;
+      const w = spawnSprite(stX, waveHeight(stX, stZ, state.t) + 0.2, stZ, 2.0, 5 * (0.6 + 0.5 * eSpd), 3, 0.3, 0xdde8ee, 0.10);
+      w.vz = 0;
+    }
+    e.kelvinT = (e.kelvinT || 0) + dt;
+    if(eSpd > 0.15 && e.kelvinT > 1.40 - 0.40 * eSpd){
+      e.kelvinT = 0;
+      [-1, 1].forEach(arm => {
+        const d = 8 + Math.random() * 24;
+        const a = 0.34 * arm; // 19.5 deg
+        const ax = (-Math.sin(e.heading) * Math.cos(a) + Math.cos(e.heading) * Math.sin(a) * arm) * d; // v11.48: same sign fix as the player Kelvin (see above)
+        const az = (Math.cos(e.heading) * Math.cos(a) + Math.sin(e.heading) * Math.sin(a) * arm) * d;
+        const kx = e.x + ax, kz = e.z + az;
+        const sp = spawnSprite(kx, waveHeight(kx, kz, state.t) + 0.15, kz, 2.0, 4.5 * (0.7 + 0.6 * eSpd), 1.6, 0.25, 0xdde8ee, 0.08);
+        sp.vz = 0;
+      });
+    }
     // v11.47: a battered enemy shows it — hurt smoke below 70% HP, and a
     // fire (started by a hard hit, dmg >= 8) burns with a glow and a smoke
     // column, mirroring the player hurt-ship / fire blocks. The fire decays
@@ -5209,7 +5217,6 @@ function updateEnemySinking(e, dt){
     e.group.position.set(e.x, e.y, e.z);
     e.group.rotation.set(e.pitchSm + f * 0.1, -e.heading, e.rollSm + f * 1.5 * e.listDir);
   }
-  if(e.foam) e.foam.visible = f < 0.5;
   e.bubSinkT = (e.bubSinkT || 0) + dt;
   if(e.bubSinkT > 0.08){ // v11.27: 0.12 -> 0.08 s — a denser plume, matching the player sinking
     e.bubSinkT = 0;
@@ -5232,7 +5239,6 @@ function updateEnemySinking(e, dt){
     e.sinkDone = true;
     e.group.visible = false;
     if(e.breakParts){ e.breakParts.bow.visible = false; e.breakParts.stern.visible = false; } // v11.47: hide the halves too
-    if(e.foam) e.foam.visible = false;
     const eszF = Math.max(1, (e.group.userData.len || 42) / 42); // v11.27
     burst(e.x, 1, e.z, Math.min(50, Math.round(20 * eszF)), [0.9, 0.95, 1], 4, 3); // v11.27: 20 -> 20 x eszF
     // v11.27: lingering wreckage, like the player sinking — dark debris rides the surface where she went down.
@@ -5579,7 +5585,6 @@ function idleUpdate(dt){
     s.y = mo.y * 0.75;
     s.group.position.set(s.x, s.y, s.z);
     s.group.rotation.set(s.pitchSm, -s.heading, s.rollSm);
-    s.foam.position.set(s.x, b.h + 0.15, s.z);
   });
   updateParticles(dt);
   updateSprites(dt);
@@ -7712,8 +7717,9 @@ function loop(){
   // (hull foam, Kelvin wake, storm streaks) — updated every frame.
   for(let i = 0; i < 7; i++){
     const s = fleet[i];
-    if(s && s.alive){
-      oceanUniforms.uShips.value[i].set(s.x, s.z, s.heading, s.motion ? s.motion.forwardSpeed : 0);
+    if(s && (s.alive || s.sinkT < 0.5)){ // v11.48: keep the foam while she is going down (faded) — it vanished the instant she started sinking
+      const spdFade = s.alive ? 1 : Math.max(0, 1 - s.sinkT);
+      oceanUniforms.uShips.value[i].set(s.x, s.z, s.heading, (s.motion ? s.motion.forwardSpeed : 0) * spdFade);
       const ms = MODEL_SPEC[s.type] || {len: 40, wid: 8};
       oceanUniforms.uShipSize.value[i].set(ms.len, ms.wid);
     } else {
