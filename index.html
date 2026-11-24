@@ -361,7 +361,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.48</div>
+    <div class="ver">v11.50</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -5674,6 +5674,33 @@ function steerJetTo(jet, tx, ty, tz, slowingR, maxSpeed, dt){
     const fx = Math.sin(jet.heading), fz = -Math.cos(jet.heading);
     tx = jet.x + fx * 30; ty = jet.y - 20; tz = jet.z + fz * 30;
   }
+  // v11.49: aim behind the jet — steer into a turn instead of decelerating
+  // through zero. In climb/ingress/egress/rtb the aim (climb point 100 astern,
+  // ingress approach point, egress away point, rtb pattern point) can sit behind
+  // a jet that just launched north at 68 u/s;
+  // the v11.46 actual-speed floor (30) forbids decelerating through zero, so
+  // the jet flew straight forever. Override the aim to a point 150 units to
+  // the side the target lies on, at the jet's own altitude, so the jet banks
+  // and turns around. Scoped to climb/ingress/egress/rtb (v11.50 extends it to
+  // the return leg, so a jet with the pattern point behind it turns instead of
+  // flying straight) — the dive steering in attack is untouched (a side aim
+  // there corrupts the wingman's fixed dive aim).
+  if(!stalled && (jet.state === 'climb' || jet.state === 'ingress' || jet.state === 'egress' || jet.state === 'rtb') && jet.speed > 1){
+    const _ddx = tx - jet.x, _ddy = ty - jet.y, _ddz = tz - jet.z;
+    const _dd = Math.hypot(_ddx, _ddy, _ddz) || 0.001;
+    const _dot = (jet.vx * _ddx + jet.vy * _ddy + jet.vz * _ddz) / (jet.speed * _dd);
+    if(_dot < 0){
+      const _hSp = Math.hypot(jet.vx, jet.vz) || 1;
+      const _ux = jet.vx / _hSp, _uz = jet.vz / _hSp;
+      const _cross = jet.vx * _ddz - jet.vz * _ddx;
+      let _s = _cross >= 0 ? 1 : -1;
+      // v11.50: a formation turn — the wingman turns the same way as the leader. The leader (formOffset 0,0) publishes its turn direction on the squadron; the wingman reads it instead of its own cross product, which can pick the opposite side and turn it across the leader's path (climb-reversal mid-air, both at speed 30).
+      const _isLeader = !jet.formOffset || (jet.formOffset.x === 0 && jet.formOffset.z === 0);
+      if(_isLeader){ if(jet.squadron) jet.squadron.turnSide = _s; }
+      else if(jet.squadron && jet.squadron.turnSide !== undefined){ _s = jet.squadron.turnSide; }
+      tx = jet.x + (-_uz * _s) * 150; ty = jet.y; tz = jet.z + (_ux * _s) * 150;
+    }
+  }
   const dx = tx - jet.x, dy = ty - jet.y, dz = tz - jet.z;
   const d = Math.hypot(dx, dy, dz) || 0.001;
   let sp = stalled ? maxSpeed : maxSpeed * Math.min(1, d / slowingR); // v11.45 F1: stalled, full power (no Arrive slowdown)
@@ -5689,6 +5716,7 @@ function steerJetTo(jet, tx, ty, tz, slowingR, maxSpeed, dt){
   // stalls (the check is on its current speed, and a stalled jet has accel 0),
   // so the genuine stall model is untouched.
   if(!stalled) sp = Math.max(sp, 30);
+  if(jet.formCap !== undefined) sp = Math.min(sp, Math.max(30, jet.formCap)); // v11.50: wingman formation speed cap (see setFormationAim) — the floor above keeps it at flying speed; the cap keeps it from outrunning the leader into a collision
   const dvx = dx / d * sp, dvy = dy / d * sp, dvz = dz / d * sp;
   const pullout = jet.state === 'attack' && jet.squadron && jet.squadron.attackPhase === 'pullout'; // v11.43 D9
   const divePush = jet.state === 'attack' && jet.squadron && jet.squadron.attackPhase === 'dive'; // v11.43: fast pushover into the 30 deg dive
@@ -5700,6 +5728,20 @@ function steerJetTo(jet, tx, ty, tz, slowingR, maxSpeed, dt){
   const accel = stalled ? 0 : 20;
   const vAcc = stalled ? 15 : pullout ? 47 : divePush ? 60 : 32; // v11.45 F1: stalled, vy falls at up to g=15; v11.43 D9: 4 g pull is 0.67 rad/s at 70 u/s; dive pushover ~6 g
   let ax = dvx - jet.vx, ay = dvy - jet.vy, az = dvz - jet.vz;
+  // v11.49: longitudinal cap FIRST (component-wise), then the lateral cap
+  // (D2) on the capped acceleration. As shipped, the lateral cap ran first on
+  // the raw reversal acceleration (~50 lateral); its correction — along the
+  // slightly-tilted lateral direction — removed the whole turn component, so
+  // the jet neither turned nor reversed (net turn rate ~1 deg/s). Capping
+  // longitudinally first leaves a real turn component for the lateral cap to
+  // limit (to the same 18 u/s^2). Scoped to climb/ingress/egress/rtb (v11.50);
+  // attack/dive/trap/divert steering is untouched. Both caps keep their limits.
+  const _swap = (jet.state === 'climb' || jet.state === 'ingress' || jet.state === 'egress' || jet.state === 'rtb');
+  if(_swap){
+    ax = Math.max(-accel * dt, Math.min(accel * dt, ax));
+    ay = Math.max(-vAcc * dt, Math.min(vAcc * dt, ay));
+    az = Math.max(-accel * dt, Math.min(accel * dt, az));
+  }
   const hSp = Math.hypot(jet.vx, jet.vz); // v11.43 D2: cap lateral accel at 18 u/s^2
   if(hSp > 1){
     const ux = jet.vx / hSp, uz = jet.vz / hSp;
@@ -5707,9 +5749,8 @@ function steerJetTo(jet, tx, ty, tz, slowingR, maxSpeed, dt){
     const lm = (stalled ? 6 : 18) * dt; // v11.45 F1: stalled, control is mushy — barely turns
     if(Math.abs(lat) > lm){ const ex = lat - Math.sign(lat) * lm; ax += ex * uz; az -= ex * ux; }
   }
-  jet.vx += Math.max(-accel * dt, Math.min(accel * dt, ax));
-  jet.vy += Math.max(-vAcc * dt, Math.min(vAcc * dt, ay));
-  jet.vz += Math.max(-accel * dt, Math.min(accel * dt, az));
+  if(_swap){ jet.vx += ax; jet.vy += ay; jet.vz += az; }
+  else { jet.vx += Math.max(-accel * dt, Math.min(accel * dt, ax)); jet.vy += Math.max(-vAcc * dt, Math.min(vAcc * dt, ay)); jet.vz += Math.max(-accel * dt, Math.min(accel * dt, az)); }
   jet.x += jet.vx * dt; jet.y += jet.vy * dt; jet.z += jet.vz * dt;
   jet.speed = Math.hypot(jet.vx, jet.vy, jet.vz);
   // v11.46: climb-out / ingress / attack ACTUAL-speed floor. The sp floor
@@ -5723,13 +5764,15 @@ function steerJetTo(jet, tx, ty, tz, slowingR, maxSpeed, dt){
   // wings-level release never fires in the release zone and it releases
   // late and low. The pilot keeps the jet above flying speed through the
   // launch sequence (climb/ingress/attack — the first mission leg after
-  // takeoff), so the actual speed is floored at 30 there. A faster jet
+  // takeoff), so the actual speed is floored at 30 there. v11.50 extends it to
+  // egress/rtb — the return leg, where jets stalled coming home (259 stall-sea
+  // deaths in v11.49, now 1). A faster jet
   // also banks less tracking the same aim, so it is wings-level when it
   // reaches the release zone. A jet that is ALREADY stalled still stalls
   // (the check is on its current speed, and this floor does not run while
-  // stalled), and it does not apply in egress/rtb/trap/divert, where
-  // genuine slow flight still stalls.
-  if(!stalled && (jet.state === 'climb' || jet.state === 'ingress' || jet.state === 'attack') && jet.speed > 0.01 && jet.speed < 30){
+  // stalled), and it does not apply in trap/divert, where genuine slow flight
+  // still stalls (the trap approach) or the jet is circling a sinking carrier.
+  if(!stalled && (jet.state === 'climb' || jet.state === 'ingress' || jet.state === 'attack' || jet.state === 'egress' || jet.state === 'rtb') && jet.speed > 0.01 && jet.speed < 30){
     const _k = 30 / jet.speed; jet.vx *= _k; jet.vy *= _k; jet.vz *= _k; jet.speed = 30;
   }
   if(jet.speed > 1){
@@ -6738,6 +6781,7 @@ class AirSquadron {
             });
             if(alive.every(j => j.fired)){ this.attackPhase = 'pullout'; this.t = 0; }
             else if(!leader.fired && leader.y <= seaH + 25){ this.attackPhase = 'pullout'; this.t = 0; } // below min release and the leader has NOT released — abort, no drop (v11.45 F2: once the leader has released, the abort must not fire — it would cut the staggered wingman's dive short)
+            else if(this.t > 20){ this.attackPhase = 'pullout'; this.t = 0; } // v11.49: dive backstop — never wait forever for a jet that cannot release; RTB with bombs aboard (a normal dive completes in ~5-10 s). Mirrors the popup t > 6 and trap t > 90 backstops.
           } else if(this.attackPhase === 'pullout'){
             // Climb away, flares/chaff on pull-out.
             alive.forEach(j => {
@@ -6898,14 +6942,33 @@ class AirSquadron {
   // Set the leader's aim point; wingmen aim at the leader + echelon offset.
   setFormationAim(leader, x, y, z, spd){
     leader.aimPoint.x = x; leader.aimPoint.y = y; leader.aimPoint.z = z;
+    leader.formCap = undefined; // the leader sets the pace — no cap on it
     const hx = Math.sin(leader.heading), hz = -Math.cos(leader.heading);
     const rx = -hz, rz = hx; // right vector
+    // v11.50: wingman formation speed cap — a wingman flies formation ON the
+    // leader, so it never outruns the leader into a mid-air collision. The
+    // cap is the leader's speed plus a closure margin that shrinks to zero
+    // as the wingman reaches its slot, so it can close a launch gap but
+    // cannot overrun the leader in a turn (v11.49: the leader sat at the 30
+    // floor in the climb reversal while the wingman flew at 39.4 chasing its
+    // slot and rear-ended it — 530 mid-air losses). Only in formation
+    // states (climb/ingress/egress/rtb); the dive flies its own aim and the
+    // trap flies the glide slope, so the cap is cleared there.
+    const _form = (this.state === 'climb' || this.state === 'ingress' || this.state === 'egress' || this.state === 'rtb');
     this.aliveJets.forEach(j => {
       if(j === leader) return;
-      const ox = j.formOffset.x, oz = j.formOffset.z;
+      // v11.50: in a hard turn the wingman falls into trail — the echelon slot is on the inside of the leader's turn and the wingman (at the 30 floor, the same max turn rate as the leader) cannot slow to match the inside turn rate, so it cuts the corner and closes on the leader (climb-reversal mid-air, pattern min 6.2). Trail (0 right, 30 behind) keeps it behind the leader; it re-forms into echelon when the turn ends. Formation states only — the dive aim is untouched.
+      const _trail = _form && Math.abs(leader.roll || 0) > 0.5;
+      const ox = _trail ? 0 : j.formOffset.x, oz = _trail ? -30 : j.formOffset.z;
       j.aimPoint.x = leader.x + rx * ox + hx * oz;
       j.aimPoint.y = leader.y - 3; // v11.45 F3: echelon step-down (wingman 3 below the leader, out of the wake)
       j.aimPoint.z = leader.z + rz * ox + hz * oz;
+      if(_form){
+        const _dSlot = Math.hypot(j.aimPoint.x - j.x, j.aimPoint.y - j.y, j.aimPoint.z - j.z);
+        j.formCap = leader.speed + Math.min(10, Math.max(0, (_dSlot - 15) * 0.25));
+      } else {
+        j.formCap = undefined;
+      }
     });
   }
 }
