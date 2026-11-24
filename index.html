@@ -109,6 +109,10 @@
   #airOpsPanel .aoBtn.recall{background:rgba(60,40,20,.5)}
   #airOpsPanel .aoBtn:disabled{opacity:.38;cursor:not-allowed;background:rgba(20,50,75,.35)}
   #airOpsPanel .aoBtn.active{border-color:#ffd166;color:#ffd166;background:rgba(60,45,10,.55)}
+  #airOpsPanel .aoWing{display:flex;gap:4px;margin-bottom:4px} /* v11.51: CV1/CV2 wing toggle — the Launch buttons launch from the active wing */
+  #airOpsPanel .aoWing button{flex:1;font-size:10px;font-weight:700;padding:3px 0;color:#9db8cc;background:rgba(10,18,28,.7);border:1px solid rgba(255,255,255,.16);border-radius:3px;cursor:pointer}
+  #airOpsPanel .aoWing button.on{border-color:#ffd166;color:#ffd166;background:rgba(60,45,10,.55)}
+  #airOpsPanel .aoWing button:disabled{opacity:.38;cursor:default}
   #airOpsPanel .aoStat.exhausted{color:#ff5a5a}
   #airOpsPanel .aoStat{color:#9db8cc;line-height:1.5;padding:0 2px}
   #airOpsPanel .aoStat b{color:#e8f1f8}
@@ -306,12 +310,14 @@
 <!-- v11.25: Air Ops — launch / recall the carrier air wing. -->
 <div id="airOpsPanel">
   <div class="aoHead">✈️ Air Ops <button id="radarModeBtn" title="Toggle radar north-up / heading-up (N)">🧭 N-up</button></div>
+  <div class="aoWing"><button id="wingBtn1" class="on">CV1</button><button id="wingBtn2">CV2</button></div>
   <button class="aoBtn" id="launchAsmBtn" data-short="🚀 Anti-Ship">🚀 Launch Anti-Ship Flight</button>
   <button class="aoBtn" id="launchBombBtn" data-short="💣 Bombing">💣 Launch Precision Bombing Flight</button>
   <button class="aoBtn recall" id="recallBtn" data-short="↩️ Recall">↩️ Recall Flights RTB</button>
   <button class="aoBtn" id="airCamBtn" title="Follow camera — cycle wingman / weapon / off (C)">🎥 Cam: Off</button>
-  <div class="aoStat" id="airWingCount">Air Wing: 12 / 12</div>
-  <div class="aoStat" id="airOpsStatus">SQN 1: Deck Ready<br>SQN 2: Deck Ready</div>
+  <div class="aoStat" id="airWingCount1">CV1 Air Wing: 12 / 12</div>
+  <div class="aoStat" id="airWingCount2">CV2 Air Wing: 12 / 12</div>
+  <div class="aoStat" id="airOpsStatus">CV1 SQN 1: Deck Ready<br>CV1 SQN 2: Deck Ready</div>
 </div>
 
 <div id="miniMap"><canvas id="miniCv" width="144" height="144"></canvas><div id="miniStats">FLEET <b id="miniPct">100%</b> · <span id="miniShips">🚢×7</span></div></div>
@@ -324,7 +330,7 @@
 <div class="overlay" id="startScreen">
   <div class="card">
     <h1>Hurricane <span>Fleet</span></h1>
-    <p class="sub">Take the helm of the flagship and lead the carrier, battleships and
+    <p class="sub">Take the helm of the flagship and lead the carriers, battleships and
       destroyers through an open ocean into the storm. A wrecked ship lists,
       floods and sinks — lose them all and the round ends.</p>
     <div id="loadErr"></div>
@@ -338,7 +344,7 @@
     <div class="seaBox">
       <h3>🚢 Choose your fleet</h3>
       <div class="seaRow"><span class="lab" id="fleetCount">7 ships</span><div class="seg" id="fleetPicker">
-        <button data-k="carrier">Carrier</button><button data-k="bb1">Battleship 1</button><button data-k="bb2">Battleship 2</button></div></div>
+        <button data-k="carrier">Carrier 1</button><button data-k="carrier2">Carrier 2</button><button data-k="bb1">Battleship 1</button><button data-k="bb2">Battleship 2</button></div></div>
       <div class="seaRow"><span class="lab"></span><div class="seg" id="fleetPicker2">
         <button data-k="dd1">Destroyer 1</button><button data-k="dd2">Destroyer 2</button><button data-k="dd3">Destroyer 3</button><button data-k="dd4">Destroyer 4</button></div></div>
     </div>
@@ -361,7 +367,7 @@
         <button data-v="close">Close</button><button data-v="medium">Medium</button><button data-v="far">Far</button></div></div>
     </div>
     <div class="btnRow"><button class="bigBtn" id="startBtn">Set Sail ⛵</button><button class="ghostBtn" id="helpBtn" title="Help — controls" aria-label="Help — controls">?</button></div>
-    <div class="ver">v11.50</div>
+    <div class="ver">v11.51</div>
     <div class="stats">
       <div class="stat"><div class="v" id="bestDist">0 nm</div><div class="k">Best distance</div></div>
       <div class="stat"><div class="v" id="bestScore">0</div><div class="k">Best score</div></div>
@@ -1072,10 +1078,10 @@ const oceanUniforms = {
   uSunI:  {value: 1.15},
   uTime:  {value: 0},
   uFoam:  {value: new THREE.Color(0xa9c2cf)}, // v11.48: a touch darker/bluer, closer to the sea (was 0xc7d6de)
-  // v11.14: hull foam + Kelvin wake — the 7 fleet ships (x, z, heading,
+  // v11.14: hull foam + Kelvin wake — the 8 fleet ships (x, z, heading,
   // forwardSpeed) and their sizes (len, beam); the wind for storm streaks.
-  uShips: {value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()]},
-  uShipSize: {value: [new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2()]},
+  uShips: {value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()]}, // v11.51: 8 fleet ships (was 7)
+  uShipSize: {value: [new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2()]},
   uWind:  {value: new THREE.Vector2(0, 1)},
   uWindStr: {value: 0},
 };
@@ -1111,8 +1117,8 @@ const oceanMat = new THREE.ShaderMaterial({
     uniform float uSunI;
     uniform float uTime;
     uniform vec3 uFoam;
-    uniform vec4 uShips[7];
-    uniform vec2 uShipSize[7];
+    uniform vec4 uShips[8];
+    uniform vec2 uShipSize[8];
     uniform vec2 uWind;
     uniform float uWindStr;
     varying vec3 vNormal;
@@ -1225,7 +1231,7 @@ const oceanMat = new THREE.ShaderMaterial({
       // bright solid line), and the V-arms are broad and diffuse, not hard lines.
       float churnN = vnoise(wp * 1.5 + vec2(uTime * 1.5, -uTime * 1.0));
       float shipFoam = 0.0;
-      for(int i = 0; i < 7; i++){
+      for(int i = 0; i < 8; i++){
         if(uShipSize[i].x > 1.0){
           vec2 d = wp - uShips[i].xy;
           if(abs(d.x) < 160.0 && abs(d.y) < 160.0){
@@ -2081,6 +2087,7 @@ const roster = [
   // ±170/-220, inner dd ±170/-50) — min separation ~92 (bb-dd), so the
   // bigger hulls keep the same relative spacing and do not overlap.
   {key:'carrier', type:'carrier',    label:'Carrier',    dx:0,     dz:0,    hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4, freeboard:3.3},
+  {key:'carrier2', type:'carrier',   label:'Carrier',    dx:0,     dz:310,  hp:100, maxHp:100, lag:2.0, turnLag:2.0, alive:true, sinkT:0, listDir:1,  tau:1.4, freeboard:3.3}, // v11.51: second carrier — same spec, an eighth ship (opt-in)
   {key:'bb1',     type:'battleship', label:'Battleship', dx:-140,  dz:-155,  hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:-1, tau:1.1, freeboard:3.0},
   {key:'bb2',     type:'battleship', label:'Battleship', dx:140,   dz:-155,  hp:70,  maxHp:70,  lag:1.6, turnLag:1.8, alive:true, sinkT:0, listDir:1,  tau:1.1, freeboard:3.0},
   {key:'dd1',     type:'destroyer',  label:'Destroyer',  dx:-240,  dz:-310,  hp:50,  maxHp:50,  lag:2.4, turnLag:2.8, alive:true, sinkT:0, listDir:-1, tau:0.7, freeboard:2.7},
@@ -2096,8 +2103,8 @@ const roster = [
 // roster objects persist across rounds, so a ship sunk in one round is
 // restored by reset() when she is picked again.
 const fleet = [];
-const FLEET_KEYS = ['carrier', 'bb1', 'bb2', 'dd1', 'dd2', 'dd3', 'dd4'];
-const FORM={C:{carrier:[0,0],bb1:[-140,-155],bb2:[140,-155],dd1:[-240,-310],dd2:[240,-310],dd3:[-240,-70],dd4:[240,-70]},A:{carrier:[0,0],bb1:[-400,-200],bb2:[-400,-400],dd1:[-350,50],dd2:[-150,150],dd3:[-450,200],dd4:[-250,250]}};
+const FLEET_KEYS = ['carrier', 'carrier2', 'bb1', 'bb2', 'dd1', 'dd2', 'dd3', 'dd4']; // v11.51: carrier2 is opt-in (not in the default fleetSel)
+const FORM={C:{carrier:[0,0],carrier2:[0,310],bb1:[-140,-155],bb2:[140,-155],dd1:[-240,-310],dd2:[240,-310],dd3:[-240,-70],dd4:[240,-70]},A:{carrier:[0,0],carrier2:[0,400],bb1:[-400,-200],bb2:[-400,-400],dd1:[-350,50],dd2:[-150,150],dd3:[-450,200],dd4:[-250,250]}}; // v11.51: carrier2 astern of carrier1 in column (C +310, A +400 — keep-out astern is 182)
 function applyForm(m){const f=FORM[m]||FORM.C;fleet.forEach(s=>{const p=f[s.key];if(p){s.dx=p[0];s.dz=p[1];s.slotDx0=p[0];s.slotDz0=p[1];}});}
 function applyFleetSelection(){
   const sel = (settings.fleetSel && settings.fleetSel.length ? settings.fleetSel : FLEET_KEYS).filter(k => FLEET_KEYS.includes(k));
@@ -2111,7 +2118,7 @@ const _nameCount = {};
 roster.forEach(s => {
   // v11.0: a command name per hull (the panel and helm show which ship you have)
   _nameCount[s.type] = (_nameCount[s.type] || 0) + 1;
-  s.name = s.type === 'carrier' ? 'Carrier' : s.label + ' ' + _nameCount[s.type];
+  s.name = s.label + ' ' + _nameCount[s.type]; // v11.51: carriers are numbered too — Carrier 1 / Carrier 2 (was a hard-coded 'Carrier')
   s.group = makeShip(s.type);
   s.group.position.set(s.dx, 0, s.dz);
   s.x = s.dx; s.z = s.dz; s.heading = 0; s.y = 0;
@@ -2490,6 +2497,7 @@ const state = {
   windDir: 0, curX: 0, curZ: 0, cog: 0,
   diveCam: false, diveBlend: 0, dropletT: 0, // v11.14: underwater camera (U) + lens droplets
   camFollowShip: null, // v11.15: sinking-ship camera — the sinking ship the camera follows (null = flagship)
+  activeWing: 1, // v11.51: the wing the Launch buttons launch from (1 = CV1, 2 = CV2); NOT reset per round
 };
 let frameCount = 0;
 let clock = new THREE.Clock();
@@ -2858,6 +2866,7 @@ function reset(){
   spawnEnemies(); // v11.15: the enemy fleet (if enabled) sails in with the round
   // v11.25: the air wing + air defense + tactical camera reset with the round.
   if(airWing) airWing.reset();
+  if(airWing2) airWing2.reset(); // v11.51: the second wing resets with the round
   if(airDefense) airDefense.reset();
   if(airCam) airCam.reset();
   updateHud();
@@ -2931,7 +2940,8 @@ let jets = [];        // live FighterJetEntity objects (player air wing)
 let airMissiles = []; // live AntiShipMissile objects (sea-skimmers)
 let airBombs = [];    // live AirBomb objects (guided bombs)
 let samMissiles = []; // live SamMissile objects (VLS SAMs)
-let airWing = null;       // CarrierAirWingSystem (airwing_a.js)
+let airWing = null;
+let airWing2 = null; // v11.51: the second carrier's own CarrierAirWingSystem       // CarrierAirWingSystem (airwing_a.js)
 let airMissileSystem = null; // AntiShipMissileSystem (airwing_a.js)
 let airDefense = null;    // NavalAirDefenseSystem (airwing_b.js)
 let tacticalRadar = null; // TacticalRadarHUD (airwing_b.js)
@@ -2971,21 +2981,13 @@ function clearFleetWaypoint(){
   fleetWaypoint = null;
   if(wpMarker) wpMarker.visible = false;
 }
-// v11.28: FINITE carrier air wing — the carrier carries 12 Super Hornets in
-// total (losses are permanent). airWingRemaining counts the aircraft not yet
-// lost (alive, on deck or airborne). A launch takes up to 2 (a full flight)
-// from the aircraft actually available (remaining minus those already
-// airborne); when it reaches 0 the carrier cannot launch. Resets each round.
+// v11.28: FINITE carrier air wing — each carrier carries 12 Super Hornets in
+// total (losses are permanent). v11.51: the count lives PER WING
+// (CarrierAirWingSystem.remaining) — one wing per carrier, 24 per round with
+// two carriers. A launch takes up to 2 (a full flight) from the aircraft
+// actually available (remaining minus those already airborne); when it
+// reaches 0 the wing cannot launch. Resets each round.
 const AIR_WING_TOTAL = 12;
-let airWingRemaining = AIR_WING_TOTAL;
-// Aircraft in flight (not crashed, not on the deck) — used to size a launch.
-function airborneJetCount(){
-  return jets.filter(j => !j.crashed && j.state !== 'deck' && j.state !== 'catapult' && j.state !== 'taxi' && j.state !== 'rearm').length;
-}
-// Aircraft actually available to launch right now.
-function availableToLaunch(){
-  return Math.max(0, airWingRemaining - airborneJetCount());
-}
 // minimap: north-up, centred on the fleet, 500-unit range (v11.24: was 400)
 const miniCv = $('miniCv'), miniCtx = miniCv.getContext('2d');
 function drawMinimap(){
@@ -3105,7 +3107,7 @@ function syncHelmUI(){
 // v11.30: mobile fleet panel is visual — icon + short code + health bar, so
 // names never truncate. Desktop hides .fic/.fcode/.fbar (base CSS below).
 function shipIcon(s){ return s.name.indexOf('Carrier') === 0 ? '🛳️' : s.name.indexOf('Battleship') === 0 ? '🚢' : '🛥️'; }
-function shipCode(s){ return s.name.indexOf('Carrier') === 0 ? 'CV' : s.name.indexOf('Battleship') === 0 ? 'BB' + s.name.slice(-1) : 'DD' + s.name.slice(-1); }
+function shipCode(s){ return s.name.indexOf('Carrier') === 0 ? 'CV' + s.name.slice(-1) : s.name.indexOf('Battleship') === 0 ? 'BB' + s.name.slice(-1) : 'DD' + s.name.slice(-1); } // v11.51: CV1 / CV2 (was a bare 'CV')
 // v11.0: fleet command panel — built once, synced every frame
 function buildFleetPanel(){
   const el = $('fleetPanel');
@@ -4590,6 +4592,7 @@ function update(dt){
   // the air-wing block runs; the wing flies the Super Hornets, the
   // defense runs CIWS/SAMs on both sides).
   if(airWing) airWing.update(dt);
+  if(airWing2) airWing2.update(dt, false); // v11.51: the second wing updates too; runShared=false so the shared missile/bomb systems update once per substep
   if(airDefense) airDefense.update(dt);
   updateHud();
   // v11.4: the round ends when no ship is alive AND none is still going
@@ -4722,7 +4725,7 @@ function updateCamera(dt){
   // v11.15: watching a sinking ship — frame her at the user's zoom, not the
   // whole fleet; the fit pull-back would zoom out to include the (distant)
   // fleet and shrink the sinking ship out of the picture.
-  for(let it = 0; it < 12 && !state.camFollowShip; it++){
+  for(let it = 0; it < 22 && !state.camFollowShip; it++){ // v11.51: 22 iterations (1.15^22 = 21.6x) so the loop can actually reach the cap
     const tY = camY * (fitD / camZ) + Math.tan(orbEl) * fitD + Math.sin(state.t * 0.5) * 0.4;
     const tX = flag.x - ohx * fitD * Math.cos(a) + orx * fitD * Math.sin(a) * 0.55;
     const tZ = flag.z - ohz * fitD * Math.cos(a) + orz * fitD * Math.sin(a) * 0.55;
@@ -4741,7 +4744,12 @@ function updateCamera(dt){
     // so the camera must pull back about twice as far to fit the fleet.
     // v11.31: 7.0 — the slots are 1.4x wider again (formation ~480 x 310),
     // so the cap rises in proportion.
-    const fitCap = state.camZoom < 1 ? camZ : camZ * 9.0;
+    // v11.51: 20.0 — the 8-ship formation is 620 (CRUISING) / 800 (ATTACK)
+    // deep, and the second carrier sits 310-400 astern of the flagship,
+    // toward the camera; the real fleetFits measurement needs up to 18.8x
+    // (portrait ATTACK) vs 9.0 before, and the 12-iteration loop only ever
+    // reached 5.35x, so the cap alone was never the binding limit.
+    const fitCap = state.camZoom < 1 ? camZ : camZ * 20.0;
     if(fitD >= fitCap){ fitD = fitCap; break; }
   }
   // v11.36: fit multiplies the user zoom, not an absolute distance. Snap out, ease in; v11.38: snap to 1 when zoomed in (camZoom<1).
@@ -5624,13 +5632,23 @@ const CATAPULTS = [
   {x: 6, z0: -12, z1: -84},  // bow catapult 2 (centre) — v11.27: 2x (was 3, -6, -42)
 ];
 const WIRE_POS = {x: -8, z: 52}; // arrestor wires, angled deck (port side) — v11.27: 2x (was -4, 26)
-const DECK_PARK = [{x: -8, z: 76}, {x: 4, z: 76}, {x: -12, z: -16}, {x: 4, z: -16}]; // v11.40: park1 was (-12,76), off the deck edge (surface 8.81, float 1.53)
+const DECK_PARK = [{x: -8, z: 76}, {x: 4, z: 76}, {x: -12, z: -16}, {x: 4, z: -16}, {x: 16, z: 76}, {x: 16, z: -16}, {x: 12, z: -48}, {x: 16, z: 8}]; // v11.40: park1 was (-12,76), off the deck edge (surface 8.81, float 1.53). v11.51: 8 spots (was 4) — the 4 new ones are measured on real deck (kennedy_final.glb, starboard side, clear of the rollout line and the wire)
 const JET_CRUISE_SPEED = 55, JET_ATTACK_SPEED = 70, JET_CATAPULT_SPEED = 68, JET_DIVE_SPEED = 80, JET_TRAP_SPEED = 48;
 const JET_MIN_ALT = 4; // minimum altitude above the ocean (units)
 const JET_MAX_ALT = 120; // ceiling (keeps jets in the playable sky)
 
 function carrierShip(){
-  return fleet.find(s => s.type === 'carrier') || fleet[0] || null;
+  return fleet.find(s => s.type === 'carrier') || fleet[0];
+}
+// v11.51: the OTHER carrier (for divert / re-home when a carrier sinks).
+// Returns null when the fleet sails with one carrier.
+function otherCarrier(carrier){
+  if(!carrier) return null;
+  return fleet.find(s => s.type === 'carrier' && s !== carrier) || null;
+}
+// v11.51: the wing the Launch buttons launch from — the Air Ops CV1/CV2 toggle.
+function activeAirWing(){
+  return state.activeWing === 2 && airWing2 ? airWing2 : airWing;
 }
 // Transform a carrier-deck-local point to world coordinates, using the
 // carrier's live 6-DoF motion (heading/pitch/roll/position). The group's
@@ -5951,7 +5969,13 @@ class FighterJetEntity {
   loseAircraft(){
     if(this.lostCounted) return;
     this.lostCounted = true;
-    airWingRemaining = Math.max(0, airWingRemaining - 1);
+    // v11.28: an aircraft lost in action comes off its wing's remaining
+    // count. v11.51: the deduction goes to the jet's own wing; the typeof
+    // fallback keeps the harness jets (squadron: null) deducting from the
+    // legacy global.
+    const w = this.squadron && this.squadron.wing;
+    if(w) w.remaining = Math.max(0, w.remaining - 1);
+    else if(typeof airWingRemaining !== 'undefined') airWingRemaining = Math.max(0, airWingRemaining - 1);
   }
   updateCrash(dt, carrier){
     this.spinT += dt;
@@ -6498,8 +6522,12 @@ class AirSquadron {
     this.attackPhase = ''; // bomb run: popup | dive | drop | pullout
     this.catIdx = 0; // next catapult to use
     this.rearmT = 0;
+    this.wing = null; // v11.51: the CarrierAirWingSystem this squadron belongs to
+    this.originWing = null; // v11.51: the wing the squadron was built in (never changes — reset() sends a transferred squadron home)
+    this.originId = id; // v11.51: the id the squadron was built with (never changes)
+    this.homeCarrier = null; // v11.51: the carrier the squadron launched from (set at launch; re-homed when that carrier sinks and the other is alive)
   }
-  get label(){ return 'SQN ' + this.id; }
+  get label(){ return (this.wing ? this.wing.wingLabel + ' ' : '') + 'SQN ' + this.id; } // v11.51: CV1 SQN 1 / CV2 SQN 2
   get statusText(){
     const m = {deckReady: 'Deck Ready', catapult: 'Catapult Launch', climb: 'Climb', ingress: 'Ingress', attack: this.loadout === 'asm' ? 'Weapons Free' : 'Attack Run', egress: 'Egress', rtb: 'RTB', trap: 'Carrier Trap', divert: 'Divert — No Deck', taxi: 'Taxi', rearm: 'Rearming'};
     return m[this.state] || this.state;
@@ -6507,8 +6535,9 @@ class AirSquadron {
   get aliveJets(){ return this.jets.filter(j => !j.crashed); }
   // Launch this squadron with a loadout. Returns false if it cannot launch.
   launch(loadout, target){
-    const carrier = carrierShip();
     if(this.state !== 'deckReady') return false;
+    if(!this.wing) return false; // v11.51: a squadron always launches from its own wing's carrier
+    const carrier = this.wing.homeCarrier;
     if(!carrier || !deckSafeForLaunch(carrier)){
       toast('⚠️ Deck not safe', 'the carrier is pitching too hard or is sinking — launch held');
       return false;
@@ -6540,11 +6569,12 @@ class AirSquadron {
     // carrier's remaining air wing (12 total, losses permanent). If fewer
     // than 2 remain, the flight launches with what is left (a single jet);
     // if none remain, there is no launch at all.
-    const n = Math.min(2, availableToLaunch());
+    const n = Math.min(2, this.wing.availableToLaunch()); // v11.51: the launch sizes against THIS wing's remaining, not a global
     if(n <= 0){
       toast('⚠️ Air wing exhausted', 'no aircraft remaining — the carrier has lost her whole air wing');
       return false;
     }
+    this.homeCarrier = carrier; // v11.51: the flight comes home to the carrier it launched from
     for(let i = 0; i < n; i++){
       const jet = new FighterJetEntity(this, i, loadout);
       jet.buildModel();
@@ -6588,12 +6618,14 @@ class AirSquadron {
   }
   // The squadron state machine — sets each jet's aim point and behaviour.
   update(dt, carrier){
+    carrier = this.homeCarrier || carrier; // v11.51: a re-homed squadron flies from its new carrier even if the wing passes the old one
     if(!carrier) return;
     this.t += dt;
     // v11.28: the carrier going down overrides the mission — deck jets
     // slide off, a jet mid-landing crashes into the wreck, and no flight
     // is cleared to land on a sinking deck. Runs before the state machine.
     this.handleCarrierSinking(dt, carrier);
+    carrier = this.homeCarrier || carrier; // v11.51: the flight may have re-homed inside handleCarrierSinking — aim at the new carrier from here on
     const alive = this.aliveJets;
     if(!alive.length){
       if(this.state !== 'deckReady' && this.state !== 'rearm'){ this.state = 'deckReady'; this.t = 0; }
@@ -6826,7 +6858,12 @@ class AirSquadron {
           const dC = Math.hypot(carrier.x - leader.x, carrier.z - leader.z);
           if(dC < 240){
             // v11.28: no landing clearance on a sinking carrier — wave off.
-            if(!carrier.alive){ this.state = 'divert'; this.t = 0; }
+            if(!carrier.alive){
+              // v11.51: the other carrier is a deck too — fly home to her
+              // instead of ditching (rehomeTo moves the squadron to her wing).
+              if(this.rehomeTo(otherCarrier(carrier))){ this.state = 'rtb'; this.t = 0; this.patLeg = 0; }
+              else { this.state = 'divert'; this.t = 0; }
+            }
             else { this.state = 'trap'; this.t = 0; }
           }
         }
@@ -6834,15 +6871,24 @@ class AirSquadron {
       }
       case 'divert': {
         // v11.28: waved off — circle above the carrier while she goes down.
-        // There is no other deck to land on: when she is fully under, the
-        // flight ditches in the sea (a loss, like a shot-down jet).
+        // v11.51: with two carriers there IS another deck — the flight
+        // re-homes to it (see below); only when she is fully under with no
+        // other carrier alive does the flight ditch in the sea (a loss,
+        // like a shot-down jet).
         const seaH = getOceanDataAt(carrier.x, carrier.z, state.t).height;
         const hx = carrier.x + Math.sin(state.t * 0.3) * 150;
         const hz = carrier.z + Math.cos(state.t * 0.3) * 150;
         this.setFormationAim(leader, hx, seaH + 45, hz, JET_CRUISE_SPEED);
         if(carrier.sinkT >= 1){
-          alive.forEach(j => { j.crash('a Super Hornet ditched — no deck left to land on'); });
-          this.state = 'deckReady'; this.t = 0;
+          // v11.51: last chance — if the other carrier is still alive, fly
+          // home to her instead of ditching (the wave-off in rtb should
+          // already have re-homed, but a carrier sunk under a diverting
+          // flight gets here without one).
+          if(this.rehomeTo(otherCarrier(carrier))){ this.state = 'rtb'; this.t = 0; this.patLeg = 0; }
+          else {
+            alive.forEach(j => { j.crash('a Super Hornet ditched — no deck left to land on'); });
+            this.state = 'deckReady'; this.t = 0;
+          }
         }
         break;
       }
@@ -6936,8 +6982,38 @@ class AirSquadron {
         j.crashIntoCarrier(carrier);
       }
     }
+    // v11.51: a flight that is AIRBORNE re-homes to the other carrier
+    // instead of ditching — divert → rtb against her, trap there, and the
+    // squadron transfers to her wing (remaining bumps by the alive jets).
+    // Deck jets stay with the ship (they already slid off above).
+    const airborne = this.jets.some(j => !j.crashed && !j.gone &&
+      (j.state === 'climb' || j.state === 'ingress' || j.state === 'attack' || j.state === 'egress' || j.state === 'rtb' || j.state === 'divert'));
+    if(airborne && this.rehomeTo(otherCarrier(carrier))){
+      if(this.state === 'rtb' || this.state === 'divert'){ this.state = 'rtb'; this.t = 0; this.patLeg = 0; }
+      return;
+    }
     // A flight on final (rtb) is not cleared to land on a sinking deck.
     if(this.state === 'rtb'){ this.state = 'divert'; this.t = 0; }
+  }
+  // v11.51: move this squadron to the surviving carrier's wing and fly home
+  // to her. Returns false when there is no other carrier (or she is gone) —
+  // the flight then ditches as before. The surviving wing's remaining grows
+  // by the transferring squadron's alive jets (it may exceed 12 — allowed).
+  rehomeTo(other){
+    if(!other || !other.alive || !this.wing) return false;
+    const target = (this.wing.carrierKey === 'carrier') ? airWing2 : airWing;
+    if(!target || target === this.wing) return false;
+    const aliveN = this.aliveJets.length;
+    const from = this.wing.squadrons;
+    const fi = from.indexOf(this);
+    if(fi >= 0) from.splice(fi, 1);
+    this.wing = target;
+    this.id = Math.max(0, ...target.squadrons.map(s => s.id)) + 1;
+    target.squadrons.push(this);
+    target.remaining += aliveN;
+    this.homeCarrier = other;
+    toast('🔄 ' + this.label + ' re-homed', 'home carrier going down — landing on ' + (other.name || 'the other carrier'));
+    return true;
   }
   // Set the leader's aim point; wingmen aim at the leader + echelon offset.
   setFormationAim(leader, x, y, z, spd){
@@ -7029,16 +7105,37 @@ function updateAirBombs(dt){
 
 // --- the carrier air wing system (owns the squadrons) ---
 class CarrierAirWingSystem {
-  constructor(){
+  constructor(carrierKey){
+    // v11.51: one wing per carrier — carrierKey is the carrier's fleet key
+    // ('carrier' = CV1, 'carrier2' = CV2). Each wing has its own 2
+    // squadrons and its own remaining count of 12 (24 per round with two
+    // carriers). Missiles fly through the one shared airMissileSystem
+    // (created below), not a per-wing copy — the squadrons fire into it
+    // and update() drives it.
+    this.carrierKey = carrierKey || 'carrier';
+    this.wingLabel = this.carrierKey === 'carrier2' ? 'CV2' : 'CV1';
+    this.remaining = AIR_WING_TOTAL;
     this.squadrons = [new AirSquadron(1), new AirSquadron(2)];
-    // Missiles fly through the one shared airMissileSystem (created below),
-    // not a per-wing copy — the squadrons fire into it and update() drives it.
+    this.squadrons.forEach(s => { s.wing = this; s.originWing = this; s.originId = s.id; });
   }
+  // The carrier this wing flies from (null when she is not in the fleet).
+  get homeCarrier(){ return fleet.find(s => s.key === this.carrierKey) || null; }
+  // Aircraft in flight for this wing (not crashed, not on the deck) — used
+  // to size a launch. (v11.28 logic, per wing since v11.51.)
+  airborneCount(){
+    let n = 0;
+    for(const s of this.squadrons) for(const j of s.jets){
+      if(!j.crashed && j.state !== 'deck' && j.state !== 'catapult' && j.state !== 'taxi' && j.state !== 'rearm') n++;
+    }
+    return n;
+  }
+  // Aircraft actually available to launch right now (this wing).
+  availableToLaunch(){ return Math.max(0, this.remaining - this.airborneCount()); }
   get activeSquadrons(){ return this.squadrons.filter(s => s.state !== 'deckReady'); }
   // Launch the next ready squadron with a loadout. Returns true on success.
   launch(loadout){
     if(!state.running || state.paused || state.over) return false;
-    const carrier = carrierShip();
+    const carrier = this.homeCarrier; // v11.51: this wing's own carrier (was the fleet's first carrier)
     if(!carrier || !carrier.alive){ toast('⚠️ No carrier', 'the carrier is gone'); return false; }
     const sq = this.squadrons.find(s => s.state === 'deckReady');
     if(!sq){ toast('⚠️ Air wing busy', 'both squadrons are already airborne'); return false; }
@@ -7053,13 +7150,17 @@ class CarrierAirWingSystem {
     if(!any) toast('✈️ Air wing', 'no flights airborne');
     return any;
   }
-  update(dt){
+  update(dt, runShared = true){
     if(!state.running || state.paused || state.over) return;
-    const carrier = carrierShip();
-    this.squadrons.forEach(s => s.update(dt, carrier));
+    const carrier = this.homeCarrier; // v11.51: this wing's own carrier (a squadron that re-homed is no longer in this wing's array)
+    this.squadrons.slice().forEach(s => s.update(dt, carrier)); // slice: a squadron may re-home (mutating the array) mid-update
     this.checkJetCollisions(); // v11.45: mid-air collisions (after the jets moved this substep)
-    if(airMissileSystem) airMissileSystem.update(dt);
-    updateAirBombs(dt);
+    // v11.51: the shared missile/bomb systems update ONCE per substep —
+    // the second wing's update runs with runShared=false.
+    if(runShared){
+      if(airMissileSystem) airMissileSystem.update(dt);
+      updateAirBombs(dt);
+    }
   }
   // v11.45: mid-air collisions — two solid jets that touch mid-air both
   // crash and explode. Threshold 10 units centre-to-centre (a sphere of
@@ -7093,12 +7194,23 @@ class CarrierAirWingSystem {
     }
   }
   reset(){
-    airWingRemaining = AIR_WING_TOTAL; // v11.28: a new round gets a fresh air wing of 12
-    this.squadrons.forEach(s => {
+    this.remaining = AIR_WING_TOTAL; // v11.28: a new round gets a fresh air wing of 12 (per wing since v11.51)
+    // v11.51: send transferred squadrons home — a squadron that re-homed
+    // to this wing goes back to its origin wing with its original id, so
+    // the next round starts with CV1 SQN 1/2 on carrier 1 and CV2 SQN 1/2
+    // on carrier 2. (The squadron's jets are removed and its state reset
+    // below, whichever wing's reset() runs first.)
+    this.squadrons.slice().forEach(s => {
+      if(s.originWing && s.originWing !== this){
+        const home = s.originWing.squadrons;
+        if(!home.includes(s)) home.push(s);
+        s.wing = s.originWing; s.id = s.originId; s.homeCarrier = null;
+      }
       s.jets.forEach(j => j.removeModel());
       s.jets = [];
       s.state = 'deckReady'; s.t = 0; s.target = null; s.loadout = null; s.attackPhase = '';
     });
+    this.squadrons = this.squadrons.filter(s => s.originWing === this);
     if(airMissileSystem) airMissileSystem.clear();
     airBombs.forEach(b => b.remove());
     airBombs.length = 0;
@@ -7118,9 +7230,11 @@ class CarrierAirWingSystem {
   }
 }
 
-// The air wing instance (created here, after the classes — the update hook in
-// update() guards on it, and reset() guards on it, so load order is safe).
-airWing = new CarrierAirWingSystem();
+// The air wing instances (created here, after the classes — the update hook in
+// update() guards on them, and reset() guards on them, so load order is safe).
+// v11.51: one wing per carrier.
+airWing = new CarrierAirWingSystem('carrier');
+airWing2 = new CarrierAirWingSystem('carrier2');
 airMissileSystem = new AntiShipMissileSystem();
 
 // ============================================================================
@@ -7397,7 +7511,6 @@ class TacticalRadarHUD {
   // The tactical layers, drawn by drawMinimap after the restore (so they
   // sit in true-north canvas space even when the radar is heading-up).
   drawLayers(ctx, W, H, C, range, sc, f, px){
-    const carrier = fleet.find(s => s.type === 'carrier');
     // --- range-ring labels (the rings themselves are drawn in drawMinimap) ---
     ctx.font = '8px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
     ctx.fillStyle = 'rgba(160,200,230,0.7)';
@@ -7411,11 +7524,13 @@ class TacticalRadarHUD {
     ctx.strokeStyle = 'rgba(140,220,255,0.55)'; ctx.lineWidth = 1.2;
     ctx.beginPath(); ctx.moveTo(C, C);
     ctx.lineTo(C + Math.cos(sa) * C, C + Math.sin(sa) * C); ctx.stroke();
-    // --- carrier highlight (gold ring round the carrier's blue dot) ---
-    if(carrier && carrier.alive){
-      const p = this.toPx(f, C, sc, carrier.x, carrier.z);
-      ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(p[0], p[1], 6, 0, 6.29); ctx.stroke();
+    // --- carrier highlight (gold ring round each carrier's blue dot) ---
+    for(const carrier of fleet.filter(s => s.type === 'carrier')){ // v11.51: ring EACH carrier (was the first one only)
+      if(carrier && carrier.alive){
+        const p = this.toPx(f, C, sc, carrier.x, carrier.z);
+        ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(p[0], p[1], 6, 0, 6.29); ctx.stroke();
+      }
     }
     // --- designated target (gold ring round the enemy diamond) ---
     if(airTarget && airTarget.alive){
@@ -7491,16 +7606,31 @@ class TacticalRadarHUD {
   syncAirOps(){
     const el = $('airOpsStatus');
     if(!el) return;
-    const txt = airWing ? airWing.statusLines().join('<br>') : 'Air wing offline';
+    // v11.51: four squadron lines (both wings) and a count line per wing.
+    const txt = (airWing && airWing2) ? airWing.statusLines().concat(airWing2.statusLines()).join('<br>')
+      : (airWing ? airWing.statusLines().join('<br>') : 'Air wing offline');
     if(txt !== this._lastAirOps){ this._lastAirOps = txt; el.innerHTML = txt; }
-    // v11.28: FINITE air wing — live count in the panel, and the Launch
-    // buttons disabled (greyed out, unclickable) when the wing is exhausted.
-    const cnt = $('airWingCount');
-    if(cnt){
-      const cTxt = 'Air Wing: ' + airWingRemaining + ' / ' + AIR_WING_TOTAL + (airWingRemaining <= 0 ? ' — exhausted' : '');
-      if(cTxt !== this._lastAirWingCount){ this._lastAirWingCount = cTxt; cnt.textContent = cTxt; cnt.classList.toggle('exhausted', airWingRemaining <= 0); }
+    // v11.28: FINITE air wing — live count in the panel (per wing since
+    // v11.51; a re-homed squadron can push a wing past 12 — allowed).
+    for(const [w, id, tag] of [[airWing, 'airWingCount1', 'CV1'], [airWing2, 'airWingCount2', 'CV2']]){
+      const cnt = $(id);
+      if(!cnt) continue;
+      const rem = w ? w.remaining : 0;
+      const cTxt = tag + ' Air Wing: ' + rem + ' / ' + AIR_WING_TOTAL + (rem <= 0 ? ' — exhausted' : '');
+      if(cTxt !== this['_lastAirWingCount' + tag]){ this['_lastAirWingCount' + tag] = cTxt; cnt.textContent = cTxt; cnt.classList.toggle('exhausted', rem <= 0); }
     }
-    const noLaunch = airWingRemaining <= 0;
+    // v11.51: the wing toggle — CV2 is disabled when the fleet sails with
+    // one carrier, and the active wing falls back to CV1. The Launch
+    // buttons are disabled per the ACTIVE wing's remaining.
+    const hasCV2 = !!fleet.find(s => s.key === 'carrier2');
+    const b2 = $('wingBtn2');
+    if(b2) b2.disabled = !hasCV2;
+    if(!hasCV2 && state.activeWing === 2) state.activeWing = 1;
+    const b1 = $('wingBtn1');
+    if(b1) b1.classList.toggle('on', state.activeWing === 1);
+    if(b2) b2.classList.toggle('on', state.activeWing === 2);
+    const active = state.activeWing === 2 ? airWing2 : airWing;
+    const noLaunch = !active || active.remaining <= 0;
     for(const id of ['launchAsmBtn', 'launchBombBtn']){
       const b = $(id);
       if(b && b.disabled !== noLaunch) b.disabled = noLaunch;
@@ -7516,9 +7646,11 @@ class TacticalRadarHUD {
 tacticalRadar = new TacticalRadarHUD();
 
 // --- Air Ops panel wiring + radar click (the panel HTML is in the page) ---
-$('launchAsmBtn').addEventListener('click', () => { if(airWing) airWing.launch('asm'); });
-$('launchBombBtn').addEventListener('click', () => { if(airWing) airWing.launch('bomb'); });
-$('recallBtn').addEventListener('click', () => { if(airWing) airWing.recallAll(); });
+$('wingBtn1').addEventListener('click', () => { state.activeWing = 1; if(tacticalRadar) tacticalRadar.syncAirOps(); }); // v11.51: CV1/CV2 toggle — the Launch buttons launch from the active wing
+$('wingBtn2').addEventListener('click', () => { state.activeWing = 2; if(tacticalRadar) tacticalRadar.syncAirOps(); });
+$('launchAsmBtn').addEventListener('click', () => { const w = activeAirWing(); if(w) w.launch('asm'); });
+$('launchBombBtn').addEventListener('click', () => { const w = activeAirWing(); if(w) w.launch('bomb'); });
+$('recallBtn').addEventListener('click', () => { if(airWing) airWing.recallAll(); if(airWing2) airWing2.recallAll(); }); // v11.51: recall recalls both wings, each flight RTB-ing to its own home
 $('airCamBtn').addEventListener('click', () => { if(airCam) airCam.cycle(); }); // v11.28: the follow camera is a tappable button now — the C key was the only way, and Nicholas plays on his phone
 // v11.28: the follow-camera button label follows the ONE shared camera mode
 // (airCam.mode). The button and the C key drive the same state, so the label
@@ -7778,7 +7910,7 @@ function loop(){
   updateOcean(state.t);
   // v11.14: ship positions/headings/speeds + wind for the ocean shader
   // (hull foam, Kelvin wake, storm streaks) — updated every frame.
-  for(let i = 0; i < 7; i++){
+  for(let i = 0; i < 8; i++){ // v11.51: 8 fleet ships (was 7)
     const s = fleet[i];
     if(s && (s.alive || s.sinkT < 0.5)){ // v11.48: keep the foam while she is going down (faded) — it vanished the instant she started sinking
       const spdFade = s.alive ? 1 : Math.max(0, 1 - s.sinkT);
